@@ -14,6 +14,17 @@
 
 ---
 
+## [2026-08-24] In-app Notification Center
+**Quyết định**: Tạo notification system với 3 thành phần: bell icon, toast popup, notification center panel.
+**Lý do**: Người dùng cần biết khi có message mới từ conversation khác mà không cần rời khỏi tab hiện tại.
+**Hệ quả**: 
+- Tạo `stores/notification-store.ts` (Zustand)
+- Tạo `hooks/use-notifications.ts`
+- Tạo `components/notifications/` (bell, toast, center, item)
+- Sidebar tích hợp notification subscription
+- Utils thêm `formatDistanceToNow()`
+**Status**: Active
+
 ## [2026-08-22] Stack chính thức: Next.js 16 + Supabase
 **Quyết định**: Dùng Next.js 16 với App Router làm frontend framework, Supabase làm backend (Postgres + Auth + Realtime + Storage).
 **Lý do**: Next.js 16 cho performance tốt với Server Components, Server Actions giảm boilerplate API. Supabase tích hợp nhanh, có row-level security mạnh, free tier đủ dùng cho MVP.

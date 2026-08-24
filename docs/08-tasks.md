@@ -157,8 +157,16 @@
 - [x] Highlight text trong kết quả search
 - [x] Navigate đến conversation khi chọn message
 
-### 4.3. Notifications
-(chưa bắt đầu)
+### 4.3. Notifications ✅
+- [x] NotificationBell: bell icon với unread badge trong sidebar
+- [x] NotificationToast: toast popup (auto-dismiss sau 5s)
+- [x] NotificationCenter: slide-in panel với notification list
+- [x] NotificationStore: Zustand store cho state management
+- [x] useNotifications hook: real-time subscription tới messages mới
+- [x] Skip notifications cho conversation hiện tại (tránh duplicate)
+- [x] Mark as read khi mở, clear all, remove individual
+- [x] Realtime: toast xuất hiện ngay khi có message từ conversation khác
+- Commit: 491e553
 
 ### 4.4. Message features
 (chưa bắt đầu)
