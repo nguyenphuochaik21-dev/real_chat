@@ -123,3 +123,32 @@
 - Cập nhật `ChatsList` để hiển thị online status của participants
 - Tạo migration `20250101000010_add_presence_and_read_receipts.sql`
 **Status**: Active
+
+---
+
+## [2026-08-23] Phase 4.1 bắt đầu - Media & Files
+**Quyết định**: Implement upload và preview media files (images, videos, audio, documents).
+**Lý do**: Chat app cần gửi được ảnh, file để cạnh tranh với các messenger phổ biến.
+**Hệ quả**:
+- Migration `20250101000015_add_media_support.sql` - Thêm columns: content_type, media_url, media_name, media_size, media_mime_type
+- Tạo Supabase Storage bucket `chat-media` với 50MB limit
+- Tạo `lib/supabase/storage.ts` - Upload, delete, validation utilities
+- Tạo `hooks/use-media-upload.ts` - Hook xử lý upload với progress
+- Tạo `components/chat/media-message-bubble.tsx` - Render image/video/audio/file messages
+- Tạo `components/chat/media-attachment-button.tsx` - Button group cho upload
+- Cập nhật `types/database.ts` với media columns
+- Cập nhật `ChatView` tích hợp media upload và display
+- Sidebar badge cho unread count (Phase 3 completion)
+**Status**: Active
+
+---
+
+## [2026-08-24] Thêm Media Gallery Viewer
+**Quyết định**: Implement modal xem tất cả media files trong một conversation.
+**Lý do**: Người dùng cần xem lại tất cả ảnh/files đã chia sẻ.
+**Hệ quả**:
+- Tạo `hooks/use-conversation-media.ts` - Fetch media từ conversation
+- Tạo `components/chat/media-gallery.tsx` - Gallery component + viewer modal
+- Tích hợp nút Image trong header chat để mở gallery
+- Viewer có tabs: All, Images, Videos, Audio, Files
+**Status**: Active

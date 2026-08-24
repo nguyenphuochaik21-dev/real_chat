@@ -132,7 +132,34 @@
 - [x] **Badge on sidebar Chats icon** ← mới thêm
 - [x] Realtime update via subscription
 
-## Phase 4 — Rich Features
+## Phase 4 — Rich Features 🚧 (ĐANG LÀM)
+
+### 4.1. Media & Files ✅
+- [x] Migration thêm media columns (content_type, media_url, media_name, etc.)
+- [x] Supabase Storage bucket `chat-media`
+- [x] `lib/supabase/storage.ts` - Upload, delete, validation
+- [x] `hooks/use-media-upload.ts` - Upload với progress
+- [x] `components/chat/media-message-bubble.tsx` - Render image/video/audio/file
+- [x] `components/chat/media-attachment-button.tsx` - Upload button group
+- [x] Tích hợp vào ChatView
+- [x] Preview trong chat
+- [x] **Media gallery viewer modal** - xem tất cả ảnh/files của conversation
+- [x] Nút gallery trong header chat (icon Image)
+- [ ] File size limit feedback UI đẹp hơn
+
+### 4.2. Search
+(chưa bắt đầu)
+
+### 4.3. Notifications
+(chưa bắt đầu)
+
+### 4.4. Message features
+(chưa bắt đầu)
+
+### 4.5. Conversation management
+(chưa bắt đầu)
+
+### 4.6. Voice/Video UI
 (chưa bắt đầu)
 
 ## Phase 5 — Voice/Video
