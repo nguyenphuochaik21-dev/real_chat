@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { MessageSquare, Users, Phone, Star, CircleDot, Settings, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -11,7 +12,6 @@ import { usePresence } from '@/hooks/use-presence'
 import { SearchModal } from '@/components/chat/search-modal'
 import { NotificationBell, NotificationToastContainer, NotificationCenter } from '@/components/notifications'
 import { useNotificationStore } from '@/stores/notification-store'
-import { usePathname } from 'next/navigation'
 
 const navItems = [
   { href: '/chats', icon: MessageSquare, label: 'Chats' },
@@ -67,9 +67,9 @@ export function Sidebar() {
     let unreadChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
     let notificationChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
     let currentUserId: string | null = null
-    const pathname = usePathname()
 
     const supabase = supabaseRef.current
+    const currentPathname = pathname
 
     const addNotification = useNotificationStore.getState().addNotification
 
@@ -96,7 +96,7 @@ export function Sidebar() {
             if (newMsg.sender_id === userId) return
 
             // Skip if we're viewing this conversation
-            if (pathname === `/chats/${newMsg.conversation_id}`) return
+            if (currentPathname === `/chats/${newMsg.conversation_id}`) return
 
             // Fetch sender info
             const { data: sender } = await supabase
@@ -219,7 +219,7 @@ export function Sidebar() {
       if (notificationChannel) supabase.removeChannel(notificationChannel)
       if (currentUserId) setUserOffline(supabase)
     }
-  }, [])
+  }, [pathname])
 
   const userForAvatar = profile || {
     id: 'unknown',
