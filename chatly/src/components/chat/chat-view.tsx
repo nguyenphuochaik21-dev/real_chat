@@ -93,6 +93,7 @@ function MessageBubble({
   reactions = [],
   onToggleReaction,
 }: MessageBubbleProps) {
+  const [isHovered, setIsHovered] = useState(false)
   const { openContextMenu } = useMessageActionsStore()
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
@@ -134,6 +135,8 @@ function MessageBubble({
       <div
         className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}
         onContextMenu={handleContextMenu}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
           <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
@@ -163,6 +166,8 @@ function MessageBubble({
       <div
         className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}
         onContextMenu={handleContextMenu}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         <div className={cn('flex max-w-[75%] flex-col gap-1', isFromMe && 'items-end')}>
           <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
@@ -177,7 +182,8 @@ function MessageBubble({
               {renderTimeAndStatus()}
             </div>
           </div>
-          {reactions.length > 0 && (
+          {/* Show reactions on hover or when there are reactions */}
+          {(isHovered || reactions.length > 0) && (
             <MessageReactions
               messageId={message.id}
               reactions={reactions}
@@ -194,6 +200,8 @@ function MessageBubble({
     <div
       className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}
       onContextMenu={handleContextMenu}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       <div className={cn('flex max-w-[75%] flex-col gap-1', isFromMe && 'items-end')}>
         <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
@@ -217,7 +225,8 @@ function MessageBubble({
             {renderTimeAndStatus()}
           </div>
         </div>
-        {reactions.length > 0 && (
+        {/* Show reactions on hover or when there are reactions */}
+        {(isHovered || reactions.length > 0) && (
           <MessageReactions
             messageId={message.id}
             reactions={reactions}
@@ -433,19 +442,19 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           const updated = payload.new as Message
           const old = payload.old as Message | undefined
 
-          // Only update if status actually changed
-          if (old && old.status === updated.status) return
-
-          // Update message in list
+          // Update message in list - sync ALL changes (content, edited_at, status, deleted_at)
           setMessages(prev =>
-            prev.map(m => m.id === updated.id ? { ...m, status: updated.status } : m)
+            prev.map(m => m.id === updated.id ? updated : m)
           )
-          // Track status for display
-          setMessageStatuses(prev => {
-            const next = new Map(prev)
-            next.set(updated.id, updated.status || 'sent')
-            return next
-          })
+
+          // Also update status tracking for display
+          if (updated.status !== old?.status) {
+            setMessageStatuses(prev => {
+              const next = new Map(prev)
+              next.set(updated.id, updated.status || 'sent')
+              return next
+            })
+          }
         }
       )
       .subscribe()
@@ -454,6 +463,44 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       supabase.removeChannel(channel)
     }
   }, [conversationId, currentUserId, supabase, markAsRead])
+
+  // Subscribe to reactions for all messages in this conversation
+  useEffect(() => {
+    if (!conversationId || messages.length === 0) return
+
+    // Get message IDs for this conversation
+    const messageIds = messages
+      .filter(msg => msg.id && !msg.id.startsWith('temp-'))
+      .map(msg => msg.id)
+
+    if (messageIds.length === 0) return
+
+    const channel = supabase
+      .channel(`reactions-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_reactions',
+        },
+        async () => {
+          // Refetch all reactions for this conversation
+          const { getReactionsForMessages } = await import('@/lib/actions/messages')
+          try {
+            const newReactions = await getReactionsForMessages(messageIds)
+            setMessageReactions(newReactions)
+          } catch (err) {
+            console.error('Failed to refetch reactions:', err)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [conversationId, messages, supabase])
 
   // Scroll to bottom when messages change (only if no scrollToMessageId)
   useEffect(() => {
@@ -593,6 +640,9 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     const content = inputValue.trim()
     setInputValue('')
 
+    // Debug: Log reply state
+    console.log('[DEBUG] handleSend - replyToMessage:', replyToMessage?.id, replyToMessage)
+
     // Optimistic update
     const optimisticMessage: Message = {
       id: `temp-${Date.now()}`,
@@ -614,15 +664,18 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     setMessages(prev => [...prev, optimisticMessage])
 
     try {
+      const insertPayload = {
+        conversation_id: conversationId,
+        sender_id: currentUserId,
+        content,
+        status: 'sent',
+        reply_to: replyToMessage?.id || null,
+      }
+      console.log('[DEBUG] Insert payload:', insertPayload)
+
       const { data, error } = await supabase
         .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: currentUserId,
-          content,
-          status: 'sent',
-          reply_to: replyToMessage?.id || null,
-        })
+        .insert(insertPayload)
         .select()
         .single()
 
@@ -699,27 +752,23 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     }
   }, [])
 
-  // Fetch reactions when messages change
+  // Fetch reactions when messages change (optimized batch query)
   useEffect(() => {
     const fetchReactions = async () => {
-      const { getMessageReactions } = await import('@/lib/actions/messages')
-      const newReactions = new Map<string, { emoji: string; count: number; userReacted: boolean }[]>()
+      const { getReactionsForMessages } = await import('@/lib/actions/messages')
 
-      for (const msg of messages) {
-        if (msg.id && !msg.id.startsWith('temp-')) {
-          try {
-            const reactions = await getMessageReactions(msg.id)
-            if (reactions.length > 0) {
-              newReactions.set(msg.id, reactions)
-            }
-          } catch (err) {
-            // Ignore errors for individual messages
-          }
-        }
-      }
+      // Get non-temp message IDs
+      const messageIds = messages
+        .filter(msg => msg.id && !msg.id.startsWith('temp-'))
+        .map(msg => msg.id)
 
-      if (newReactions.size > 0) {
+      if (messageIds.length === 0) return
+
+      try {
+        const newReactions = await getReactionsForMessages(messageIds)
         setMessageReactions(newReactions)
+      } catch (err) {
+        console.error('Failed to fetch reactions:', err)
       }
     }
 

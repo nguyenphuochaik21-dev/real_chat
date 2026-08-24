@@ -417,6 +417,62 @@ export async function getMessageReactions(
   }))
 }
 
+/**
+ * Get reactions for multiple messages at once (batch query)
+ */
+export async function getReactionsForMessages(
+  messageIds: string[]
+): Promise<Map<string, MessageReaction[]>> {
+  if (messageIds.length === 0) return new Map()
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data, error } = await supabase
+    .from('message_reactions')
+    .select('emoji, user_id, message_id')
+    .in('message_id', messageIds)
+
+  if (error) {
+    console.error('Failed to batch fetch reactions:', error)
+    return new Map()
+  }
+
+  // Group by message_id then by emoji
+  const result = new Map<string, MessageReaction[]>()
+
+  // First pass: group by message_id
+  const byMessage = new Map<string, { emoji: string; user_id: string }[]>()
+  for (const r of data || []) {
+    if (!byMessage.has(r.message_id)) {
+      byMessage.set(r.message_id, [])
+    }
+    byMessage.get(r.message_id)!.push(r)
+  }
+
+  // Second pass: aggregate each message's reactions
+  for (const [msgId, reactions] of byMessage) {
+    const reactionMap = new Map<string, { count: number; userReacted: boolean }>()
+
+    for (const r of reactions) {
+      const existing = reactionMap.get(r.emoji) || { count: 0, userReacted: false }
+      existing.count++
+      if (user && r.user_id === user.id) {
+        existing.userReacted = true
+      }
+      reactionMap.set(r.emoji, existing)
+    }
+
+    result.set(msgId, Array.from(reactionMap.entries()).map(([emoji, stats]) => ({
+      emoji,
+      count: stats.count,
+      userReacted: stats.userReacted,
+    })))
+  }
+
+  return result
+}
+
 // ============================================================================
 // Starred Messages
 // ============================================================================
