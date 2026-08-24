@@ -152,3 +152,17 @@
 - Tích hợp nút Image trong header chat để mở gallery
 - Viewer có tabs: All, Images, Videos, Audio, Files
 **Status**: Active
+
+---
+
+## [2026-08-24] Phase 4.2 bắt đầu - Search (Global search, full-text search)
+**Quyết định**: Implement global search cho messages và contacts với full-text search capabilities.
+**Lý do**: Người dùng cần tìm kiếm nhanh tin nhắn cũ hoặc bắt đầu cuộc trò chuyện mới với ai đó.
+**Hệ quả**:
+- Migration `20250101000016_add_search_support.sql` - Thêm tsvector column + GIN index + search function
+- Tạo `lib/actions/search.ts` - Server Actions cho searchMessages và searchConversations
+- Tạo `hooks/use-search.ts` - Hook với debounce và pagination
+- Tạo `components/chat/search-modal.tsx` - Modal với 2 tabs: Messages và Contacts
+- Cập nhật `Sidebar` thêm nút Search và tích hợp SearchModal
+- Search hỗ trợ filter theo ngày
+**Status**: Active

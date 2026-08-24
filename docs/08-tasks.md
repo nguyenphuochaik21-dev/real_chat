@@ -147,8 +147,15 @@
 - [x] Nút gallery trong header chat (icon Image)
 - [ ] File size limit feedback UI đẹp hơn
 
-### 4.2. Search
-(chưa bắt đầu)
+### 4.2. Search ✅
+- [x] Migration thêm search support (tsvector, GIN index, search function)
+- [x] `lib/actions/search.ts` - Server Actions cho searchMessages và searchConversations
+- [x] `hooks/use-search.ts` - Hook với debounce và pagination
+- [x] `components/chat/search-modal.tsx` - Modal với 2 tabs: Messages và Contacts
+- [x] Tích hợp nút Search vào Sidebar
+- [x] Filter theo ngày (date from/to)
+- [x] Highlight text trong kết quả search
+- [x] Navigate đến conversation khi chọn message
 
 ### 4.3. Notifications
 (chưa bắt đầu)
