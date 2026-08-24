@@ -1,0 +1,408 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { Search, X, MessageSquare, User, Calendar, Filter, Image, FileText, ArrowLeft } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { useSearch, type SearchResult } from '@/hooks/use-search'
+import { Avatar } from '@/components/ui/avatar'
+import type { Tables } from '@/types'
+
+type Profile = Tables<'profiles'>
+
+interface SearchModalProps {
+  isOpen: boolean
+  onClose: () => void
+  conversationId?: string
+  onSelectMessage?: (message: SearchResult, conversationId: string) => void
+  onSelectContact?: (profile: Profile) => void
+  currentUserId: string
+}
+
+function formatSearchDate(dateStr: string | null): string {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+  if (days === 0) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } else if (days === 1) {
+    return 'Yesterday'
+  } else if (days < 7) {
+    return date.toLocaleDateString([], { weekday: 'short' })
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>
+
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
+}
+
+function SearchFiltersBar({
+  filters,
+  onFiltersChange,
+}: {
+  filters: { dateFrom?: string; dateTo?: string; senderId?: string }
+  onFiltersChange: (filters: { dateFrom?: string; dateTo?: string; senderId?: string }) => void
+}) {
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [tempDateFrom, setTempDateFrom] = useState(filters.dateFrom || '')
+  const [tempDateTo, setTempDateTo] = useState(filters.dateTo || '')
+
+  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.senderId
+
+  const applyFilters = () => {
+    onFiltersChange({
+      dateFrom: tempDateFrom || undefined,
+      dateTo: tempDateTo || undefined,
+      senderId: filters.senderId,
+    })
+    setShowDatePicker(false)
+  }
+
+  const clearFilters = () => {
+    setTempDateFrom('')
+    setTempDateTo('')
+    onFiltersChange({})
+    setShowDatePicker(false)
+  }
+
+  return (
+    <div className="border-b border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-2">
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowDatePicker(!showDatePicker)}
+          className={cn(
+            'gap-1.5 text-xs',
+            hasActiveFilters && 'bg-primary-500/20 text-primary-500'
+          )}
+        >
+          <Calendar className="h-3.5 w-3.5" />
+          {filters.dateFrom || filters.dateTo ? 'Date filtered' : 'Date'}
+        </Button>
+
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs">
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      {showDatePicker && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-[var(--bg-panel)] p-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-[var(--text-muted)]">From:</span>
+            <input
+              type="date"
+              value={tempDateFrom}
+              onChange={e => setTempDateFrom(e.target.value)}
+              className="rounded border border-[var(--border-default)] bg-[var(--bg-input)] px-2 py-1 text-xs"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-[var(--text-muted)]">To:</span>
+            <input
+              type="date"
+              value={tempDateTo}
+              onChange={e => setTempDateTo(e.target.value)}
+              className="rounded border border-[var(--border-default)] bg-[var(--bg-input)] px-2 py-1 text-xs"
+            />
+          </div>
+          <Button size="sm" onClick={applyFilters} className="ml-auto">
+            Apply
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SearchResultItem({
+  result,
+  query,
+  currentUserId,
+  onClick,
+}: {
+  result: SearchResult
+  query: string
+  currentUserId: string
+  onClick: () => void
+}) {
+  const isFromMe = result.sender_id === currentUserId
+  const isMedia = result.content_type && result.content_type !== 'text'
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left hover:bg-[var(--bg-hover)] transition-colors"
+    >
+      <div className="flex gap-3 p-3">
+        {/* Type icon */}
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-secondary)]">
+          {isMedia ? (
+            result.content_type === 'image' ? (
+              <Image className="h-4 w-4 text-primary-500" />
+            ) : (
+              <FileText className="h-4 w-4 text-primary-500" />
+            )
+          ) : (
+            <MessageSquare className="h-4 w-4 text-[var(--text-muted)]" />
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-[var(--text-secondary)]">
+              {result.conversation_title || 'Conversation'}
+            </span>
+            <span className="text-xs text-[var(--text-muted)]">
+              {formatSearchDate(result.created_at)}
+            </span>
+          </div>
+
+          {isMedia && result.media_name ? (
+            <p className="mt-0.5 truncate text-sm text-[var(--text-primary)]">
+              <HighlightedText text={result.media_name} query={query} />
+            </p>
+          ) : (
+            <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-primary)]">
+              <HighlightedText text={result.content} query={query} />
+            </p>
+          )}
+
+          {isFromMe && (
+            <span className="mt-1 text-xs text-[var(--text-muted)]">You</span>
+          )}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+export function SearchModal({
+  isOpen,
+  onClose,
+  conversationId,
+  onSelectMessage,
+  onSelectContact,
+  currentUserId,
+}: SearchModalProps) {
+  const [inputValue, setInputValue] = useState('')
+  const [activeTab, setActiveTab] = useState<'messages' | 'contacts'>('messages')
+  const [filters, setFilters] = useState<{ dateFrom?: string; dateTo?: string; senderId?: string }>({})
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { state, search, searchContacts, clearSearch } = useSearch(conversationId)
+
+  // Focus input when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    } else {
+      setInputValue('')
+      clearSearch()
+    }
+  }, [isOpen, clearSearch])
+
+  // Search when input changes
+  useEffect(() => {
+    if (activeTab === 'messages') {
+      search(inputValue)
+    } else {
+      searchContacts(inputValue)
+    }
+  }, [inputValue, activeTab, search, searchContacts])
+
+  // Handle filters change
+  const handleFiltersChange = (newFilters: { dateFrom?: string; dateTo?: string; senderId?: string }) => {
+    setFilters(newFilters)
+    if (activeTab === 'messages') {
+      // Re-apply filters to search
+      search(inputValue)
+    }
+  }
+
+  const handleSelectMessage = (result: SearchResult) => {
+    if (result.conversation_id && onSelectMessage) {
+      onSelectMessage(result, result.conversation_id)
+    }
+    // Close modal after a short delay to allow navigation
+    setTimeout(onClose, 100)
+  }
+
+  const handleSelectContact = (profile: Profile) => {
+    if (onSelectContact) {
+      onSelectContact(profile)
+    }
+    onClose()
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-20">
+      <div
+        className="mx-4 w-full max-w-2xl overflow-hidden rounded-2xl bg-[var(--bg-panel)] shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-[var(--border-default)] p-4">
+          <Button variant="ghost" size="icon-sm" onClick={onClose}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Input
+              ref={inputRef}
+              type="text"
+              placeholder="Search messages or contacts..."
+              value={inputValue}
+              onChange={e => setInputValue(e.target.value)}
+              className="pl-10"
+            />
+            {inputValue && (
+              <button
+                onClick={() => setInputValue('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-[var(--border-default)]">
+          <button
+            onClick={() => setActiveTab('messages')}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+              activeTab === 'messages'
+                ? 'border-b-2 border-primary-500 text-primary-500'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            )}
+          >
+            <MessageSquare className="h-4 w-4" />
+            Messages
+          </button>
+          <button
+            onClick={() => setActiveTab('contacts')}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+              activeTab === 'contacts'
+                ? 'border-b-2 border-primary-500 text-primary-500'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            )}
+          >
+            <User className="h-4 w-4" />
+            Contacts
+          </button>
+        </div>
+
+        {/* Filters (messages tab only) */}
+        {activeTab === 'messages' && (
+          <SearchFiltersBar filters={filters} onFiltersChange={handleFiltersChange} />
+        )}
+
+        {/* Results */}
+        <ScrollArea className="max-h-96">
+          {state.loading && !state.results.length ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+            </div>
+          ) : activeTab === 'messages' ? (
+            state.results.length > 0 ? (
+              <div className="py-2">
+                <p className="px-4 py-2 text-xs text-[var(--text-muted)]">
+                  {state.total} result{state.total !== 1 ? 's' : ''} found
+                </p>
+                {state.results.map(result => (
+                  <SearchResultItem
+                    key={result.id}
+                    result={result}
+                    query={inputValue}
+                    currentUserId={currentUserId}
+                    onClick={() => handleSelectMessage(result)}
+                  />
+                ))}
+              </div>
+            ) : inputValue.trim() ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Search className="h-12 w-12 text-[var(--text-muted)]" />
+                <p className="mt-3 font-medium text-[var(--text-primary)]">No messages found</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                  Try different keywords or remove filters
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Search className="h-12 w-12 text-[var(--text-muted)]" />
+                <p className="mt-3 font-medium text-[var(--text-primary)]">Search messages</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                  Find messages by content or file names
+                </p>
+              </div>
+            )
+          ) : state.contacts.length > 0 ? (
+            <div className="py-2">
+              {state.contacts.map(contact => (
+                <button
+                  key={contact.id}
+                  onClick={() => handleSelectContact(contact)}
+                  className="flex w-full items-center gap-3 px-4 py-3 hover:bg-[var(--bg-hover)]"
+                >
+                  <Avatar user={contact} size="md" />
+                  <div className="text-left">
+                    <p className="font-medium text-[var(--text-primary)]">{contact.display_name}</p>
+                    <p className="text-xs text-[var(--text-muted)]">@{contact.username}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : inputValue.trim() ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <User className="h-12 w-12 text-[var(--text-muted)]" />
+              <p className="mt-3 font-medium text-[var(--text-primary)]">No contacts found</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Try a different name or username
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <User className="h-12 w-12 text-[var(--text-muted)]" />
+              <p className="mt-3 font-medium text-[var(--text-primary)]">Search contacts</p>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
+                Find people by name or username
+              </p>
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+    </div>
+  )
+}

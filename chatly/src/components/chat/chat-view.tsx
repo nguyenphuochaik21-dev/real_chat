@@ -1,0 +1,698 @@
+'use client'
+
+import { useRef, useEffect, useState, useCallback } from 'react'
+import {
+  Phone,
+  Video,
+  Search,
+  MoreVertical,
+  ArrowLeft,
+  Send,
+  Smile,
+  Check,
+  CheckCheck,
+  Image,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Avatar } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { createClient } from '@/lib/supabase/client'
+import { useTyping } from '@/hooks/use-typing'
+import { useReadReceipts } from '@/hooks/use-read-receipts'
+import { useConversationMedia } from '@/hooks/use-conversation-media'
+import { MediaMessageBubble } from './media-message-bubble'
+import { MediaAttachmentButton } from './media-attachment-button'
+import { MediaGalleryViewer } from './media-gallery'
+import { isImage, isVideo, isAudio } from '@/lib/supabase/storage'
+import type { Tables } from '@/types'
+
+type Message = Tables<'messages'>
+type Profile = Tables<'profiles'>
+type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
+
+function formatMessageDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString([], {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+function formatMessageTime(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function getDateSeparator(messages: Message[], index: number): string | null {
+  const currentDate = messages[index].created_at
+  const prevDate = index > 0 ? messages[index - 1].created_at : null
+
+  if (!currentDate) return null
+
+  const current = new Date(currentDate)
+  const prev = prevDate ? new Date(prevDate) : null
+
+  if (!prev || current.toDateString() !== prev.toDateString()) {
+    return formatMessageDate(currentDate)
+  }
+  return null
+}
+
+interface MessageBubbleProps {
+  message: Message
+  showAvatar: boolean
+  participant: Profile
+  isFromMe: boolean
+  // Real-time status from subscription
+  realtimeStatus?: string
+}
+
+function MessageBubble({ message, showAvatar, participant, isFromMe, realtimeStatus }: MessageBubbleProps) {
+  // Use realtime status if available, otherwise use stored status
+  const messageStatus = realtimeStatus || message.status || 'sent'
+  const contentType = message.content_type as MessageContentType
+
+  // Helper for time + status row
+  const renderTimeAndStatus = () => (
+    <div
+      className={cn(
+        'mt-0.5 flex items-center gap-1 text-xs text-[var(--text-muted)]',
+        isFromMe && 'justify-end'
+      )}
+    >
+      <span>{message.created_at ? formatMessageTime(message.created_at) : ''}</span>
+      {isFromMe && (
+        <span className="flex">
+          {messageStatus === 'read' ? (
+            <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
+          ) : messageStatus === 'delivered' ? (
+            <CheckCheck className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+          ) : messageStatus === 'sent' || messageStatus === 'sending' ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : null}
+        </span>
+      )}
+    </div>
+  )
+
+  // Render media content for media messages
+  if (contentType && contentType !== 'text' && message.media_url) {
+    return (
+      <div className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}>
+        <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
+          {/* Avatar */}
+          <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+            {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
+          </div>
+
+          {/* Media Bubble */}
+          <div>
+            <MediaMessageBubble message={message} isFromMe={isFromMe} />
+            {renderTimeAndStatus()}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Render text content
+  return (
+    <div className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}>
+      <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
+        {/* Avatar */}
+        <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+          {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
+        </div>
+
+        {/* Bubble */}
+        <div>
+          <div
+            className={cn(
+              'rounded-2xl px-4 py-2',
+              isFromMe
+                ? 'bg-primary-500 rounded-br-md text-white'
+                : 'rounded-bl-md bg-[var(--bg-message-in)]'
+            )}
+          >
+            <p className="text-sm">{message.content}</p>
+          </div>
+          {renderTimeAndStatus()}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ChatViewProps {
+  conversationId: string | null
+  currentUserId: string
+  onBack?: () => void
+  showBackButton?: boolean
+  scrollToMessageId?: string
+}
+
+export function ChatView({ conversationId, currentUserId, onBack, showBackButton = false, scrollToMessageId }: ChatViewProps) {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [participant, setParticipant] = useState<Profile | null>(null)
+  const [inputValue, setInputValue] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
+  const [participantStatus, setParticipantStatus] = useState<'online' | 'offline' | 'away' | 'busy'>('offline')
+  const [showMediaGallery, setShowMediaGallery] = useState(false)
+  // Track realtime status for messages
+  const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(new Map())
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const inputRef = useRef<HTMLInputElement>(null)
+  const supabase = createClient()
+
+  // Typing indicators
+  const { typingUserIds, onType, stopTyping } = useTyping(conversationId, currentUserId)
+
+  // Read receipts - marks messages as read
+  const { markAsRead } = useReadReceipts(conversationId, currentUserId)
+
+  // Media gallery
+  const { mediaItems, totalCount } = useConversationMedia({ conversationId })
+
+  // Fetch participant info and their status
+  useEffect(() => {
+    const fetchParticipant = async () => {
+      if (!conversationId) {
+        setParticipant(null)
+        return
+      }
+
+      try {
+        const { data: otherParticipants } = await supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .neq('user_id', currentUserId)
+
+        const otherUserId = otherParticipants?.[0]?.user_id
+        if (otherUserId) {
+          // Get profile with status
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', otherUserId)
+            .single()
+          setParticipant(data)
+
+          // Set initial status from profile
+          if (data?.status) {
+            setParticipantStatus(data.status as 'online' | 'offline' | 'away' | 'busy')
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch participant:', err)
+      }
+    }
+
+    fetchParticipant()
+  }, [conversationId, currentUserId, supabase])
+
+  // Subscribe to participant's status changes
+  useEffect(() => {
+    if (!participant?.id) return
+
+    const channel = supabase
+      .channel(`participant-status-${participant.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${participant.id}`,
+        },
+        async (payload) => {
+          const updated = payload.new as Profile
+          const oldStatus = participantStatus
+          setParticipantStatus(updated.status as 'online' | 'offline' | 'away' | 'busy')
+
+          // When participant comes online, refresh message statuses
+          // This ensures messages that were "sent" (recipient offline) become "delivered"
+          if (oldStatus !== 'online' && updated.status === 'online' && conversationId) {
+            try {
+              const { data } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .eq('status', 'sent')
+                .neq('sender_id', currentUserId)
+
+              // Refresh all messages to get updated statuses
+              if (data && data.length > 0) {
+                const { data: allMessages } = await supabase
+                  .from('messages')
+                  .select('*')
+                  .eq('conversation_id', conversationId)
+                  .order('created_at', { ascending: true })
+                if (allMessages) {
+                  setMessages(allMessages)
+                }
+              }
+            } catch (err) {
+              console.error('Failed to refresh messages:', err)
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [participant?.id, supabase, participantStatus, conversationId, currentUserId])
+
+  // Fetch messages
+  useEffect(() => {
+    const fetchMessages = async () => {
+      if (!conversationId) {
+        setMessages([])
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+
+      try {
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+
+        if (error) throw error
+        setMessages(data || [])
+
+        // Mark messages as read
+        markAsRead()
+      } catch (err) {
+        console.error('Failed to fetch messages:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchMessages()
+  }, [conversationId, supabase, markAsRead])
+
+  // Subscribe to real-time messages and status updates
+  useEffect(() => {
+    if (!conversationId) return
+
+    const channel = supabase
+      .channel(`messages-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as Message
+          setMessages(prev => {
+            if (prev.some(m => m.id === newMessage.id)) return prev
+            return [...prev, newMessage]
+          })
+
+          // Mark as read if from other user
+          if (newMessage.sender_id !== currentUserId) {
+            markAsRead()
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const updated = payload.new as Message
+          const old = payload.old as Message | undefined
+
+          // Only update if status actually changed
+          if (old && old.status === updated.status) return
+
+          // Update message in list
+          setMessages(prev =>
+            prev.map(m => m.id === updated.id ? { ...m, status: updated.status } : m)
+          )
+          // Track status for display
+          setMessageStatuses(prev => {
+            const next = new Map(prev)
+            next.set(updated.id, updated.status || 'sent')
+            return next
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [conversationId, currentUserId, supabase, markAsRead])
+
+  // Scroll to bottom when messages change (only if no scrollToMessageId)
+  useEffect(() => {
+    if (!scrollToMessageId) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, scrollToMessageId])
+
+  // Scroll to specific message when scrollToMessageId is set
+  useEffect(() => {
+    if (!scrollToMessageId || !messages.length) return
+
+    // Find the message in the list
+    const messageIndex = messages.findIndex(m => m.id === scrollToMessageId)
+    if (messageIndex === -1) return
+
+    // Wait for render then scroll
+    const timeoutId = setTimeout(() => {
+      const messageEl = messageRefs.current.get(scrollToMessageId)
+      if (messageEl) {
+        messageEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // Add highlight effect
+        messageEl.classList.add('ring-2', 'ring-primary-500', 'ring-offset-2')
+        setTimeout(() => {
+          messageEl.classList.remove('ring-2', 'ring-primary-500', 'ring-offset-2')
+        }, 2000)
+      }
+    }, 100)
+
+    return () => clearTimeout(timeoutId)
+  }, [scrollToMessageId, messages])
+
+  // Auto-focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [conversationId])
+
+  // Cleanup typing on unmount
+  useEffect(() => {
+    return () => {
+      stopTyping()
+    }
+  }, [stopTyping])
+
+  const handleSend = useCallback(async () => {
+    if (!inputValue.trim() || !conversationId || sending) return
+
+    stopTyping() // Stop typing indicator when sending
+    setSending(true)
+    const content = inputValue.trim()
+    setInputValue('')
+
+    // Optimistic update
+    const optimisticMessage: Message = {
+      id: `temp-${Date.now()}`,
+      conversation_id: conversationId,
+      sender_id: currentUserId,
+      content,
+      content_type: 'text',
+      status: 'sent',
+      created_at: new Date().toISOString(),
+      edited_at: null,
+      deleted_at: null,
+      reply_to: null,
+      media_url: null,
+      media_thumbnail_url: null,
+      media_name: null,
+      media_size: null,
+      media_mime_type: null,
+    }
+    setMessages(prev => [...prev, optimisticMessage])
+
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          sender_id: currentUserId,
+          content,
+          status: 'sent',
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Replace optimistic message with real one
+      setMessages(prev => prev.map(m => m.id === optimisticMessage.id ? data : m))
+
+      // Update conversation's last_message_at
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversationId)
+    } catch (err) {
+      console.error('Failed to send message:', err)
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
+      setInputValue(content) // Restore input on error
+    } finally {
+      setSending(false)
+    }
+  }, [inputValue, conversationId, currentUserId, sending, supabase, stopTyping])
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value)
+    if (e.target.value.trim()) {
+      onType()
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  // Get typing text
+  const getTypingText = (): string => {
+    if (typingUserIds.length === 0) return ''
+    if (typingUserIds.length === 1) return 'typing...'
+    return `${typingUserIds.length} people are typing...`
+  }
+
+  // Status text for header
+  const getStatusText = (): string => {
+    if (typingUserIds.length > 0) {
+      return getTypingText()
+    }
+    switch (participantStatus) {
+      case 'online':
+        return 'Online'
+      case 'away':
+        return 'Away'
+      case 'busy':
+        return 'Busy'
+      default:
+        return 'Offline'
+    }
+  }
+
+  // Get status color for avatar
+  const getStatusColor = (): string => {
+    switch (participantStatus) {
+      case 'online':
+        return 'bg-emerald-500'
+      case 'away':
+        return 'bg-yellow-500'
+      case 'busy':
+        return 'bg-red-500'
+      default:
+        return 'bg-gray-400'
+    }
+  }
+
+  if (!conversationId) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)] text-[var(--text-muted)]">
+        <div className="text-center">
+          <p className="text-lg">Select a conversation</p>
+          <p className="mt-2 text-sm">Choose a chat from the list</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)]">
+        <div className="h-8 w-8 animate-spin rounded-full border-3 border-primary-500 border-t-transparent" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-[var(--bg-app)]">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-4 py-3">
+        {showBackButton && (
+          <Button variant="ghost" size="icon-sm" onClick={onBack} className="mr-1">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        )}
+
+        {participant && (
+          <div className="flex items-center gap-3">
+            {/* Avatar with dynamic status */}
+            <div className="relative">
+              <Avatar user={participant} size="md" showStatus={false} />
+              <span
+                className={cn(
+                  'absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
+                  getStatusColor()
+                )}
+              />
+            </div>
+            <div>
+              <h2 className="font-semibold text-[var(--text-primary)]">{participant.display_name}</h2>
+              <p className={cn(
+                'text-xs',
+                typingUserIds.length > 0 ? 'text-primary-500 animate-pulse' : 'text-[var(--text-secondary)]'
+              )}>
+                {getStatusText()}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="ml-auto flex items-center gap-1">
+          <Button variant="ghost" size="icon">
+            <Phone className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <Video className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <Search className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setShowMediaGallery(true)}>
+            <Image className="h-5 w-5" />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <MoreVertical className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <ScrollArea className="flex-1 p-4">
+        <div className="space-y-4">
+          {messages.map((message, index) => {
+            const showDateSeparator = getDateSeparator(messages, index)
+            const showAvatar = index === 0 || messages[index - 1].sender_id !== message.sender_id
+            const isFromMe = message.sender_id === currentUserId
+            // Get realtime status for this message
+            const realtimeStatus = messageStatuses.get(message.id)
+
+            return (
+              <div
+                key={message.id}
+                ref={(el) => {
+                  if (el) messageRefs.current.set(message.id, el)
+                }}
+              >
+                {showDateSeparator && (
+                  <div className="my-4 flex items-center gap-4">
+                    <div className="flex-1 border-t border-[var(--border-default)]" />
+                    <span className="text-xs font-medium text-[var(--text-muted)]">
+                      {showDateSeparator}
+                    </span>
+                    <div className="flex-1 border-t border-[var(--border-default)]" />
+                  </div>
+                )}
+                <MessageBubble
+                  message={message}
+                  showAvatar={showAvatar}
+                  participant={participant!}
+                  isFromMe={isFromMe}
+                  realtimeStatus={realtimeStatus}
+                />
+              </div>
+            )
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+      </ScrollArea>
+
+      {/* Input */}
+      <div className="border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-3">
+        <div className="flex items-end gap-2">
+          <Button variant="ghost" size="icon">
+            <Smile className="h-5 w-5 text-[var(--text-muted)]" />
+          </Button>
+
+          <MediaAttachmentButton
+            conversationId={conversationId}
+            userId={currentUserId}
+            onUploadComplete={(msg) => {
+              // Add new message to list
+              setMessages(prev => {
+                if (prev.some(m => m.id === msg.id)) return prev
+                return [...prev, msg]
+              })
+            }}
+          />
+
+          <div className="flex-1">
+            <Input
+              ref={inputRef}
+              type="text"
+              placeholder="Type a message..."
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              className="w-full"
+              disabled={sending}
+            />
+          </div>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleSend}
+            disabled={!inputValue.trim() || sending}
+            className={cn(
+              'transition-all',
+              inputValue.trim() && !sending && 'bg-primary-500 hover:bg-primary-600 text-white'
+            )}
+          >
+            <Send className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Media Gallery Modal */}
+      {showMediaGallery && (
+        <MediaGalleryViewer
+          items={mediaItems.map(item => ({
+            id: item.id,
+            url: item.url,
+            type: item.type,
+            name: item.name,
+            size: item.size,
+            mimeType: item.mimeType,
+          }))}
+          onClose={() => setShowMediaGallery(false)}
+        />
+      )}
+    </div>
+  )
+}
