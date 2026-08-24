@@ -1,196 +1,227 @@
-# KẾ HOẠCH TỔNG THỂ DỰ ÁN CHATLY
+# Phase 4.4 - Message Features Implementation Plan
 
-> **Đọc kỹ file này trước khi duyệt.** Nó là bản tóm tắt toàn bộ dự án ở mức strategic, kèm tham chiếu đến docs chi tiết.
+## Context
 
----
-
-## 1. Tóm tắt 1 câu
-
-Xây dựng **ứng dụng chat realtime đầy đủ tính năng** với giao diện giống template [Chatly](https://html.designstream.co.in/chatly/), dùng **Next.js 16 + Supabase**, triển khai qua **6 phases rõ ràng**.
+Phase 4.4 thêm các tính năng nâng cao cho message: reply, edit, delete, forward, reactions, và starred messages. Database đã có sẵn `reply_to`, `edited_at`, `deleted_at` fields - chỉ cần thêm UI và server actions. Reactions và starred messages cần tạo bảng mới.
 
 ---
 
-## 2. Stack đã chốt
+## Database Migrations
 
-| Layer | Technology | Lý do |
-|-------|------------|-------|
-| Framework | **Next.js 16** (App Router) | Server Components, Server Actions, performance tốt nhất 2026 |
-| Language | **TypeScript** strict | Type safety toàn dự án |
-| UI | **TailwindCSS v4** + **shadcn/ui** + **lucide-react** | Tốc độ dev + consistency |
-| Theme | **next-themes** | Light/dark mode đơn giản |
-| State (client) | **Zustand** | UI state ephemeral |
-| State (server) | **Supabase queries** + RSC | Single source of truth |
-| Forms | **react-hook-form** + **zod** | Validation mạnh |
-| Backend | **Supabase** (Postgres + Auth + Realtime + Storage) | Tích hợp nhanh, RLS mạnh, free tier tốt |
-| Auth | Email/Password + Magic Link + OAuth (Google + GitHub) | User đa dạng |
-| Testing | Vitest + Testing Library + Playwright | Stack test chuẩn Next.js |
+### 1. Reactions Table
+**File:** `supabase/migrations/20250101000017_add_reactions_support.sql`
 
----
+```sql
+CREATE TABLE IF NOT EXISTS public.message_reactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES public.messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(message_id, user_id, emoji)
+);
 
-## 3. 6 Phases (đã duyệt ở bước hỏi)
+CREATE INDEX idx_reactions_message ON public.message_reactions(message_id);
+CREATE INDEX idx_reactions_user ON public.message_reactions(user_id);
 
-| Phase | Tên | Thời gian ước tính | Trạng thái |
-|-------|-----|---------------------|------------|
-| 0 | Setup & Planning | 1-2 giờ | 🔄 Đang làm |
-| 1 | **UI đầy đủ với mock data** | 4-6 giờ | ⏳ Sắp tới |
-| 2 | Auth & Real Database | 6-8 giờ | 📋 |
-| 3 | Realtime Messaging | 4-6 giờ | 📋 |
-| 4 | Rich Features (media, search, notifications) | 8-10 giờ | 📋 |
-| 5 | Voice & Video Call | 6-8 giờ | 📋 |
-| 6 | Group Chat, Stories, Polish | 6-8 giờ | 📋 |
+-- RLS: Participants can view reactions
+CREATE POLICY "Participants can view reactions" ON public.message_reactions
+  FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.messages m
+      JOIN public.conversation_participants cp ON m.conversation_id = cp.conversation_id
+      WHERE m.id = message_reactions.message_id AND cp.user_id = auth.uid())
+  );
 
-Chi tiết từng phase → [docs/03-phases.md](docs/03-phases.md)
+-- RLS: Users can add reactions
+CREATE POLICY "Users can add reactions" ON public.message_reactions
+  FOR INSERT TO authenticated WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (SELECT 1 FROM public.messages m
+      JOIN public.conversation_participants cp ON m.conversation_id = cp.conversation_id
+      WHERE m.id = message_id AND cp.user_id = auth.uid())
+  );
 
----
-
-## 4. Đầu ra Phase 1 (Phase đang chuẩn bị vào)
-
-**Mục tiêu**: Toàn bộ UI y hệt template, dùng mock data cứng.
-
-### Sẽ build:
-
-1. **Sidebar (4 icons)**: Chats, Contacts, Calls, Favorites, Status, Settings
-2. **4 panels chính** (grid responsive):
-   - Sidebar nav (64px)
-   - List panel (320px) — conversations / contacts / calls / favorites tùy tab
-   - Detail panel (flex-1) — chat view hoặc settings page
-   - Info panel (320px, mở/đóng qua URL state) — gradient header, avatar, actions, sections
-3. **Pages**:
-   - Chats list + chat view (mặc định)
-   - Contacts (alphabet list với letter headers)
-   - Calls (All/Missed/Incoming/Outgoing tabs)
-   - Favorites (starred contacts)
-   - Status (my status + recent updates)
-   - Settings (Account, Notifications, Appearance, Chats, Storage, Help, Invite)
-4. **Sub-pages settings**: Account và Appearance có nội dung thật (theme toggle, font size)
-5. **Dark/Light mode**: hoạt động đầy cuối, persist qua localStorage
-6. **Mock data**: 10 users, 8 conversations, 50+ messages, call history, status updates
-7. **Animations**: panel slide, message fade, hover states
-8. **Routing**: route groups `(auth)` và `(chat)`, deep linking, browser back/forward
-
-### KHÔNG build ở Phase 1:
-- ❌ Backend thực sự (mock data only)
-- ❌ Authentication thực (current user = "John Doe" giả lập)
-- ❌ Realtime messaging (chat chỉ render mock messages)
-- ❌ Gửi file/ảnh (input chỉ text)
-- ❌ Voice/video call (icon có nhưng không hoạt động)
-
----
-
-## 5. Cấu trúc thư mục (sẽ tạo ở Phase 0)
-
+-- RLS: Users can delete own reactions
+CREATE POLICY "Users can delete own reactions" ON public.message_reactions
+  FOR DELETE TO authenticated USING (user_id = auth.uid());
 ```
-chatly/
-├── CLAUDE.md                    # Bộ não dự án
-├── PLAN.md                      # File này
-├── docs/                        # Bản đồ dự án (đã viết)
-│   ├── 00-overview.md
-│   ├── 01-architecture.md
-│   ├── 02-database.md
-│   ├── 03-phases.md
-│   ├── 04-ui-spec.md
-│   ├── 05-api-routes.md
-│   ├── 06-conventions.md
-│   ├── 07-changelog.md
-│   └── 08-tasks.md
-├── .claude/
-│   ├── agents/                  # 5 agents đã tạo
-│   │   ├── nextjs-architect.md
-│   │   ├── supabase-engineer.md
-│   │   ├── code-reviewer.md
-│   │   ├── test-writer.md
-│   │   └── researcher.md
-│   └── skills/                  # 5 skills đã tạo
-│       ├── chatly-design-tokens.md
-│       ├── chatly-component-pattern.md
-│       ├── supabase-rls-template.md
-│       ├── nextjs-server-action.md
-│       └── chatly-test-fixture.md
-└── (sẽ tạo ở Phase 0 bước tiếp)
-    ├── src/                     # Next.js source
-    ├── public/                  # Static assets
-    ├── supabase/                # Migrations + seed (Phase 2)
-    ├── package.json
-    ├── tsconfig.json
-    ├── next.config.ts
-    ├── tailwind.config.ts
-    ├── .env.example
-    └── .gitignore
+
+### 2. Starred Messages Table
+**File:** `supabase/migrations/20250101000018_add_starred_messages.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS public.starred_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES public.messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(message_id, user_id)
+);
+
+CREATE INDEX idx_starred_user ON public.starred_messages(user_id);
+
+-- RLS: Users can view own starred messages
+CREATE POLICY "Users can view own starred messages" ON public.starred_messages
+  FOR SELECT TO authenticated USING (user_id = auth.uid());
+
+-- RLS: Users can star messages in their conversations
+CREATE POLICY "Users can star messages" ON public.starred_messages
+  FOR INSERT TO authenticated WITH CHECK (
+    user_id = auth.uid()
+    AND EXISTS (SELECT 1 FROM public.messages m
+      JOIN public.conversation_participants cp ON m.conversation_id = cp.conversation_id
+      WHERE m.id = message_id AND cp.user_id = auth.uid())
+  );
+
+-- RLS: Users can unstar their own starred messages
+CREATE POLICY "Users can unstar messages" ON public.starred_messages
+  FOR DELETE TO authenticated USING (user_id = auth.uid());
 ```
 
 ---
 
-## 6. Agents (5) — đã tạo
+## Server Actions
 
-| Agent | Khi nào dùng |
-|-------|--------------|
-| **nextjs-architect** | Đánh giá kiến trúc Next.js, Server vs Client, caching, performance |
-| **supabase-engineer** | Schema, RLS, migrations, Realtime, tối ưu query |
-| **code-reviewer** | Review code tìm bug, security issue, anti-pattern |
-| **test-writer** | Viết Vitest + RTL + Playwright test |
-| **researcher** | Tra cứu docs, đối chiếu best practice mới nhất |
+**File:** `src/lib/actions/messages.ts` (extension)
 
----
+### New actions to add:
 
-## 7. Skills (5) — đã tạo
+```typescript
+// Edit message (within 15 minutes)
+export async function editMessage(messageId: string, newContent: string) {
+  // Verify ownership and time constraint
+  // Update edited_at timestamp
+}
 
-| Skill | Khi nào trigger |
-|-------|-----------------|
-| **chatly-design-tokens** | Khi style component, dùng đúng color/spacing |
-| **chatly-component-pattern** | Khi tạo component mới |
-| **supabase-rls-template** | Khi viết RLS policies (Phase 2+) |
-| **nextjs-server-action** | Khi viết Server Action (Phase 2+) |
-| **chatly-test-fixture** | Khi viết test cần mock data |
+// Soft-delete message
+export async function deleteMessage(messageId: string) {
+  // Verify ownership
+  // Set deleted_at = NOW()
+}
 
----
+// Forward message to conversations
+export async function forwardMessage(messageId: string, targetConversationIds: string[]) {
+  // Verify authorization for source and targets
+  // Insert copies of message to target conversations
+}
 
-## 8. Quy tắc làm việc (đã ghi trong CLAUDE.md)
+// Reactions
+export async function toggleReaction(messageId: string, emoji: string)
+export async function getMessageReactions(messageId: string)
 
-### Mỗi session sẽ:
-1. Đọc CLAUDE.md + docs/08-tasks.md + docs/07-changelog.md
-2. Làm task theo phase hiện tại
-3. Cập nhật tasks/changelog khi xong
-4. Tôn trọng conventions trong docs/06-conventions.md
-
-### Mỗi phase sẽ:
-1. Tạo branch riêng (`phase-X-...`)
-2. Build đủ theo tasks trong [docs/03-phases.md](docs/03-phases.md)
-3. Demo được, review code, merge
-4. Cập nhật docs liên quan
+// Starred messages
+export async function toggleStar(messageId: string)
+export async function getStarredMessages()
+```
 
 ---
 
-## 9. Rủi ro & giảm thiểu
+## Components to Create
 
-| Rủi ro | Giảm thiểu |
-|--------|------------|
-| Next.js 16 còn mới, ít tutorial | `researcher` agent sẽ tra cứu docs chính thức |
-| Supabase RLS sai dẫn đến lộ data | `supabase-engineer` review + checklist bắt buộc |
-| UI lệch template do chưa hiểu rõ | So sánh với ảnh template, dùng design tokens |
-| Mock data khó swap sang real DB | Thiết kế `lib/mock/` cùng shape với Supabase types |
-| Scope creep | Mỗi phase có tiêu chí "Done" rõ ràng |
-
----
-
-## 10. Câu hỏi có thể bạn muốn hỏi thêm?
-
-- [ ] Bạn muốn **tôi bắt đầu Phase 0 ngay** (tạo Next.js project, cài deps, setup lint)?
-- [ ] Hay muốn **review/chỉnh sửa docs** trước khi code?
-- [ ] Hay muốn **xem thêm chi tiết** về phase nào?
+| File | Purpose |
+|------|---------|
+| `src/stores/message-actions-store.ts` | Zustand store: reply/edit/forward state |
+| `src/hooks/use-reactions.ts` | Hook: fetch reactions, toggle, realtime subscription |
+| `src/hooks/use-starred-messages.ts` | Hook: starred messages, toggle, isStarred check |
+| `src/components/chat/message-context-menu.tsx` | Right-click menu (Reply, Edit, Delete, Forward, Star) |
+| `src/components/chat/reply-preview.tsx` | Preview bar above input showing replied message |
+| `src/components/chat/message-reactions.tsx` | Reactions row below message bubble |
+| `src/components/chat/emoji-picker.tsx` | Emoji grid popup (24 common emojis) |
+| `src/components/chat/forward-modal.tsx` | Modal: select conversations to forward to |
+| `src/app/(chat)/starred/page.tsx` | Page: list all starred messages |
 
 ---
 
-## 11. Sau khi bạn duyệt
+## chat-view.tsx Modifications
 
-Tôi sẽ:
-1. Tạo branch `phase-0-setup`
-2. Chạy `npx create-next-app@latest` với config chuẩn
-3. Cài dependencies: tailwindcss, next-themes, @supabase/ssr, @supabase/supabase-js, lucide-react, zustand, react-hook-form, zod, @hookform/resolvers, clsx, tailwind-merge
-4. Setup ESLint, Prettier
-5. Cài shadcn/ui (init + add components cần)
-6. Tạo folder structure theo CLAUDE.md
-7. Tạo README.md với hướng dẫn setup
-8. Initial commit + push
-9. Cập nhật [docs/07-changelog.md](docs/07-changelog.md) và [docs/08-tasks.md](docs/08-tasks.md)
+### State additions:
+```typescript
+const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null)
+const [editingMessage, setEditingMessage] = useState<Message | null>(null)
+```
 
-Sau đó chuyển sang Phase 1.
+### Reply Preview (above input):
+```tsx
+<ReplyPreview replyingTo={replyingToMessage} replyingToProfile={participant} />
+```
+
+### Message Bubble enhancements:
+- Add `onContextMenu` handler to trigger context menu
+- Show `(edited)` label if `edited_at` is set
+- Show `This message was deleted` if `deleted_at` is set
+- Show reactions row below bubble
+
+### Input area changes:
+- If `editingMessage`: show "Edit message" placeholder, send → save
+- Include `reply_to` in message insert when replying
+
+### Handlers:
+- `handleEdit`: validate time window, call server action, update local state
+- `handleDelete`: confirm dialog, call server action, mark as deleted
+- `handleForward`: open forward modal
+
+---
+
+## Key UI Patterns
+
+### Context Menu (follows notification-center pattern):
+```tsx
+<div className="fixed inset-0 z-40 bg-black/20" onClick={close} />
+<div className="fixed z-50 w-56 rounded-xl border..." style={{left, top}}>
+  <MenuItem icon={Reply} label="Reply" onClick={handleReply} />
+  <MenuItem icon={Pencil} label="Edit" onClick={handleEdit} />
+  ...
+</div>
+```
+
+### Toast feedback (use existing notification-store):
+```typescript
+import { useNotificationStore } from '@/stores/notification-store'
+const addToast = useNotificationStore((state) => state.addToast)
+addToast({ type: 'system', title: 'Message edited', body: '' })
+```
+
+### Animations (use existing globals.css):
+```tsx
+<div className="animate-fade-in ...">New element</div>
+```
+
+---
+
+## Testing Checklist
+
+- [ ] Reply to message → shows preview → sends with reply_to
+- [ ] Edit within 15 min → "(edited)" label appears
+- [ ] Edit after 15 min → error toast
+- [ ] Delete → confirm dialog → "deleted" placeholder
+- [ ] Forward → modal opens → select conversations → sent
+- [ ] Add reaction → appears below message
+- [ ] Remove reaction → disappears
+- [ ] Star message → appears in starred page
+- [ ] Unstar → disappears from starred page
+- [ ] All work in dark/light mode
+
+---
+
+## File Summary
+
+### Create (11 files):
+1. `supabase/migrations/20250101000017_add_reactions_support.sql`
+2. `supabase/migrations/20250101000018_add_starred_messages.sql`
+3. `src/stores/message-actions-store.ts`
+4. `src/hooks/use-reactions.ts`
+5. `src/hooks/use-starred-messages.ts`
+6. `src/components/chat/message-context-menu.tsx`
+7. `src/components/chat/reply-preview.tsx`
+8. `src/components/chat/message-reactions.tsx`
+9. `src/components/chat/emoji-picker.tsx`
+10. `src/components/chat/forward-modal.tsx`
+11. `src/app/(chat)/starred/page.tsx`
+
+### Modify (2 files):
+1. `src/lib/actions/messages.ts` - add server actions
+2. `src/components/chat/chat-view.tsx` - integrate all features
+
+### Update (2 files):
+1. `src/types/database.ts` - add reactions/starred tables
+2. `docs/03-phases.md` - mark 4.4 as done

@@ -12,6 +12,7 @@ import {
   Check,
   CheckCheck,
   Image,
+  Pencil,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -25,7 +26,19 @@ import { useConversationMedia } from '@/hooks/use-conversation-media'
 import { MediaMessageBubble } from './media-message-bubble'
 import { MediaAttachmentButton } from './media-attachment-button'
 import { MediaGalleryViewer } from './media-gallery'
-import { isImage, isVideo, isAudio } from '@/lib/supabase/storage'
+import { MessageContextMenu } from './message-context-menu'
+import { ReplyPreview } from './reply-preview'
+import { MessageReactions } from './message-reactions'
+import { ForwardModal } from './forward-modal'
+import { useMessageActionsStore } from '@/stores/message-actions-store'
+import { useNotificationStore } from '@/stores/notification-store'
+import {
+  editMessage,
+  deleteMessage,
+  type Message as MessageType,
+} from '@/lib/actions/messages'
+import { useReactions } from '@/hooks/use-reactions'
+import { useStarredMessages } from '@/hooks/use-starred-messages'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -66,16 +79,30 @@ interface MessageBubbleProps {
   showAvatar: boolean
   participant: Profile
   isFromMe: boolean
-  // Real-time status from subscription
   realtimeStatus?: string
+  reactions?: { emoji: string; count: number; userReacted: boolean }[]
+  onToggleReaction?: (emoji: string) => void
 }
 
-function MessageBubble({ message, showAvatar, participant, isFromMe, realtimeStatus }: MessageBubbleProps) {
-  // Use realtime status if available, otherwise use stored status
+function MessageBubble({
+  message,
+  showAvatar,
+  participant,
+  isFromMe,
+  realtimeStatus,
+  reactions = [],
+  onToggleReaction,
+}: MessageBubbleProps) {
+  const { openContextMenu } = useMessageActionsStore()
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
+  const isDeleted = !!message.deleted_at
 
-  // Helper for time + status row
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    openContextMenu(message, { x: e.clientX, y: e.clientY })
+  }
+
   const renderTimeAndStatus = () => (
     <div
       className={cn(
@@ -83,6 +110,9 @@ function MessageBubble({ message, showAvatar, participant, isFromMe, realtimeSta
         isFromMe && 'justify-end'
       )}
     >
+      {message.edited_at && (
+        <span className="italic">(edited)</span>
+      )}
       <span>{message.created_at ? formatMessageTime(message.created_at) : ''}</span>
       {isFromMe && (
         <span className="flex">
@@ -98,19 +128,28 @@ function MessageBubble({ message, showAvatar, participant, isFromMe, realtimeSta
     </div>
   )
 
-  // Render media content for media messages
-  if (contentType && contentType !== 'text' && message.media_url) {
+  // Render deleted message placeholder
+  if (isDeleted) {
     return (
-      <div className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}>
+      <div
+        className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}
+        onContextMenu={handleContextMenu}
+      >
         <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
-          {/* Avatar */}
           <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
             {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
           </div>
-
-          {/* Media Bubble */}
           <div>
-            <MediaMessageBubble message={message} isFromMe={isFromMe} />
+            <div
+              className={cn(
+                'rounded-2xl px-4 py-2 italic',
+                isFromMe
+                  ? 'bg-primary-500/50 rounded-br-md text-white/70'
+                  : 'rounded-bl-md bg-[var(--bg-message-in)] text-[var(--text-muted)]'
+              )}
+            >
+              <p className="text-sm">This message was deleted</p>
+            </div>
             {renderTimeAndStatus()}
           </div>
         </div>
@@ -118,29 +157,73 @@ function MessageBubble({ message, showAvatar, participant, isFromMe, realtimeSta
     )
   }
 
+  // Render media content for media messages
+  if (contentType && contentType !== 'text' && message.media_url) {
+    return (
+      <div
+        className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}
+        onContextMenu={handleContextMenu}
+      >
+        <div className={cn('flex max-w-[75%] flex-col gap-1', isFromMe && 'items-end')}>
+          <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
+            {/* Avatar */}
+            <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+              {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
+            </div>
+
+            {/* Media Bubble */}
+            <div>
+              <MediaMessageBubble message={message} isFromMe={isFromMe} />
+              {renderTimeAndStatus()}
+            </div>
+          </div>
+          {reactions.length > 0 && (
+            <MessageReactions
+              messageId={message.id}
+              reactions={reactions}
+              onToggleReaction={onToggleReaction || (() => {})}
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // Render text content
   return (
-    <div className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}>
-      <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
-        {/* Avatar */}
-        <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
-          {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
-        </div>
-
-        {/* Bubble */}
-        <div>
-          <div
-            className={cn(
-              'rounded-2xl px-4 py-2',
-              isFromMe
-                ? 'bg-primary-500 rounded-br-md text-white'
-                : 'rounded-bl-md bg-[var(--bg-message-in)]'
-            )}
-          >
-            <p className="text-sm">{message.content}</p>
+    <div
+      className={cn('animate-fade-in flex', isFromMe ? 'justify-end' : 'justify-start')}
+      onContextMenu={handleContextMenu}
+    >
+      <div className={cn('flex max-w-[75%] flex-col gap-1', isFromMe && 'items-end')}>
+        <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
+          {/* Avatar */}
+          <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+            {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
           </div>
-          {renderTimeAndStatus()}
+
+          {/* Bubble */}
+          <div>
+            <div
+              className={cn(
+                'rounded-2xl px-4 py-2',
+                isFromMe
+                  ? 'bg-primary-500 rounded-br-md text-white'
+                  : 'rounded-bl-md bg-[var(--bg-message-in)]'
+              )}
+            >
+              <p className="text-sm">{message.content}</p>
+            </div>
+            {renderTimeAndStatus()}
+          </div>
         </div>
+        {reactions.length > 0 && (
+          <MessageReactions
+            messageId={message.id}
+            reactions={reactions}
+            onToggleReaction={onToggleReaction || (() => {})}
+          />
+        )}
       </div>
     </div>
   )
@@ -164,6 +247,14 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   const [showMediaGallery, setShowMediaGallery] = useState(false)
   // Track realtime status for messages
   const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(new Map())
+  // Edit state
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null)
+  // Reactions per message
+  const [messageReactions, setMessageReactions] = useState<Map<string, { emoji: string; count: number; userReacted: boolean }[]>>(new Map())
+  // Store hooks
+  const { isReplying, replyToMessage, clearReply, setReplyTo } = useMessageActionsStore()
+  const addToast = useNotificationStore((state) => state.addToast)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const inputRef = useRef<HTMLInputElement>(null)
@@ -407,10 +498,97 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     }
   }, [stopTyping])
 
+  // ============================================================================
+  // Edit Message Handler
+  // ============================================================================
+  const handleEdit = useCallback(async (message: Message) => {
+    if (!message.content || !inputValue.trim()) return
+
+    setSending(true)
+    const newContent = inputValue.trim()
+
+    try {
+      const result = await editMessage(message.id, newContent)
+
+      if (result.success && result.message) {
+        // Update local message list
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === message.id ? { ...m, ...result.message } : m
+          )
+        )
+        setEditingMessage(null)
+        setInputValue('')
+        addToast({ type: 'system', title: 'Message edited', body: '' })
+      } else {
+        addToast({
+          type: 'system',
+          title: 'Edit failed',
+          body: result.error || 'Unknown error',
+        })
+      }
+    } catch (err) {
+      console.error('Failed to edit message:', err)
+      addToast({
+        type: 'system',
+        title: 'Edit failed',
+        body: err instanceof Error ? err.message : 'Unknown error',
+      })
+    } finally {
+      setSending(false)
+    }
+  }, [inputValue, addToast])
+
+  // ============================================================================
+  // Delete Message Handler
+  // ============================================================================
+  const handleDelete = useCallback(async (message: Message) => {
+    // Show confirmation dialog
+    if (!confirm('Delete this message?')) return
+
+    try {
+      const result = await deleteMessage(message.id)
+
+      if (result.success) {
+        // Update local message list (mark as deleted)
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === message.id
+              ? { ...m, deleted_at: new Date().toISOString() }
+              : m
+          )
+        )
+        addToast({ type: 'system', title: 'Message deleted', body: '' })
+      } else {
+        addToast({
+          type: 'system',
+          title: 'Delete failed',
+          body: result.error || 'Unknown error',
+        })
+      }
+    } catch (err) {
+      console.error('Failed to delete message:', err)
+      addToast({
+        type: 'system',
+        title: 'Delete failed',
+        body: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }, [addToast])
+
+  // ============================================================================
+  // Send Message Handler (supports reply)
+  // ============================================================================
   const handleSend = useCallback(async () => {
+    // If editing, handle edit instead
+    if (editingMessage) {
+      handleEdit(editingMessage)
+      return
+    }
+
     if (!inputValue.trim() || !conversationId || sending) return
 
-    stopTyping() // Stop typing indicator when sending
+    stopTyping()
     setSending(true)
     const content = inputValue.trim()
     setInputValue('')
@@ -426,7 +604,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       created_at: new Date().toISOString(),
       edited_at: null,
       deleted_at: null,
-      reply_to: null,
+      reply_to: replyToMessage?.id || null,
       media_url: null,
       media_thumbnail_url: null,
       media_name: null,
@@ -443,6 +621,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           sender_id: currentUserId,
           content,
           status: 'sent',
+          reply_to: replyToMessage?.id || null,
         })
         .select()
         .single()
@@ -452,6 +631,9 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       // Replace optimistic message with real one
       setMessages(prev => prev.map(m => m.id === optimisticMessage.id ? data : m))
 
+      // Clear reply state
+      clearReply()
+
       // Update conversation's last_message_at
       await supabase
         .from('conversations')
@@ -459,13 +641,12 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
         .eq('id', conversationId)
     } catch (err) {
       console.error('Failed to send message:', err)
-      // Remove optimistic message on error
       setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
-      setInputValue(content) // Restore input on error
+      setInputValue(content)
     } finally {
       setSending(false)
     }
-  }, [inputValue, conversationId, currentUserId, sending, supabase, stopTyping])
+  }, [inputValue, conversationId, currentUserId, sending, supabase, stopTyping, editingMessage, handleEdit, replyToMessage, clearReply])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value)
@@ -480,6 +661,72 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       handleSend()
     }
   }
+
+  // ============================================================================
+  // Reaction Handler
+  // ============================================================================
+  const handleToggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    const { toggleReaction } = await import('@/lib/actions/messages')
+
+    // Optimistic update
+    setMessageReactions(prev => {
+      const next = new Map(prev)
+      const existing = next.get(messageId) || []
+      const emojiIndex = existing.findIndex(r => r.emoji === emoji)
+
+      if (emojiIndex >= 0) {
+        const updated = [...existing]
+        if (updated[emojiIndex].count <= 1) {
+          updated.splice(emojiIndex, 1)
+        } else {
+          updated[emojiIndex] = {
+            ...updated[emojiIndex],
+            count: updated[emojiIndex].count - 1,
+            userReacted: false,
+          }
+        }
+        next.set(messageId, updated)
+      } else {
+        next.set(messageId, [...existing, { emoji, count: 1, userReacted: true }])
+      }
+      return next
+    })
+
+    try {
+      await toggleReaction(messageId, emoji)
+    } catch (err) {
+      console.error('Failed to toggle reaction:', err)
+    }
+  }, [])
+
+  // Fetch reactions when messages change
+  useEffect(() => {
+    const fetchReactions = async () => {
+      const { getMessageReactions } = await import('@/lib/actions/messages')
+      const newReactions = new Map<string, { emoji: string; count: number; userReacted: boolean }[]>()
+
+      for (const msg of messages) {
+        if (msg.id && !msg.id.startsWith('temp-')) {
+          try {
+            const reactions = await getMessageReactions(msg.id)
+            if (reactions.length > 0) {
+              newReactions.set(msg.id, reactions)
+            }
+          } catch (err) {
+            // Ignore errors for individual messages
+          }
+        }
+      }
+
+      if (newReactions.size > 0) {
+        setMessageReactions(newReactions)
+      }
+    }
+
+    if (messages.length > 0) {
+      fetchReactions()
+    }
+  }, [messages])
 
   // Get typing text
   const getTypingText = (): string => {
@@ -624,6 +871,8 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
                   participant={participant!}
                   isFromMe={isFromMe}
                   realtimeStatus={realtimeStatus}
+                  reactions={messageReactions.get(message.id) || []}
+                  onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
                 />
               </div>
             )
@@ -655,7 +904,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
             <Input
               ref={inputRef}
               type="text"
-              placeholder="Type a message..."
+              placeholder={editingMessage ? 'Edit message...' : 'Type a message...'}
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -674,10 +923,17 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
               inputValue.trim() && !sending && 'bg-primary-500 hover:bg-primary-600 text-white'
             )}
           >
-            <Send className="h-5 w-5" />
+            {editingMessage ? (
+              <Pencil className="h-5 w-5" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
           </Button>
         </div>
       </div>
+
+      {/* Reply Preview */}
+      <ReplyPreview replyingTo={replyToMessage} replyingToProfile={participant} />
 
       {/* Media Gallery Modal */}
       {showMediaGallery && (
@@ -693,6 +949,24 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           onClose={() => setShowMediaGallery(false)}
         />
       )}
+
+      {/* Context Menu */}
+      <MessageContextMenu
+        currentUserId={currentUserId}
+        onEdit={(message) => {
+          setEditingMessage(message)
+          setInputValue(message.content || '')
+        }}
+        onDelete={handleDelete}
+      />
+
+      {/* Forward Modal */}
+      <ForwardModal
+        currentUserId={currentUserId}
+        onForwardComplete={() => {
+          // Optionally scroll or do something after forward
+        }}
+      />
     </div>
   )
 }

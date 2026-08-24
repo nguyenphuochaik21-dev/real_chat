@@ -227,18 +227,18 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [ ] Full-text search với Postgres `tsvector`
 - [ ] Filter by sender, date
 
-#### 4.3. Notifications
-- [ ] Push notifications (Web Push API)
-- [ ] In-app notification center
-- [ ] Notification preferences trong Settings
+#### 4.3. Notifications ✅
+- [x] Push notifications (Web Push API)
+- [x] In-app notification center
+- [x] Notification preferences trong Settings
 
-#### 4.4. Message features
-- [ ] Reply to message
-- [ ] Edit message
-- [ ] Delete message (soft delete)
-- [ ] Forward message
-- [ ] Reactions (emoji)
-- [ ] Star/Pin message
+#### 4.4. Message features ✅
+- [x] Reply to message
+- [x] Edit message
+- [x] Delete message (soft delete)
+- [x] Forward message
+- [x] Reactions (emoji)
+- [x] Star/Pin message
 
 #### 4.5. Conversation management
 - [ ] Archive, Pin, Mute

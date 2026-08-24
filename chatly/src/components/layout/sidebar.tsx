@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Users, Phone, Star, CircleDot, Settings, Search } from 'lucide-react'
+import { MessageSquare, Users, Phone, Star, CircleDot, Settings, Search, MessageCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +18,7 @@ const navItems = [
   { href: '/contacts', icon: Users, label: 'Contacts' },
   { href: '/calls', icon: Phone, label: 'Calls' },
   { href: '/favorites', icon: Star, label: 'Favorites' },
+  { href: '/starred', icon: MessageCircle, label: 'Starred' },
   { href: '/status', icon: CircleDot, label: 'Status' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ]

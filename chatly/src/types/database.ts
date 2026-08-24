@@ -215,6 +215,81 @@ export type Database = {
         }
         Relationships: []
       }
+      message_reactions: {
+        Row: {
+          id: string
+          message_id: string
+          user_id: string
+          emoji: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          message_id: string
+          user_id: string
+          emoji: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          message_id?: string
+          user_id?: string
+          emoji?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      starred_messages: {
+        Row: {
+          id: string
+          message_id: string
+          user_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          message_id: string
+          user_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          message_id?: string
+          user_id?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "starred_messages_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "starred_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
