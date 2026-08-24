@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { MessageSquare, Users, Phone, Star, CircleDot, Settings, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -10,6 +9,9 @@ import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { usePresence } from '@/hooks/use-presence'
 import { SearchModal } from '@/components/chat/search-modal'
+import { NotificationBell, NotificationToastContainer, NotificationCenter } from '@/components/notifications'
+import { useNotificationStore } from '@/stores/notification-store'
+import { usePathname } from 'next/navigation'
 
 const navItems = [
   { href: '/chats', icon: MessageSquare, label: 'Chats' },
@@ -50,7 +52,11 @@ export function Sidebar() {
   const [loading, setLoading] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
   const supabaseRef = useRef(createClient())
+
+  // Notification store
+  const notificationUnreadCount = useNotificationStore((s) => s.unreadCount)
 
   // Initialize presence tracking for current user
   const { } = usePresence(profile?.id || null)
@@ -59,9 +65,59 @@ export function Sidebar() {
   useEffect(() => {
     let mounted = true
     let unreadChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
+    let notificationChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
     let currentUserId: string | null = null
+    const pathname = usePathname()
 
     const supabase = supabaseRef.current
+
+    const addNotification = useNotificationStore.getState().addNotification
+
+    const setupNotificationSubscription = (userId: string) => {
+      notificationChannel = supabase
+        .channel(`notifications:${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+          },
+          async (payload) => {
+            const newMsg = payload.new as {
+              id: string
+              sender_id: string
+              conversation_id: string
+              content: string
+              created_at: string
+            }
+
+            // Skip if from current user
+            if (newMsg.sender_id === userId) return
+
+            // Skip if we're viewing this conversation
+            if (pathname === `/chats/${newMsg.conversation_id}`) return
+
+            // Fetch sender info
+            const { data: sender } = await supabase
+              .from('profiles')
+              .select('display_name, avatar_url')
+              .eq('id', newMsg.sender_id)
+              .single()
+
+            addNotification({
+              type: 'message',
+              title: sender?.display_name || 'New message',
+              body: newMsg.content.slice(0, 100) + (newMsg.content.length > 100 ? '...' : ''),
+              conversationId: newMsg.conversation_id,
+              senderId: newMsg.sender_id,
+              senderName: sender?.display_name,
+              senderAvatar: sender?.avatar_url,
+            })
+          }
+        )
+        .subscribe()
+    }
 
     const fetchUnreadCount = async (userId: string) => {
       // Get conversations with their participants' last_read_at
@@ -148,6 +204,7 @@ export function Sidebar() {
           // Now fetch unread count and setup subscription with userId available
           await fetchUnreadCount(user.id)
           setupUnreadSubscription(user.id)
+          setupNotificationSubscription(user.id)
         }
       } else if (mounted) {
         setLoading(false)
@@ -159,6 +216,7 @@ export function Sidebar() {
     return () => {
       mounted = false
       if (unreadChannel) supabase.removeChannel(unreadChannel)
+      if (notificationChannel) supabase.removeChannel(notificationChannel)
       if (currentUserId) setUserOffline(supabase)
     }
   }, [])
@@ -195,6 +253,11 @@ export function Sidebar() {
           >
             <Search className="h-5 w-5" />
           </button>
+
+          {/* Notification bell */}
+          <NotificationBell
+            onClick={() => setShowNotifications(true)}
+          />
           {navItems.map((item) => {
             const isActive =
               item.href === '/chats'
@@ -257,6 +320,15 @@ export function Sidebar() {
         onSelectContact={(contact) => {
           console.log('Selected contact:', contact)
         }}
+      />
+
+      {/* Toast notifications */}
+      <NotificationToastContainer />
+
+      {/* Notification center */}
+      <NotificationCenter
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
       />
     </>
   )
