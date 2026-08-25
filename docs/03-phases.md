@@ -210,9 +210,10 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 
 ---
 
-## Phase 4 — Rich Features 🚀
+## Phase 4 — Rich Features 🚀 ✅
 
 **Mục tiêu**: Media, search, notifications, nâng cao UX.
+**Trạng thái**: ✅ Hoàn thành (2026-08-25)
 
 ### Tasks
 
@@ -240,11 +241,15 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Reactions (emoji)
 - [x] Star/Pin message
 
-#### 4.5. Conversation management
-- [ ] Archive, Pin, Mute
-- [ ] Block user
-- [ ] Delete conversation
-- [ ] Clear history
+#### 4.5. Conversation management ✅
+- [x] Archive conversations (with Archived tab)
+- [x] Pin/Unpin conversation
+- [x] Mute/Unmute conversation
+- [x] Block user (from message context menu)
+- [x] Unblock user (from Blocked Users modal)
+- [x] Delete conversation (leave conversation)
+- [x] Clear conversation history (soft delete own messages)
+- [x] Filter blocked users from conversations list
 
 #### 4.6. Voice & Video call (UI only, Phase 5 mới gọi thật)
 - [ ] Call screen UI
