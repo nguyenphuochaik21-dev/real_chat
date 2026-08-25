@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import {
   Archive,
+  ArchiveRestore,
   Trash2,
   Ban,
   X,
-  MoreHorizontal,
   BellOff,
   Bell,
   Pin,
@@ -22,7 +22,6 @@ import {
   toggleMuted,
 } from '@/lib/actions/conversations'
 import { useNotificationStore } from '@/stores/notification-store'
-import { cn } from '@/lib/utils'
 
 interface ConversationActionsProps {
   conversationId: string
@@ -30,8 +29,9 @@ interface ConversationActionsProps {
   userId: string
   isPinned: boolean
   isMuted: boolean
+  isArchived?: boolean
   onClose: () => void
-  onAction?: () => void
+  onAction?: (updates: Partial<{ is_pinned: boolean; is_muted: boolean; is_archived: boolean }>) => void
 }
 
 export function ConversationActions({
@@ -40,11 +40,13 @@ export function ConversationActions({
   userId,
   isPinned: initialPinned,
   isMuted: initialMuted,
+  isArchived: initialArchived = false,
   onClose,
   onAction,
 }: ConversationActionsProps) {
   const [isPinned, setIsPinned] = useState(initialPinned)
   const [isMuted, setIsMuted] = useState(initialMuted)
+  const [isArchived, setIsArchived] = useState(initialArchived)
   const [loading, setLoading] = useState<string | null>(null)
   const addToast = useNotificationStore((state) => state.addToast)
 
@@ -59,7 +61,7 @@ export function ConversationActions({
         title: newValue ? 'Pinned' : 'Unpinned',
         body: newValue ? 'Conversation pinned' : 'Conversation unpinned',
       })
-      onAction?.()
+      onAction?.({ is_pinned: newValue })
     } catch (err) {
       addToast({
         type: 'system',
@@ -82,7 +84,7 @@ export function ConversationActions({
         title: newValue ? 'Muted' : 'Unmuted',
         body: newValue ? 'You won\'t receive notifications' : 'Notifications enabled',
       })
-      onAction?.()
+      onAction?.({ is_muted: newValue })
     } catch (err) {
       addToast({
         type: 'system',
@@ -94,18 +96,26 @@ export function ConversationActions({
     }
   }
 
-  const handleArchive = async () => {
-    if (!confirm(`Archive this conversation with ${conversationTitle}?`)) return
+  const handleArchiveToggle = async () => {
     setLoading('archive')
     try {
-      await archiveConversation(conversationId, userId, true)
+      const newValue = !isArchived
+      if (!newValue && !confirm(`Unarchive this conversation with ${conversationTitle}?`)) {
+        setLoading(null)
+        return
+      }
+      if (newValue && !confirm(`Archive this conversation with ${conversationTitle}?`)) {
+        setLoading(null)
+        return
+      }
+      await archiveConversation(conversationId, userId, newValue)
+      setIsArchived(newValue)
       addToast({
         type: 'system',
-        title: 'Archived',
-        body: 'Conversation archived',
+        title: newValue ? 'Archived' : 'Unarchived',
+        body: newValue ? 'Conversation archived' : 'Conversation restored to active chats',
       })
-      onAction?.()
-      onClose()
+      onAction?.({ is_archived: newValue })
     } catch (err) {
       addToast({
         type: 'system',
@@ -118,7 +128,7 @@ export function ConversationActions({
   }
 
   const handleClearHistory = async () => {
-    if (!confirm(`Clear all messages in this conversation? Your messages will be deleted for everyone.`)) return
+    if (!confirm(`Clear all your messages in this conversation?`)) return
     setLoading('clear')
     try {
       const result = await clearConversationHistory(conversationId, userId)
@@ -128,7 +138,7 @@ export function ConversationActions({
           title: 'History cleared',
           body: result.deletedCount ? `${result.deletedCount} messages deleted` : 'No messages to delete',
         })
-        onAction?.()
+        onAction?.({})
       } else {
         addToast({
           type: 'system',
@@ -158,7 +168,7 @@ export function ConversationActions({
           title: 'Deleted',
           body: 'Conversation deleted',
         })
-        onAction?.()
+        onAction?.({})
         onClose()
       } else {
         addToast({
@@ -233,14 +243,23 @@ export function ConversationActions({
           )}
         </button>
 
-        {/* Archive */}
+        {/* Archive/Unarchive */}
         <button
-          onClick={handleArchive}
+          onClick={handleArchiveToggle}
           disabled={loading === 'archive'}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
         >
-          <Archive className="h-4 w-4 text-[var(--text-muted)]" />
-          <span className="text-[var(--text-primary)]">Archive</span>
+          {isArchived ? (
+            <>
+              <ArchiveRestore className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">Unarchive</span>
+            </>
+          ) : (
+            <>
+              <Archive className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">Archive</span>
+            </>
+          )}
         </button>
 
         <Separator className="my-1" />

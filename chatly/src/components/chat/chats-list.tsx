@@ -30,6 +30,7 @@ interface ConversationWithDetails {
   unread_count: number
   is_pinned: boolean
   is_muted: boolean
+  is_archived: boolean
 }
 
 function formatMessageTime(dateStr: string | null): string {
@@ -98,28 +99,28 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="font-medium text-[var(--text-primary)]">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate font-medium text-[var(--text-primary)]">
               {conversation.participant.display_name}
             </span>
-            {conversation.is_pinned && <Pin className="h-3.5 w-3.5 text-[var(--text-muted)]" />}
+            {conversation.is_pinned && (
+              <Pin className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+            )}
+            {conversation.is_muted && (
+              <BellOff className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
+            )}
           </div>
-          <span className="text-xs text-[var(--text-muted)]">
+          <span className="shrink-0 text-xs text-[var(--text-muted)]">
             {formatMessageTime(conversation.last_message?.created_at || conversation.last_message_at)}
           </span>
         </div>
 
-        <div className="mt-0.5 flex items-center justify-between">
-          <div className="flex items-center gap-2 overflow-hidden">
-            {conversation.is_muted && (
-              <BellOff className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-            )}
-            <p className="truncate text-sm text-[var(--text-secondary)]">
-              {isFromMe && <span className="text-[var(--text-muted)]">You: </span>}
-              {conversation.last_message?.content || 'No messages yet'}
-            </p>
-          </div>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <p className="truncate text-sm text-[var(--text-secondary)]">
+            {isFromMe && <span className="text-[var(--text-muted)]">You: </span>}
+            {conversation.last_message?.content || 'No messages yet'}
+          </p>
 
           {conversation.unread_count > 0 && (
             <Badge variant="primary" size="sm">
@@ -141,7 +142,16 @@ type TabType = 'all' | 'unread' | 'archived'
 
 export function ChatsList({ selectedConversationId, currentUserId }: ChatsListProps) {
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<TabType>('all')
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    // Restore tab from localStorage to survive navigation
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('chats-list-tab')
+        if (saved === 'all' || saved === 'unread' || saved === 'archived') return saved
+      } catch {}
+    }
+    return 'all'
+  })
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
   const [archivedConversations, setArchivedConversations] = useState<ConversationWithDetails[]>([])
   const [loading, setLoading] = useState(true)
@@ -154,6 +164,14 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   const supabase = createClient()
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+
+  // Persist tab choice
+  const handleTabChange = (tab: TabType) => {
+    setActiveTab(tab)
+    try {
+      localStorage.setItem('chats-list-tab', tab)
+    } catch {}
+  }
 
   const fetchBlockedUsers = useCallback(async () => {
     try {
@@ -243,6 +261,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
             unread_count: unreadCount || 0,
             is_pinned: part.is_pinned,
             is_muted: part.is_muted,
+            is_archived: part.is_archived,
           })
         }
       }
@@ -252,9 +271,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
       const archived: ConversationWithDetails[] = []
 
       for (const conv of conversationsWithParticipants) {
-        // Get is_archived from participation
-        const participation = participations?.find(p => p.conversation_id === conv.id)
-        if (participation?.is_archived) {
+        if (conv.is_archived) {
           archived.push(conv)
         } else {
           active.push(conv)
@@ -322,14 +339,32 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           filter: `user_id=eq.${currentUserId}`,
         },
         (payload) => {
-          const updated = payload.new as { conversation_id: string; last_read_at: string }
-          // When last_read_at updates (user opened a conversation), reset unread count
-          setConversations(prev => prev.map(conv => {
-            if (conv.id === updated.conversation_id) {
-              return { ...conv, unread_count: 0 }
-            }
-            return conv
-          }))
+          const updated = payload.new as {
+            conversation_id: string
+            last_read_at: string
+            is_pinned: boolean | null
+            is_muted: boolean | null
+            is_archived: boolean | null
+          }
+
+          // Update the conversation in both lists (active + archived) for all fields
+          const updateInList = (prev: ConversationWithDetails[]) =>
+            prev.map(conv => {
+              if (conv.id === updated.conversation_id) {
+                return {
+                  ...conv,
+                  is_pinned: updated.is_pinned ?? conv.is_pinned,
+                  is_muted: updated.is_muted ?? conv.is_muted,
+                  is_archived: updated.is_archived ?? conv.is_archived,
+                  unread_count: updated.last_read_at && updated.last_read_at !== conv.last_message_at
+                    ? 0 : conv.unread_count,
+                }
+              }
+              return conv
+            })
+
+          setConversations(updateInList)
+          setArchivedConversations(updateInList)
         }
       )
       .on(
@@ -443,6 +478,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     let matchesTab = true
     if (activeTab === 'unread') {
       matchesTab = conv.unread_count > 0
+    } else if (activeTab === 'all') {
+      // Don't show archived in 'all' tab
+      matchesTab = !conv.is_archived
     }
 
     return matchesSearch && matchesTab
@@ -495,7 +533,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         {tabs.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => handleTabChange(tab.key)}
             className={cn(
               'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
               activeTab === tab.key

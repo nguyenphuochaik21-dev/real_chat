@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useNotificationStore, type NotificationType } from '@/stores/notification-store'
+import { useNotificationStore } from '@/stores/notification-store'
 
 interface UseNotificationsOptions {
   userId: string | null
@@ -47,18 +47,32 @@ export function useNotifications({
           // Skip if we're currently viewing this conversation
           if (currentConversationId === newMessage.conversation_id) return
 
+          // Skip if user is blocked by this sender OR has blocked this sender
+          // (we'll check both directions to be safe)
+          const { data: blockCheck } = await supabase
+            .from('user_blocks')
+            .select('id')
+            .or(`and(blocker_id.eq.${userId},blocked_id.eq.${newMessage.sender_id}),and(blocker_id.eq.${newMessage.sender_id},blocked_id.eq.${userId})`)
+            .limit(1)
+
+          if (blockCheck && blockCheck.length > 0) return
+
+          // Check conversation participation flags (muted / archived)
+          const { data: participation } = await supabase
+            .from('conversation_participants')
+            .select('is_muted, is_archived')
+            .eq('conversation_id', newMessage.conversation_id)
+            .eq('user_id', userId)
+            .single()
+
+          // Skip if conversation is archived or muted
+          if (participation?.is_archived || participation?.is_muted) return
+
           // Fetch sender info
           const { data: sender } = await supabase
             .from('profiles')
             .select('display_name, avatar_url')
             .eq('id', newMessage.sender_id)
-            .single()
-
-          // Fetch conversation name
-          const { data: conversation } = await supabase
-            .from('conversations')
-            .select('name')
-            .eq('id', newMessage.conversation_id)
             .single()
 
           // Add notification
@@ -82,7 +96,6 @@ export function useNotifications({
     }
   }, [userId, currentConversationId, enabled, store, supabase])
 
-  // Load existing notifications from database (future: when we persist notifications)
   const loadNotifications = async () => {
     // TODO: Load from database when we add notifications table
   }

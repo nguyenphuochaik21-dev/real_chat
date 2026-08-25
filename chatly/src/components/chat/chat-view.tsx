@@ -326,6 +326,12 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Conversation actions menu
   const [showConversationActions, setShowConversationActions] = useState(false)
   const conversationActionsRef = useRef<HTMLDivElement>(null)
+  // Track participation flags for this conversation
+  const [conversationFlags, setConversationFlags] = useState({
+    is_pinned: false,
+    is_muted: false,
+    is_archived: false,
+  })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -350,6 +356,22 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       }
 
       try {
+        // Fetch flags in parallel with participants
+        const { data: myParticipation } = await supabase
+          .from('conversation_participants')
+          .select('is_pinned, is_muted, is_archived')
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .single()
+
+        if (myParticipation) {
+          setConversationFlags({
+            is_pinned: !!myParticipation.is_pinned,
+            is_muted: !!myParticipation.is_muted,
+            is_archived: !!myParticipation.is_archived,
+          })
+        }
+
         const { data: otherParticipants } = await supabase
           .from('conversation_participants')
           .select('user_id')
@@ -1110,11 +1132,15 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
               conversationId={conversationId}
               conversationTitle={participant.display_name}
               userId={currentUserId}
-              isPinned={false}
-              isMuted={false}
+              isPinned={conversationFlags.is_pinned}
+              isMuted={conversationFlags.is_muted}
+              isArchived={conversationFlags.is_archived}
               onClose={() => setShowConversationActions(false)}
-              onAction={() => {
-                // Optionally refresh data
+              onAction={(updates) => {
+                setConversationFlags(prev => ({
+                  ...prev,
+                  ...updates,
+                }))
               }}
             />
           </div>
