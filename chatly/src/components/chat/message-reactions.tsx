@@ -10,17 +10,19 @@ interface MessageReactionsProps {
   messageId: string
   reactions: MessageReaction[]
   onToggleReaction: (emoji: string) => void
+  showAddButton?: boolean
 }
 
 export function MessageReactions({
   messageId,
   reactions,
   onToggleReaction,
+  showAddButton = true,
 }: MessageReactionsProps) {
   const [showPicker, setShowPicker] = useState(false)
 
-  // Don't render if no reactions and picker is closed
-  if (reactions.length === 0 && !showPicker) return null
+  // Don't render if no reactions AND add button is hidden AND picker is closed
+  if (reactions.length === 0 && !showAddButton && !showPicker) return null
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -54,31 +56,37 @@ export function MessageReactions({
         </button>
       ))}
 
-      {/* Add reaction button */}
-      <div className="relative">
-        <button
-          onClick={() => setShowPicker(!showPicker)}
-          className={cn(
-            'flex h-7 w-7 items-center justify-center rounded-full',
-            'bg-[var(--bg-hover)] hover:bg-[var(--border-default)]',
-            'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
-            'transition-colors',
-            showPicker && 'bg-primary-500/20 text-primary-500'
-          )}
-        >
-          <Smile className="h-4 w-4" />
-        </button>
-
-        {showPicker && (
-          <EmojiPicker
-            onSelect={(emoji) => {
-              onToggleReaction(emoji)
-              setShowPicker(false)
+      {/* Add reaction button - only show when hovered or picker is open */}
+      {(showAddButton || showPicker) && (
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowPicker(!showPicker)
             }}
-            onClose={() => setShowPicker(false)}
-          />
-        )}
-      </div>
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded-full',
+              'bg-[var(--bg-hover)] hover:bg-[var(--border-default)]',
+              'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+              'transition-all',
+              showPicker && 'bg-primary-500/20 text-primary-500',
+              !showAddButton && !showPicker && 'opacity-0'
+            )}
+          >
+            <Smile className="h-4 w-4" />
+          </button>
+
+          {showPicker && (
+            <EmojiPicker
+              onSelect={(emoji) => {
+                onToggleReaction(emoji)
+                setShowPicker(false)
+              }}
+              onClose={() => setShowPicker(false)}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }

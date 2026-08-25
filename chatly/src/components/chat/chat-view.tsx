@@ -79,9 +79,12 @@ interface MessageBubbleProps {
   showAvatar: boolean
   participant: Profile
   isFromMe: boolean
+  currentUserId: string
   realtimeStatus?: string
   reactions?: { emoji: string; count: number; userReacted: boolean }[]
   onToggleReaction?: (emoji: string) => void
+  replyToMessage?: Message | null
+  onReplyClick?: (messageId: string) => void
 }
 
 function MessageBubble({
@@ -89,15 +92,61 @@ function MessageBubble({
   showAvatar,
   participant,
   isFromMe,
+  currentUserId,
   realtimeStatus,
   reactions = [],
   onToggleReaction,
+  replyToMessage,
+  onReplyClick,
 }: MessageBubbleProps) {
   const [isHovered, setIsHovered] = useState(false)
   const { openContextMenu } = useMessageActionsStore()
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
   const isDeleted = !!message.deleted_at
+
+  const handleReplyClick = () => {
+    if (replyToMessage?.id && onReplyClick) {
+      onReplyClick(replyToMessage.id)
+    }
+  }
+
+  const renderReplyQuote = () => {
+    if (!message.reply_to || !replyToMessage) return null
+
+    const replyContent = replyToMessage.deleted_at
+      ? '[Message deleted]'
+      : replyToMessage.content || '[Media]'
+
+    const replySender = replyToMessage.sender_id === currentUserId
+      ? 'You'
+      : participant?.display_name || 'User'
+
+    return (
+      <div
+        onClick={handleReplyClick}
+        className={cn(
+          'mb-2 cursor-pointer border-l-2 pl-2 transition-colors',
+          isFromMe
+            ? 'border-white/40 hover:border-white/70'
+            : 'border-primary-500/60 hover:border-primary-500'
+        )}
+      >
+        <p className={cn(
+          'text-xs font-medium',
+          isFromMe ? 'text-white/80' : 'text-primary-500'
+        )}>
+          {replySender}
+        </p>
+        <p className={cn(
+          'line-clamp-1 text-xs',
+          isFromMe ? 'text-white/70' : 'text-[var(--text-muted)]'
+        )}>
+          {replyContent}
+        </p>
+      </div>
+    )
+  }
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -182,14 +231,13 @@ function MessageBubble({
               {renderTimeAndStatus()}
             </div>
           </div>
-          {/* Show reactions on hover or when there are reactions */}
-          {(isHovered || reactions.length > 0) && (
-            <MessageReactions
-              messageId={message.id}
-              reactions={reactions}
-              onToggleReaction={onToggleReaction || (() => {})}
-            />
-          )}
+          {/* Always show reactions row - emoji picker button appears on hover */}
+          <MessageReactions
+            messageId={message.id}
+            reactions={reactions}
+            onToggleReaction={onToggleReaction || (() => {})}
+            showAddButton={isHovered}
+          />
         </div>
       </div>
     )
@@ -220,19 +268,19 @@ function MessageBubble({
                   : 'rounded-bl-md bg-[var(--bg-message-in)]'
               )}
             >
+              {renderReplyQuote()}
               <p className="text-sm">{message.content}</p>
             </div>
             {renderTimeAndStatus()}
           </div>
         </div>
-        {/* Show reactions on hover or when there are reactions */}
-        {(isHovered || reactions.length > 0) && (
-          <MessageReactions
-            messageId={message.id}
-            reactions={reactions}
-            onToggleReaction={onToggleReaction || (() => {})}
-          />
-        )}
+        {/* Always show reactions row - emoji picker button appears on hover */}
+        <MessageReactions
+          messageId={message.id}
+          reactions={reactions}
+          onToggleReaction={onToggleReaction || (() => {})}
+          showAddButton={isHovered}
+        />
       </div>
     </div>
   )
@@ -919,9 +967,16 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
                   showAvatar={showAvatar}
                   participant={participant!}
                   isFromMe={isFromMe}
+                  currentUserId={currentUserId}
                   realtimeStatus={realtimeStatus}
                   reactions={messageReactions.get(message.id) || []}
                   onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
+                  replyToMessage={message.reply_to ? messages.find(m => m.id === message.reply_to) : null}
+                  onReplyClick={(msgId) => {
+                    // Scroll to replied message
+                    const el = messageRefs.current.get(msgId)
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }}
                 />
               </div>
             )
