@@ -14,6 +14,11 @@ import {
   Image,
   Pencil,
 } from 'lucide-react'
+import {
+  archiveConversation,
+  deleteConversation,
+  clearConversationHistory,
+} from '@/lib/actions/conversations'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -30,6 +35,8 @@ import { MessageContextMenu } from './message-context-menu'
 import { ReplyPreview } from './reply-preview'
 import { MessageReactions } from './message-reactions'
 import { ForwardModal } from './forward-modal'
+import { BlockUserModal } from './block-user-modal'
+import { ConversationActions } from './conversation-actions'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
 import {
@@ -311,6 +318,14 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Store hooks
   const { isReplying, replyToMessage, clearReply, setReplyTo } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
+
+  // Block user modal
+  const [blockModalOpen, setBlockModalOpen] = useState(false)
+  const [userToBlock, setUserToBlock] = useState<{ id: string; display_name: string; avatar_url: string | null } | null>(null)
+
+  // Conversation actions menu
+  const [showConversationActions, setShowConversationActions] = useState(false)
+  const conversationActionsRef = useRef<HTMLDivElement>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -930,7 +945,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           <Button variant="ghost" size="icon" onClick={() => setShowMediaGallery(true)}>
             <Image className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={() => setShowConversationActions(true)}>
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
@@ -1062,6 +1077,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           setInputValue(message.content || '')
         }}
         onDelete={handleDelete}
+        onBlockUser={(userId, userName) => {
+          setUserToBlock({ id: userId, display_name: userName, avatar_url: null })
+          setBlockModalOpen(true)
+        }}
       />
 
       {/* Forward Modal */}
@@ -1071,6 +1090,36 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           // Optionally scroll or do something after forward
         }}
       />
+
+      {/* Block User Modal */}
+      <BlockUserModal
+        isOpen={blockModalOpen}
+        onClose={() => setBlockModalOpen(false)}
+        userToBlock={userToBlock}
+        onBlocked={() => {
+          // Refresh conversations list
+        }}
+      />
+
+      {/* Conversation Actions Menu */}
+      {showConversationActions && participant && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowConversationActions(false)} />
+          <div ref={conversationActionsRef} className="absolute right-4 top-16">
+            <ConversationActions
+              conversationId={conversationId}
+              conversationTitle={participant.display_name}
+              userId={currentUserId}
+              isPinned={false}
+              isMuted={false}
+              onClose={() => setShowConversationActions(false)}
+              onAction={() => {
+                // Optionally refresh data
+              }}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

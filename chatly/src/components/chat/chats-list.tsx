@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Search, Pin, BellOff, MessageSquare } from 'lucide-react'
+import { Search, Pin, BellOff, MessageSquare, Archive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
+import { getBlockedUsers } from '@/lib/actions/block'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -136,20 +137,32 @@ interface ChatsListProps {
   currentUserId: string
 }
 
-type TabType = 'all' | 'unread' | 'personal'
+type TabType = 'all' | 'unread' | 'archived'
 
 export function ChatsList({ selectedConversationId, currentUserId }: ChatsListProps) {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('all')
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
+  const [archivedConversations, setArchivedConversations] = useState<ConversationWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   // Track participant statuses from DB
   const [participantStatuses, setParticipantStatuses] = useState<Map<string, 'online' | 'offline' | 'away' | 'busy'>>(new Map())
+  // Track blocked user IDs
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set())
   // Track conversation IDs in ref (for filtering in callbacks)
   const conversationIdsRef = useRef<string[]>([])
   const supabase = createClient()
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+
+  const fetchBlockedUsers = useCallback(async () => {
+    try {
+      const blocked = await getBlockedUsers()
+      setBlockedUserIds(new Set(blocked))
+    } catch (err) {
+      console.error('Failed to fetch blocked users:', err)
+    }
+  }, [])
 
   const fetchConversations = useCallback(async () => {
     if (!currentUserId) {
@@ -234,20 +247,36 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         }
       }
 
+      // Separate archived from active conversations
+      const active: ConversationWithDetails[] = []
+      const archived: ConversationWithDetails[] = []
+
+      for (const conv of conversationsWithParticipants) {
+        // Get is_archived from participation
+        const participation = participations?.find(p => p.conversation_id === conv.id)
+        if (participation?.is_archived) {
+          archived.push(conv)
+        } else {
+          active.push(conv)
+        }
+      }
+
       // Sort: pinned first, then by last message time
-      const sorted = conversationsWithParticipants.sort((a, b) => {
+      const sortFn = (a: ConversationWithDetails, b: ConversationWithDetails) => {
         if (a.is_pinned && !b.is_pinned) return -1
         if (!a.is_pinned && b.is_pinned) return 1
         const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
         const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
         return dateB - dateA
-      })
+      }
 
-      setConversations(sorted)
+      setConversations(active.sort(sortFn))
+      setArchivedConversations(archived.sort(sortFn))
 
       // Save conversation IDs for filtering realtime updates (ref for immediate access in callbacks)
       const ids: string[] = []
-      sorted.forEach(c => ids.push(c.id))
+      active.forEach(c => ids.push(c.id))
+      archived.forEach(c => ids.push(c.id))
       conversationIdsRef.current = ids
 
       // Update participant statuses
@@ -277,6 +306,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   }, [currentUserId, supabase])
 
   useEffect(() => {
+    fetchBlockedUsers()
     fetchConversations()
 
     // Subscribe to conversation participant changes (last_read_at updates)
@@ -403,6 +433,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   }, [currentUserId, supabase, conversations])
 
   const filteredConversations = conversations.filter((conv) => {
+    // Filter out blocked users
+    if (blockedUserIds.has(conv.participant.id)) return false
+
     // Search filter
     const matchesSearch = conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
 
@@ -413,6 +446,11 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     }
 
     return matchesSearch && matchesTab
+  })
+
+  const filteredArchived = archivedConversations.filter((conv) => {
+    // Search filter
+    return conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
   })
 
   // Sort: pinned first, then by last message time
@@ -430,7 +468,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   const tabs: { key: TabType; label: string }[] = [
     { key: 'all', label: 'All' },
     { key: 'unread', label: 'Unread' },
-    { key: 'personal', label: 'Personal' },
+    { key: 'archived', label: 'Archived' },
   ]
 
   return (
@@ -479,6 +517,33 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
             <div className="flex items-center justify-center py-12">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
             </div>
+          ) : activeTab === 'archived' ? (
+            // Show archived conversations
+            filteredArchived.length > 0 ? (
+              <>
+                <div className="px-3 py-2">
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {filteredArchived.length} archived {filteredArchived.length === 1 ? 'conversation' : 'conversations'}
+                  </p>
+                </div>
+                {filteredArchived.map((conversation, index) => (
+                  <div key={conversation.id}>
+                    <ConversationItem
+                      conversation={conversation}
+                      isActive={selectedConversationId === conversation.id}
+                      currentUserId={currentUserId}
+                      participantStatus={participantStatuses.get(conversation.participant.id) || 'offline'}
+                    />
+                    {index < filteredArchived.length - 1 && <Separator />}
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
+                <Archive className="mb-3 h-12 w-12 opacity-50" />
+                <p className="text-sm">No archived conversations</p>
+              </div>
+            )
           ) : sortedConversations.length > 0 ? (
             sortedConversations.map((conversation, index) => (
               <div key={conversation.id}>
@@ -494,7 +559,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <MessageSquare className="mb-3 h-12 w-12 opacity-50" />
-              <p className="text-sm">No conversations found</p>
+              <p className="text-sm">
+                {activeTab === 'unread' ? 'No unread conversations' : 'No conversations found'}
+              </p>
             </div>
           )}
         </div>

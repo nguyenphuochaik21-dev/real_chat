@@ -203,3 +203,130 @@ export async function markAsRead(conversationId: string, userId: string) {
     .eq('conversation_id', conversationId)
     .eq('user_id', userId)
 }
+
+// ============================================================================
+// Conversation Management: Archive, Delete, Clear History
+// ============================================================================
+
+/**
+ * Archive a conversation
+ */
+export async function archiveConversation(
+  conversationId: string,
+  userId: string,
+  isArchived: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ is_archived: isArchived })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+
+  if (error) {
+    return { success: false, error: error.message }
+  }
+
+  return { success: true }
+}
+
+/**
+ * Delete a conversation (removes user from conversation)
+ */
+export async function deleteConversation(
+  conversationId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient()
+
+  // Remove user from conversation participants
+  const { error } = await supabase
+    .from('conversation_participants')
+    .delete()
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+
+  if (error) {
+    return { success: false, error: error.message }
+  }
+
+  return { success: true }
+}
+
+/**
+ * Clear all messages in a conversation (soft delete)
+ */
+export async function clearConversationHistory(
+  conversationId: string,
+  userId: string
+): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
+  const supabase = await createClient()
+
+  // First verify user is a participant
+  const { data: participation } = await supabase
+    .from('conversation_participants')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .single()
+
+  if (!participation) {
+    return { success: false, error: 'Not authorized to clear this conversation' }
+  }
+
+  // Soft delete all messages sent by this user
+  const { data: messagesToDelete, error: fetchError } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('sender_id', userId)
+    .is('deleted_at', null)
+
+  if (fetchError) {
+    return { success: false, error: fetchError.message }
+  }
+
+  if (!messagesToDelete || messagesToDelete.length === 0) {
+    return { success: true, deletedCount: 0 }
+  }
+
+  // Soft delete
+  const now = new Date().toISOString()
+  const { error: deleteError } = await supabase
+    .from('messages')
+    .update({ deleted_at: now })
+    .eq('conversation_id', conversationId)
+    .eq('sender_id', userId)
+
+  if (deleteError) {
+    return { success: false, error: deleteError.message }
+  }
+
+  return { success: true, deletedCount: messagesToDelete.length }
+}
+
+/**
+ * Get archived conversations for current user
+ */
+export async function getArchivedConversations(userId: string) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('conversation_participants')
+    .select(`
+      is_archived,
+      conversation:conversations(
+        *
+      )
+    `)
+    .eq('user_id', userId)
+    .eq('is_archived', true)
+
+  if (error) {
+    console.error('Failed to fetch archived conversations:', error)
+    return []
+  }
+
+  return data?.map(d => d.conversation).filter(Boolean) || []
+}
