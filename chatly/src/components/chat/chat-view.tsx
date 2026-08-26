@@ -920,7 +920,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   }
 
   return (
-    <div className="flex h-full flex-col bg-[var(--bg-app)]">
+    <div className="flex h-full w-full min-w-0 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-4 py-3">
         {showBackButton && (

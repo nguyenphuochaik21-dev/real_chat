@@ -142,16 +142,10 @@ type TabType = 'all' | 'unread' | 'archived'
 
 export function ChatsList({ selectedConversationId, currentUserId }: ChatsListProps) {
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
-    // Restore tab from localStorage to survive navigation
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('chats-list-tab')
-        if (saved === 'all' || saved === 'unread' || saved === 'archived') return saved
-      } catch {}
-    }
-    return 'all'
-  })
+  // Always start with 'all' to avoid hydration mismatch
+  // Then read from localStorage after mount
+  const [activeTab, setActiveTab] = useState<TabType>('all')
+  const [hydrated, setHydrated] = useState(false)
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
   const [archivedConversations, setArchivedConversations] = useState<ConversationWithDetails[]>([])
   const [loading, setLoading] = useState(true)
@@ -164,6 +158,17 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   const supabase = createClient()
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+
+  // Restore tab from localStorage after hydration to avoid mismatch
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('chats-list-tab')
+      if (saved === 'all' || saved === 'unread' || saved === 'archived') {
+        setActiveTab(saved)
+      }
+    } catch {}
+    setHydrated(true)
+  }, [])
 
   // Persist tab choice
   const handleTabChange = (tab: TabType) => {
@@ -348,23 +353,85 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           }
 
           // Update the conversation in both lists (active + archived) for all fields
-          const updateInList = (prev: ConversationWithDetails[]) =>
-            prev.map(conv => {
-              if (conv.id === updated.conversation_id) {
-                return {
-                  ...conv,
-                  is_pinned: updated.is_pinned ?? conv.is_pinned,
-                  is_muted: updated.is_muted ?? conv.is_muted,
-                  is_archived: updated.is_archived ?? conv.is_archived,
-                  unread_count: updated.last_read_at && updated.last_read_at !== conv.last_message_at
-                    ? 0 : conv.unread_count,
-                }
-              }
-              return conv
-            })
+          // If is_archived changed, move between lists
+          setConversations(prev => {
+            const conv = prev.find(c => c.id === updated.conversation_id)
+            if (!conv) return prev
 
-          setConversations(updateInList)
-          setArchivedConversations(updateInList)
+            const updatedConv: ConversationWithDetails = {
+              ...conv,
+              is_pinned: updated.is_pinned ?? conv.is_pinned,
+              is_muted: updated.is_muted ?? conv.is_muted,
+              is_archived: updated.is_archived ?? conv.is_archived,
+              unread_count: updated.last_read_at && updated.last_read_at !== conv.last_message_at
+                ? 0 : conv.unread_count,
+            }
+
+            // If is_archived changed, remove from this list
+            if (updated.is_archived !== undefined && updated.is_archived !== conv.is_archived) {
+              // Move to archived list
+              if (updated.is_archived) {
+                setArchivedConversations(prevA => {
+                  const exists = prevA.find(c => c.id === updatedConv.id)
+                  if (exists) {
+                    return prevA.map(c => c.id === updatedConv.id ? updatedConv : c)
+                  }
+                  return [...prevA, updatedConv].sort((a, b) => {
+                    if (a.is_pinned && !b.is_pinned) return -1
+                    if (!a.is_pinned && b.is_pinned) return 1
+                    const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
+                    const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
+                    return dateB - dateA
+                  })
+                })
+                return prev.filter(c => c.id !== updatedConv.id)
+              } else {
+                // Move from archived to active
+                return [...prev, updatedConv]
+              }
+            }
+
+            return prev.map(c => c.id === updatedConv.id ? updatedConv : c)
+          })
+
+          setArchivedConversations(prev => {
+            const conv = prev.find(c => c.id === updated.conversation_id)
+            if (!conv) return prev
+
+            const updatedConv: ConversationWithDetails = {
+              ...conv,
+              is_pinned: updated.is_pinned ?? conv.is_pinned,
+              is_muted: updated.is_muted ?? conv.is_muted,
+              is_archived: updated.is_archived ?? conv.is_archived,
+              unread_count: updated.last_read_at && updated.last_read_at !== conv.last_message_at
+                ? 0 : conv.unread_count,
+            }
+
+            // If is_archived changed, remove from this list
+            if (updated.is_archived !== undefined && updated.is_archived !== conv.is_archived) {
+              if (!updated.is_archived) {
+                // Move to active list
+                setConversations(prevA => {
+                  const exists = prevA.find(c => c.id === updatedConv.id)
+                  if (exists) {
+                    return prevA.map(c => c.id === updatedConv.id ? updatedConv : c)
+                  }
+                  return [...prevA, updatedConv].sort((a, b) => {
+                    if (a.is_pinned && !b.is_pinned) return -1
+                    if (!a.is_pinned && b.is_pinned) return 1
+                    const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
+                    const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
+                    return dateB - dateA
+                  })
+                })
+                return prev.filter(c => c.id !== updatedConv.id)
+              } else {
+                return [...prev, updatedConv]
+              }
+            }
+
+            return prev.map(c => c.id === updatedConv.id ? updatedConv : c)
+          })
         }
       )
       .on(
