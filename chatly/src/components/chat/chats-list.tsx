@@ -2,15 +2,19 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Search, Pin, BellOff, MessageSquare, Archive } from 'lucide-react'
+import { Search, Pin, BellOff, MessageSquare, Archive, Tag, X, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { NotificationPermission } from '@/components/notifications/notification-permission'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
 import { getBlockedUsers } from '@/lib/actions/block'
+import { useDraftStore } from '@/stores/draft-store'
+import { useConversationLabels } from '@/hooks/use-conversation-labels'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -54,9 +58,11 @@ interface ConversationItemProps {
   isActive: boolean
   currentUserId: string
   participantStatus: 'online' | 'offline' | 'away' | 'busy'
+  labels?: Tables<'conversation_labels'>[]
+  draft?: string
 }
 
-function ConversationItem({ conversation, isActive, currentUserId, participantStatus }: ConversationItemProps) {
+function ConversationItem({ conversation, isActive, currentUserId, participantStatus, labels = [], draft }: ConversationItemProps) {
   const isFromMe = conversation.last_message?.sender_id === currentUserId
 
   // Get status color for avatar
@@ -110,6 +116,19 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
             {conversation.is_muted && (
               <BellOff className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
             )}
+            {/* Label dots */}
+            {labels.length > 0 && (
+              <div className="flex gap-1">
+                {labels.slice(0, 3).map((label) => (
+                  <div
+                    key={label.id}
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: label.color || '#8B5CF6' }}
+                    title={label.name || ''}
+                  />
+                ))}
+              </div>
+            )}
           </div>
           <span className="shrink-0 text-xs text-[var(--text-muted)]">
             {formatMessageTime(conversation.last_message?.created_at || conversation.last_message_at)}
@@ -117,9 +136,21 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
         </div>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-sm text-[var(--text-secondary)]">
-            {isFromMe && <span className="text-[var(--text-muted)]">You: </span>}
-            {conversation.last_message?.content || 'No messages yet'}
+          <p className={cn(
+            'truncate text-sm',
+            draft ? 'text-primary-500 italic' : 'text-[var(--text-secondary)]'
+          )}>
+            {draft ? (
+              <span className="flex items-center gap-1">
+                <span className="text-[var(--text-muted)]">Draft: </span>
+                {draft}
+              </span>
+            ) : (
+              <>
+                {isFromMe && <span className="text-[var(--text-muted)]">You: </span>}
+                {conversation.last_message?.content || 'No messages yet'}
+              </>
+            )}
           </p>
 
           {conversation.unread_count > 0 && (
@@ -158,6 +189,16 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   const supabase = createClient()
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+
+  // Label filter
+  const [labelFilterOpen, setLabelFilterOpen] = useState(false)
+  const [selectedLabelIds, setSelectedLabelIds] = useState<Set<string>>(new Set())
+
+  // Drafts
+  const { drafts } = useDraftStore()
+
+  // Conversation labels (userId comes from provider)
+  const { labels, conversationLabels, loadLabelsForConversations } = useConversationLabels()
 
   // Restore tab from localStorage after hydration to avoid mismatch
   useEffect(() => {
@@ -300,6 +341,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
       active.forEach(c => ids.push(c.id))
       archived.forEach(c => ids.push(c.id))
       conversationIdsRef.current = ids
+
+      // Load labels for all conversations
+      loadLabelsForConversations(ids)
 
       // Update participant statuses
       if (participantIds.length > 0) {
@@ -550,7 +594,15 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
       matchesTab = !conv.is_archived
     }
 
-    return matchesSearch && matchesTab
+    // Label filter
+    let matchesLabels = true
+    if (selectedLabelIds.size > 0) {
+      const convLabels = conversationLabels.get(conv.id) || []
+      const convLabelIds = new Set(convLabels.map(l => l.id))
+      matchesLabels = Array.from(selectedLabelIds).some(id => convLabelIds.has(id))
+    }
+
+    return matchesSearch && matchesTab && matchesLabels
   })
 
   const filteredArchived = archivedConversations.filter((conv) => {
@@ -580,7 +632,74 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     <div className="flex h-full w-80 flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)]">
       {/* Header */}
       <div className="p-4">
-        <h1 className="mb-4 text-xl font-semibold text-[var(--text-primary)]">Chats</h1>
+        <div className="mb-4 flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Chats</h1>
+          {/* Label filter button */}
+          {labels.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLabelFilterOpen(!labelFilterOpen)}
+              className={cn(
+                'gap-1.5',
+                selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
+              )}
+            >
+              <Tag className="h-4 w-4" />
+              {selectedLabelIds.size > 0 && (
+                <span className="ml-1 rounded bg-primary-500 px-1.5 py-0.5 text-xs text-white">
+                  {selectedLabelIds.size}
+                </span>
+              )}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+
+        {/* Label filter dropdown */}
+        {labelFilterOpen && labels.length > 0 && (
+          <div className="mb-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] p-2">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">Filter by label</span>
+              {selectedLabelIds.size > 0 && (
+                <button
+                  onClick={() => setSelectedLabelIds(new Set())}
+                  className="text-xs text-primary-500 hover:underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {labels.map((label) => (
+                <button
+                  key={label.id}
+                  onClick={() => {
+                    const newSelected = new Set(selectedLabelIds)
+                    if (newSelected.has(label.id)) {
+                      newSelected.delete(label.id)
+                    } else {
+                      newSelected.add(label.id)
+                    }
+                    setSelectedLabelIds(newSelected)
+                  }}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors',
+                    selectedLabelIds.has(label.id)
+                      ? 'bg-[var(--bg-active)] ring-1 ring-primary-500'
+                      : 'bg-[var(--bg-hover)] hover:bg-[var(--bg-active)]'
+                  )}
+                >
+                  <div
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: label.color || '#8B5CF6' }}
+                  />
+                  <span>{label.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative">
@@ -615,6 +734,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
 
       <Separator className="mt-4" />
 
+      {/* Notification permission prompt */}
+      <NotificationPermission />
+
       {/* Conversations list */}
       <ScrollArea className="flex-1">
         <div className="py-2">
@@ -638,6 +760,8 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
                       isActive={selectedConversationId === conversation.id}
                       currentUserId={currentUserId}
                       participantStatus={participantStatuses.get(conversation.participant.id) || 'offline'}
+                      labels={conversationLabels.get(conversation.id) || []}
+                      draft={drafts.get(conversation.id)}
                     />
                     {index < filteredArchived.length - 1 && <Separator />}
                   </div>
@@ -657,6 +781,8 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
                   isActive={selectedConversationId === conversation.id}
                   currentUserId={currentUserId}
                   participantStatus={participantStatuses.get(conversation.participant.id) || 'offline'}
+                  labels={conversationLabels.get(conversation.id) || []}
+                  draft={drafts.get(conversation.id)}
                 />
                 {index < sortedConversations.length - 1 && <Separator />}
               </div>

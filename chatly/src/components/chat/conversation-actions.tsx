@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -11,6 +11,7 @@ import {
   Bell,
   Pin,
   PinOff,
+  Tag,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -22,6 +23,11 @@ import {
   toggleMuted,
 } from '@/lib/actions/conversations'
 import { useNotificationStore } from '@/stores/notification-store'
+import { useConversationLabels } from '@/hooks/use-conversation-labels'
+import { LabelManager } from './label-manager'
+import type { Tables } from '@/types'
+
+type Label = Tables<'conversation_labels'>
 
 interface ConversationActionsProps {
   conversationId: string
@@ -49,6 +55,25 @@ export function ConversationActions({
   const [isArchived, setIsArchived] = useState(initialArchived)
   const [loading, setLoading] = useState<string | null>(null)
   const addToast = useNotificationStore((state) => state.addToast)
+
+  // Labels
+  const [showLabelManager, setShowLabelManager] = useState(false)
+  const {
+    labels,
+    conversationLabels,
+    createLabel,
+    deleteLabel,
+    assignLabel,
+    removeLabel,
+    loadLabelsForConversations,
+  } = useConversationLabels()
+
+  // Load labels for this conversation on mount
+  useEffect(() => {
+    loadLabelsForConversations([conversationId])
+  }, [conversationId])
+
+  const currentLabels = conversationLabels.get(conversationId) || []
 
   const handlePinned = async () => {
     setLoading('pin')
@@ -189,10 +214,11 @@ export function ConversationActions({
   }
 
   return (
-    <div
-      className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] shadow-lg"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <>
+      <div
+        className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
       <div className="flex items-center justify-between p-3">
         <span className="text-sm font-medium text-[var(--text-primary)]">Actions</span>
@@ -262,6 +288,26 @@ export function ConversationActions({
           )}
         </button>
 
+        {/* Labels */}
+        <button
+          onClick={() => setShowLabelManager(true)}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
+        >
+          <Tag className="h-4 w-4 text-[var(--text-muted)]" />
+          <span className="flex-1 text-left text-[var(--text-primary)]">Labels</span>
+          {currentLabels.length > 0 && (
+            <div className="flex gap-1">
+              {currentLabels.slice(0, 3).map((label) => (
+                <div
+                  key={label.id}
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: label.color || '#8B5CF6' }}
+                />
+              ))}
+            </div>
+          )}
+        </button>
+
         <Separator className="my-1" />
 
         {/* Clear History */}
@@ -285,5 +331,28 @@ export function ConversationActions({
         </button>
       </div>
     </div>
+
+    {/* Label Manager Modal */}
+    <LabelManager
+      isOpen={showLabelManager}
+      onClose={() => setShowLabelManager(false)}
+      conversationId={conversationId}
+      currentLabels={currentLabels}
+      allLabels={labels}
+      onAssignLabel={async (labelId) => {
+        await assignLabel(conversationId, labelId)
+      }}
+      onRemoveLabel={async (labelId) => {
+        await removeLabel(conversationId, labelId)
+      }}
+      onCreateLabel={async (name, color) => {
+        const result = await createLabel(name, color)
+        return result
+      }}
+      onDeleteLabel={async (labelId) => {
+        await deleteLabel(labelId)
+      }}
+    />
+    </>
   )
 }

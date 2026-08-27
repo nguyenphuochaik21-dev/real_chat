@@ -13,6 +13,7 @@ import {
   CheckCheck,
   Image,
   Pencil,
+  Clock,
 } from 'lucide-react'
 import {
   archiveConversation,
@@ -37,8 +38,12 @@ import { MessageReactions } from './message-reactions'
 import { ForwardModal } from './forward-modal'
 import { BlockUserModal } from './block-user-modal'
 import { ConversationActions } from './conversation-actions'
+import { SchedulePicker } from './schedule-picker'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
+import { useDraftStore } from '@/stores/draft-store'
+import { useScheduledMessagesProcessor } from '@/hooks/use-scheduled-messages-processor'
+import { createScheduledMessage } from '@/lib/actions/scheduled-messages'
 import {
   editMessage,
   deleteMessage,
@@ -318,6 +323,37 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Store hooks
   const { isReplying, replyToMessage, clearReply, setReplyTo } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
+
+  // Draft messages
+  const { getDraft, setDraft, clearDraft } = useDraftStore()
+
+  // Auto-process scheduled messages that are due (handles its own state)
+  useScheduledMessagesProcessor()
+
+  // Create schedule function (no hook needed)
+  const createSchedule = useCallback(async (
+    conversationId: string,
+    content: string,
+    scheduledAt: Date,
+    options?: {
+      contentType?: string
+      mediaUrl?: string | null
+      replyTo?: string | null
+    }
+  ) => {
+    const result = await createScheduledMessage({
+      conversationId,
+      content,
+      scheduledAt,
+      contentType: options?.contentType,
+      mediaUrl: options?.mediaUrl,
+      replyTo: options?.replyTo,
+    })
+    return result
+  }, [])
+
+  // Schedule picker
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false)
 
   // Block user modal
   const [blockModalOpen, setBlockModalOpen] = useState(false)
@@ -623,6 +659,16 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     inputRef.current?.focus()
   }, [conversationId])
 
+  // Restore draft when conversation changes
+  useEffect(() => {
+    if (conversationId) {
+      const draft = getDraft(conversationId)
+      if (draft) {
+        setInputValue(draft)
+      }
+    }
+  }, [conversationId, getDraft])
+
   // Cleanup typing on unmount
   useEffect(() => {
     return () => {
@@ -769,8 +815,9 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       // Replace optimistic message with real one
       setMessages(prev => prev.map(m => m.id === optimisticMessage.id ? data : m))
 
-      // Clear reply state
+      // Clear reply state and draft
       clearReply()
+      clearDraft(conversationId)
 
       // Update conversation's last_message_at
       await supabase
@@ -784,7 +831,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     } finally {
       setSending(false)
     }
-  }, [inputValue, conversationId, currentUserId, sending, supabase, stopTyping, editingMessage, handleEdit, replyToMessage, clearReply])
+  }, [inputValue, conversationId, currentUserId, sending, supabase, stopTyping, editingMessage, handleEdit, replyToMessage, clearReply, clearDraft])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value)
@@ -1047,12 +1094,30 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
               type="text"
               placeholder={editingMessage ? 'Edit message...' : 'Type a message...'}
               value={inputValue}
-              onChange={handleInputChange}
+              onChange={(e) => {
+                handleInputChange(e)
+                // Auto-save draft
+                if (conversationId && e.target.value.trim()) {
+                  setDraft(conversationId, e.target.value)
+                }
+              }}
               onKeyDown={handleKeyDown}
               className="w-full"
               disabled={sending}
             />
           </div>
+
+          {/* Schedule button */}
+          {inputValue.trim() && !editingMessage && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSchedulePicker(true)}
+              title="Schedule message"
+            >
+              <Clock className="h-5 w-5 text-[var(--text-muted)]" />
+            </Button>
+          )}
 
           <Button
             variant="ghost"
@@ -1146,6 +1211,39 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           </div>
         </>
       )}
+
+      {/* Schedule Picker Modal */}
+      <SchedulePicker
+        isOpen={showSchedulePicker}
+        onClose={() => setShowSchedulePicker(false)}
+        onSchedule={async (scheduledAt) => {
+          if (conversationId && inputValue.trim()) {
+            const result = await createSchedule(
+              conversationId,
+              inputValue.trim(),
+              scheduledAt,
+              { replyTo: replyToMessage?.id }
+            )
+            if (result.success) {
+              setInputValue('')
+              clearReply()
+              clearDraft(conversationId)
+              addToast({
+                type: 'system',
+                title: 'Message scheduled',
+                body: `Will be sent at ${scheduledAt.toLocaleString()}`,
+              })
+            } else {
+              addToast({
+                type: 'system',
+                title: 'Failed to schedule',
+                body: result.error || 'Unknown error',
+              })
+            }
+          }
+          setShowSchedulePicker(false)
+        }}
+      />
     </div>
   )
 }

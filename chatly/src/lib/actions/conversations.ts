@@ -186,13 +186,31 @@ export async function toggleMuted(
   conversationId: string,
   userId: string,
   isMuted: boolean
-) {
+): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
-  await supabase
+  console.log('[toggleMuted] Setting is_muted:', isMuted, 'for conversation:', conversationId, 'user:', userId)
+
+  const { error } = await supabase
     .from('conversation_participants')
     .update({ is_muted: isMuted })
     .eq('conversation_id', conversationId)
     .eq('user_id', userId)
+
+  if (error) {
+    console.error('[toggleMuted] Error:', error)
+    return { success: false, error: error.message }
+  }
+
+  // Verify the update
+  const { data: verify } = await supabase
+    .from('conversation_participants')
+    .select('is_muted')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .single()
+
+  console.log('[toggleMuted] Verified is_muted:', verify?.is_muted)
+  return { success: true }
 }
 
 export async function markAsRead(conversationId: string, userId: string) {

@@ -15,6 +15,62 @@ export interface Notification {
   createdAt: string
 }
 
+// Show browser/system notification
+const showBrowserNotification = (notification: Notification) => {
+  if (typeof window === 'undefined') return
+
+  // Check if browser notifications are supported and permitted
+  if (!('Notification' in window)) {
+    console.log('[NotificationStore] Browser notifications not supported')
+    return
+  }
+
+  if (Notification.permission !== 'granted') {
+    console.log('[NotificationStore] Browser notifications not permitted')
+    return
+  }
+
+  // Only show if tab is not visible
+  if (document.visibilityState === 'visible') {
+    console.log('[NotificationStore] Tab is visible, skipping browser notification')
+    return
+  }
+
+  try {
+    const notificationOptions: NotificationOptions = {
+      body: notification.body,
+      icon: notification.senderAvatar || '/icons/icon-192.png',
+      tag: notification.conversationId || notification.id,
+      data: {
+        conversationId: notification.conversationId,
+        senderId: notification.senderId,
+      },
+      requireInteraction: false,
+      silent: false,
+    }
+
+    const browserNotification = new Notification(notification.title, notificationOptions)
+
+    // Auto-close after 5 seconds
+    setTimeout(() => {
+      browserNotification.close()
+    }, 5000)
+
+    // Handle click - navigate to conversation
+    browserNotification.onclick = () => {
+      window.focus()
+      if (notification.conversationId) {
+        window.location.href = `/chats/${notification.conversationId}`
+      }
+      browserNotification.close()
+    }
+
+    console.log('[NotificationStore] Browser notification shown')
+  } catch (error) {
+    console.error('[NotificationStore] Failed to show browser notification:', error)
+  }
+}
+
 interface NotificationState {
   notifications: Notification[]
   unreadCount: number
@@ -51,8 +107,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       unreadCount: state.unreadCount + 1,
     }))
 
-    // Also show as toast
+    // Show toast in-app
     get().addToast(newNotification)
+
+    // Also show browser notification (works even when tab is not visible)
+    showBrowserNotification(newNotification)
   },
 
   markAsRead: (id) => {

@@ -41,23 +41,22 @@ export function useNotifications({
             created_at: string
           }
 
+          console.log('[useNotifications] New message received:', newMessage.id, 'from:', newMessage.sender_id, 'conversation:', newMessage.conversation_id)
+
           // Skip if message is from current user
-          if (newMessage.sender_id === userId) return
+          if (newMessage.sender_id === userId) {
+            console.log('[useNotifications] Skipped: own message')
+            return
+          }
 
           // Skip if we're currently viewing this conversation
-          if (currentConversationId === newMessage.conversation_id) return
-
-          // Skip if user is blocked by this sender OR has blocked this sender
-          // (we'll check both directions to be safe)
-          const { data: blockCheck } = await supabase
-            .from('user_blocks')
-            .select('id')
-            .or(`and(blocker_id.eq.${userId},blocked_id.eq.${newMessage.sender_id}),and(blocker_id.eq.${newMessage.sender_id},blocked_id.eq.${userId})`)
-            .limit(1)
-
-          if (blockCheck && blockCheck.length > 0) return
+          if (currentConversationId === newMessage.conversation_id) {
+            console.log('[useNotifications] Skipped: viewing this conversation')
+            return
+          }
 
           // Check conversation participation flags (muted / archived)
+          console.log('[useNotifications] Checking conversation flags for:', newMessage.conversation_id)
           const { data: participation } = await supabase
             .from('conversation_participants')
             .select('is_muted, is_archived')
@@ -65,8 +64,33 @@ export function useNotifications({
             .eq('user_id', userId)
             .single()
 
+          console.log('[useNotifications] Participation flags:', participation)
+
           // Skip if conversation is archived or muted
-          if (participation?.is_archived || participation?.is_muted) return
+          if (participation?.is_archived) {
+            console.log('[useNotifications] Skipped: conversation is archived')
+            return
+          }
+
+          if (participation?.is_muted) {
+            console.log('[useNotifications] Skipped: conversation is muted')
+            return
+          }
+
+          // Skip if user is blocked by this sender OR has blocked this sender
+          console.log('[useNotifications] Checking block status for:', newMessage.sender_id)
+          const { data: blockCheck } = await supabase
+            .from('user_blocks')
+            .select('id')
+            .or(`and(blocker_id.eq.${userId},blocked_id.eq.${newMessage.sender_id}),and(blocker_id.eq.${newMessage.sender_id},blocked_id.eq.${userId})`)
+            .limit(1)
+
+          console.log('[useNotifications] Block check result:', blockCheck?.length ? 'BLOCKED' : 'NOT BLOCKED')
+
+          if (blockCheck?.length) {
+            console.log('[useNotifications] Skipped: user is blocked')
+            return
+          }
 
           // Fetch sender info
           const { data: sender } = await supabase
@@ -76,6 +100,7 @@ export function useNotifications({
             .single()
 
           // Add notification
+          console.log('[useNotifications] ADDING NOTIFICATION')
           store.addNotification({
             type: 'message',
             title: sender?.display_name || 'New message',

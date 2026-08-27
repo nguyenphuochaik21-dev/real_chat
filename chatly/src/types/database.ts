@@ -290,6 +290,214 @@ export type Database = {
           }
         ]
       }
+      scheduled_messages: {
+        Row: {
+          id: string
+          conversation_id: string | null
+          sender_id: string | null
+          content: string | null
+          content_type: string | null
+          media_url: string | null
+          media_thumbnail_url: string | null
+          media_name: string | null
+          media_size: number | null
+          media_mime_type: string | null
+          reply_to: string | null
+          scheduled_at: string | null
+          status: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          conversation_id?: string | null
+          sender_id?: string | null
+          content?: string | null
+          content_type?: string | null
+          media_url?: string | null
+          media_thumbnail_url?: string | null
+          media_name?: string | null
+          media_size?: number | null
+          media_mime_type?: string | null
+          reply_to?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          conversation_id?: string | null
+          sender_id?: string | null
+          content?: string | null
+          content_type?: string | null
+          media_url?: string | null
+          media_thumbnail_url?: string | null
+          media_name?: string | null
+          media_size?: number | null
+          media_mime_type?: string | null
+          reply_to?: string | null
+          scheduled_at?: string | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      conversation_labels: {
+        Row: {
+          id: string
+          user_id: string | null
+          name: string | null
+          color: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          name?: string | null
+          color?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          name?: string | null
+          color?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_labels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      conversation_label_map: {
+        Row: {
+          conversation_id: string | null
+          label_id: string | null
+          created_at: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          label_id?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          label_id?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_label_map_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_label_map_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_labels"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      user_blocks: {
+        Row: {
+          id: string
+          blocker_id: string | null
+          blocked_id: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          blocker_id?: string | null
+          blocked_id?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          blocker_id?: string | null
+          blocked_id?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_blocks_blocker_id_fkey"
+            columns: ["blocker_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_blocks_blocked_id_fkey"
+            columns: ["blocked_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      push_subscriptions: {
+        Row: {
+          id: string
+          user_id: string | null
+          endpoint: string | null
+          p256dh: string | null
+          auth: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          endpoint?: string | null
+          p256dh?: string | null
+          auth?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          endpoint?: string | null
+          p256dh?: string | null
+          auth?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -299,11 +507,16 @@ export type Database = {
         Args: { conv_id: string }
         Returns: boolean
       }
+      send_scheduled_message: {
+        Args: { scheduled_message_id: string }
+        Returns: string
+      }
     }
     Enums: {
       conversation_type: "direct" | "group"
       message_content_type: "text" | "image" | "video" | "audio" | "file"
       message_status: "sending" | "sent" | "delivered" | "read" | "failed"
+      scheduled_message_status: "pending" | "sent" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -434,6 +647,7 @@ export const Constants = {
       conversation_type: ["direct", "group"],
       message_content_type: ["text", "image", "video", "audio", "file"],
       message_status: ["sending", "sent", "delivered", "read", "failed"],
+      scheduled_message_status: ["pending", "sent", "cancelled"],
     },
   },
 } as const

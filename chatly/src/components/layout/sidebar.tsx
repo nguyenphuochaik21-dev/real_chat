@@ -99,6 +99,36 @@ export function Sidebar() {
             // Skip if we're viewing this conversation
             if (currentPathname === `/chats/${newMsg.conversation_id}`) return
 
+            // Check conversation participation flags (muted / archived)
+            const { data: participation } = await supabase
+              .from('conversation_participants')
+              .select('is_muted, is_archived')
+              .eq('conversation_id', newMsg.conversation_id)
+              .eq('user_id', userId)
+              .single()
+
+            if (participation?.is_archived) {
+              console.log('[Sidebar Notifications] Skipped: conversation is archived')
+              return
+            }
+
+            if (participation?.is_muted) {
+              console.log('[Sidebar Notifications] Skipped: conversation is muted')
+              return
+            }
+
+            // Check block status
+            const { data: blockCheck } = await supabase
+              .from('user_blocks')
+              .select('id')
+              .or(`and(blocker_id.eq.${userId},blocked_id.eq.${newMsg.sender_id}),and(blocker_id.eq.${newMsg.sender_id},blocked_id.eq.${userId})`)
+              .limit(1)
+
+            if (blockCheck?.length) {
+              console.log('[Sidebar Notifications] Skipped: user is blocked')
+              return
+            }
+
             // Fetch sender info
             const { data: sender } = await supabase
               .from('profiles')

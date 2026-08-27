@@ -218,15 +218,15 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ### Tasks
 
 #### 4.1. Media & Files
-- [ ] Upload ảnh/file qua Supabase Storage
-- [ ] Preview trong chat
-- [ ] Media gallery trong Info Panel
-- [ ] File size limit, validation
+- [x]Upload ảnh/file qua Supabase Storage
+- [x] Preview trong chat
+- [x] Media gallery trong Info Panel
+- [x] File size limit, validation
 
 #### 4.2. Search
-- [ ] Global search (tên, nội dung message)
-- [ ] Full-text search với Postgres `tsvector`
-- [ ] Filter by sender, date
+- [x] Global search (tên, nội dung message)
+- [x] Full-text search với Postgres `tsvector`
+- [x] Filter by sender, date
 
 #### 4.3. Notifications ✅
 - [x] Push notifications (Web Push API)
