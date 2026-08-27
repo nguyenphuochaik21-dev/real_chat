@@ -51,6 +51,7 @@ import {
 } from '@/lib/actions/messages'
 import { useReactions } from '@/hooks/use-reactions'
 import { useStarredMessages } from '@/hooks/use-starred-messages'
+import { useCallStore } from '@/stores/call-store'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -1002,10 +1003,34 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
 
         {/* Actions */}
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (conversationId && participant) {
+                useCallStore.getState().initiateCall(conversationId, {
+                  id: participant.id,
+                  displayName: participant.display_name,
+                  avatarUrl: participant.avatar_url || undefined,
+                }, 'voice')
+              }
+            }}
+          >
             <Phone className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (conversationId && participant) {
+                useCallStore.getState().initiateCall(conversationId, {
+                  id: participant.id,
+                  displayName: participant.display_name,
+                  avatarUrl: participant.avatar_url || undefined,
+                }, 'video')
+              }
+            }}
+          >
             <Video className="h-5 w-5" />
           </Button>
           <Button variant="ghost" size="icon">
