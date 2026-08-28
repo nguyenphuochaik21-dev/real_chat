@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Sidebar } from '@/components/layout/sidebar'
 import { ConversationLabelsProvider } from '@/hooks/use-conversation-labels'
-import { CallScreen, IncomingCallModal } from '@/components/calls'
+import { CallProvider } from '@/components/calls'
 import type { User } from '@supabase/supabase-js'
 
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
@@ -30,9 +30,9 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
         </div>
       ) : user ? (
         <ConversationLabelsProvider userId={user.id}>
-          {children}
-          <CallScreen />
-          <IncomingCallModal />
+          <CallProvider userId={user.id}>
+            {children}
+          </CallProvider>
         </ConversationLabelsProvider>
       ) : (
         children

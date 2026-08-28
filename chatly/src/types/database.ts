@@ -498,6 +498,140 @@ export type Database = {
           }
         ]
       }
+      call_sessions: {
+        Row: {
+          id: string
+          caller_id: string
+          callee_id: string
+          conversation_id: string | null
+          call_type: Database["public"]["Enums"]["call_type"] | null
+          status: Database["public"]["Enums"]["call_session_status"] | null
+          offer_sdp: string | null
+          answer_sdp: string | null
+          ice_candidates: Json | null
+          started_at: string | null
+          answered_at: string | null
+          ended_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          caller_id: string
+          callee_id: string
+          conversation_id?: string | null
+          call_type?: Database["public"]["Enums"]["call_type"] | null
+          status?: Database["public"]["Enums"]["call_session_status"] | null
+          offer_sdp?: string | null
+          answer_sdp?: string | null
+          ice_candidates?: Json | null
+          started_at?: string | null
+          answered_at?: string | null
+          ended_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          caller_id?: string
+          callee_id?: string
+          conversation_id?: string | null
+          call_type?: Database["public"]["Enums"]["call_type"] | null
+          status?: Database["public"]["Enums"]["call_session_status"] | null
+          offer_sdp?: string | null
+          answer_sdp?: string | null
+          ice_candidates?: Json | null
+          started_at?: string | null
+          answered_at?: string | null
+          ended_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_sessions_caller_id_fkey"
+            columns: ["caller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_sessions_callee_id_fkey"
+            columns: ["callee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_sessions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      call_history: {
+        Row: {
+          id: string
+          caller_id: string
+          callee_id: string
+          conversation_id: string | null
+          call_type: Database["public"]["Enums"]["call_type"] | null
+          direction: Database["public"]["Enums"]["call_direction"] | null
+          status: Database["public"]["Enums"]["call_session_status"] | null
+          duration_seconds: number | null
+          started_at: string | null
+          ended_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          caller_id: string
+          callee_id: string
+          conversation_id?: string | null
+          call_type?: Database["public"]["Enums"]["call_type"] | null
+          direction?: Database["public"]["Enums"]["call_direction"] | null
+          status?: Database["public"]["Enums"]["call_session_status"] | null
+          duration_seconds?: number | null
+          started_at?: string | null
+          ended_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          caller_id?: string
+          callee_id?: string
+          conversation_id?: string | null
+          call_type?: Database["public"]["Enums"]["call_type"] | null
+          direction?: Database["public"]["Enums"]["call_direction"] | null
+          status?: Database["public"]["Enums"]["call_session_status"] | null
+          duration_seconds?: number | null
+          started_at?: string | null
+          ended_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_history_caller_id_fkey"
+            columns: ["caller_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_history_callee_id_fkey"
+            columns: ["callee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_history_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -511,12 +645,31 @@ export type Database = {
         Args: { scheduled_message_id: string }
         Returns: string
       }
+      initiate_call: {
+        Args: { p_callee_id: string; p_conversation_id: string; p_call_type: Database["public"]["Enums"]["call_type"] }
+        Returns: unknown
+      }
+      update_call_status: {
+        Args: { p_session_id: string; p_status: Database["public"]["Enums"]["call_session_status"]; p_answer_sdp?: string }
+        Returns: unknown
+      }
+      end_call: {
+        Args: { p_session_id: string; p_status?: Database["public"]["Enums"]["call_session_status"] }
+        Returns: unknown
+      }
+      get_call_history: {
+        Args: { p_user_id?: string; p_limit?: number }
+        Returns: unknown
+      }
     }
     Enums: {
       conversation_type: "direct" | "group"
       message_content_type: "text" | "image" | "video" | "audio" | "file"
       message_status: "sending" | "sent" | "delivered" | "read" | "failed"
       scheduled_message_status: "pending" | "sent" | "cancelled"
+      call_type: "voice" | "video"
+      call_direction: "incoming" | "outgoing"
+      call_session_status: "pending" | "ringing" | "answered" | "declined" | "missed" | "ended" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -648,6 +801,9 @@ export const Constants = {
       message_content_type: ["text", "image", "video", "audio", "file"],
       message_status: ["sending", "sent", "delivered", "read", "failed"],
       scheduled_message_status: ["pending", "sent", "cancelled"],
+      call_type: ["voice", "video"],
+      call_direction: ["incoming", "outgoing"],
+      call_session_status: ["pending", "ringing", "answered", "declined", "missed", "ended", "failed"],
     },
   },
 } as const

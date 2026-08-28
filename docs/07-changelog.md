@@ -234,3 +234,48 @@
 - Local video preview (picture-in-picture) cho video calls
 
 **Status**: Active
+
+---
+
+## [2026-08-27] Phase 5 - WebRTC Voice & Video Calls
+**Quyết định**: Implement WebRTC thực sự cho cuộc gọi voice/video giữa 2 users.
+**Lý do**: Phase 4.7 đã có UI, Phase 5 cần integrate với WebRTC để cuộc gọi hoạt động.
+
+### Database Schema
+**Hệ quả**:
+- Migration `20250105000000_webrtc_calls.sql` - Tạo bảng `call_sessions` và `call_history`
+- Enums: `call_type` (voice/video), `call_direction` (incoming/outgoing), `call_session_status`
+- RPC functions: `initiate_call()`, `update_call_status()`, `end_call()`, `get_call_history()`
+- RLS policies cho phép caller/callee xem và update session
+- Realtime enabled trên `call_sessions` để nhận incoming calls
+
+### WebRTC Service
+**Hệ quả**:
+- `lib/webrtc.ts` - WebRTCService class quản lý RTCPeerConnection
+- Signaling qua Supabase Realtime broadcast channels
+- STUN servers: Google public STUN servers
+- Media controls: mute mic, toggle camera, switch camera
+- ICE candidate handling
+
+### Call Provider & Hooks
+**Hệ quả**:
+- `hooks/use-webrtc-call.ts` - Hook quản lý WebRTC lifecycle
+- `hooks/use-call-history.ts` - Hook fetch và subscribe call history
+- `components/calls/call-provider.tsx` - Provider wrap app để quản lý calls
+- Event-based communication: `call:initiate`, `call:accept`, `call:decline`, `call:end`, etc.
+
+### UI Updates
+**Hệ quả**:
+- Cập nhật `call-screen.tsx` với remote stream video display
+- Cập nhật `incoming-call-modal.tsx` với real accept/decline
+- Cập nhật `chat-view.tsx` dispatch events thay vì gọi store trực tiếp
+- Cập nhật `(chat)/layout.tsx` wrap với CallProvider
+- Cập nhật `calls/page.tsx` sử dụng `useCallHistory` thay vì mock data
+
+### Types & Utilities
+**Hệ quả**:
+- Cập nhật `types/database.ts` với call_sessions và call_history tables
+- Thêm enums: call_type, call_direction, call_session_status
+- Helper functions: `isWebRTCSupported()`, `requestMediaPermissions()`
+
+**Status**: Active

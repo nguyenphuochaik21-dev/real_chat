@@ -21,13 +21,23 @@ export function IncomingCallModal() {
     status: null,
   } : null;
 
+  const handleAccept = () => {
+    window.dispatchEvent(new CustomEvent('call:accept'));
+    acceptCall();
+  };
+
+  const handleDecline = () => {
+    window.dispatchEvent(new CustomEvent('call:decline'));
+    declineCall();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 shadow-2xl w-80 text-center">
-        {/* Avatar */}
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 shadow-2xl w-80 text-center animate-in fade-in zoom-in duration-300">
+        {/* Avatar with pulse animation */}
         <div className="mb-6">
           <div className="relative inline-block">
-            <Avatar user={remoteUserData!} size="xl" className="ring-4 ring-indigo-500/50" />
+            <Avatar user={remoteUserData!} size="2xl" className="ring-4 ring-indigo-500/50" />
             {/* Pulse animation */}
             <div className="absolute inset-0 rounded-full bg-indigo-500/30 animate-ping" />
             <div className="absolute inset-0 rounded-full bg-indigo-500/20 animate-pulse" />
@@ -57,28 +67,37 @@ export function IncomingCallModal() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex justify-center gap-6">
+        <div className="flex justify-center gap-8">
+          {/* Decline Button */}
           <div className="flex flex-col items-center">
             <Button
               variant="ghost"
-              className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 text-white mb-2"
-              onClick={declineCall}
+              className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 text-white mb-2 transition-all hover:scale-105 active:scale-95"
+              onClick={handleDecline}
             >
               <PhoneOff className="w-6 h-6" />
             </Button>
             <span className="text-xs text-slate-400">Decline</span>
           </div>
 
+          {/* Accept Button */}
           <div className="flex flex-col items-center">
             <Button
               variant="ghost"
-              className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 text-white mb-2"
-              onClick={acceptCall}
+              className="w-16 h-16 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white mb-2 transition-all hover:scale-105 active:scale-95"
+              onClick={handleAccept}
             >
               <Phone className="w-6 h-6" />
             </Button>
             <span className="text-xs text-slate-400">Accept</span>
           </div>
+        </div>
+
+        {/* Ringing animation dots */}
+        <div className="mt-6 flex justify-center gap-1">
+          <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
         </div>
       </div>
     </div>

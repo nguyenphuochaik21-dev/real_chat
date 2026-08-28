@@ -276,19 +276,52 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 
 ---
 
-## Phase 5 — Voice & Video Call (WebRTC) 📞
+## Phase 5 — Voice & Video Call (WebRTC) 📞 ✅
 
 **Mục tiêu**: Cuộc gọi thoại và video thực sự hoạt động.
+**Trạng thái**: ✅ Hoàn thành (2026-08-27)
 
 ### Tasks
-- [ ] WebRTC signaling qua Supabase Realtime
-- [ ] Microphone/camera permission
-- [ ] In-call controls (mute, video toggle, end)
-- [ ] Group call (optional)
-- [ ] Call history persist
 
-### Deliverable
-- Gọi được giữa 2 user
+#### 5.1. Database Schema ✅
+- [x] Migration `20250105000000_webrtc_calls.sql`
+- [x] Bảng `call_sessions` với WebRTC signaling data (offer_sdp, answer_sdp, ice_candidates)
+- [x] Bảng `call_history` cho lịch sử cuộc gọi
+- [x] RPC functions: `initiate_call()`, `update_call_status()`, `end_call()`, `get_call_history()`
+- [x] RLS policies cho phép caller/callee xem và update session
+- [x] Realtime enabled trên `call_sessions` để nhận incoming calls
+- [x] Auto-end missed calls sau 60 giây
+
+#### 5.2. WebRTC Service ✅
+- [x] `lib/webrtc.ts` - WebRTCService class quản lý RTCPeerConnection
+- [x] Signaling qua Supabase Realtime broadcast channels
+- [x] STUN servers: Google public STUN servers
+- [x] Media controls: mute mic, toggle camera, switch camera
+- [x] ICE candidate handling và exchange
+- [x] Helper functions: `isWebRTCSupported()`, `requestMediaPermissions()`
+
+#### 5.3. Call Provider & Hooks ✅
+- [x] `hooks/use-webrtc-call.ts` - Hook quản lý WebRTC lifecycle
+- [x] `hooks/use-call-history.ts` - Hook fetch và subscribe call history
+- [x] `components/calls/call-provider.tsx` - Provider wrap app để quản lý calls
+- [x] Event-based communication: `call:initiate`, `call:accept`, `call:decline`, `call:end`
+
+#### 5.4. UI Integration ✅
+- [x] Cập nhật `call-screen.tsx` với remote stream video display
+- [x] Cập nhật `incoming-call-modal.tsx` với real accept/decline
+- [x] Cập nhật `chat-view.tsx` dispatch events thay vì gọi store trực tiếp
+- [x] Wrap app với `CallProvider` trong `(chat)/layout.tsx`
+- [x] Cập nhật `calls/page.tsx` sử dụng `useCallHistory` thay vì mock data
+
+#### 5.5. Call History ✅
+- [x] Group calls by date
+- [x] Filter: All, Missed, Incoming, Outgoing
+- [x] Realtime updates khi có cuộc gọi mới
+
+### Deliverable ✅
+- ✅ Gọi được giữa 2 user
+- ✅ Cuộc gọi voice/video hoạt động qua WebRTC
+- ✅ Lịch sử cuộc gọi được lưu
 
 ---
 

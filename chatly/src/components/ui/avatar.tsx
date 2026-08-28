@@ -20,7 +20,7 @@ type AvatarUser = UserWithStatus | UserWithoutStatus
 
 interface AvatarProps {
   user: AvatarUser
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
   showStatus?: boolean
   /** Override the user's status - useful for realtime presence */
   statusOverride?: UserStatus
@@ -32,6 +32,7 @@ const sizeClasses = {
   md: 'w-10 h-10 text-sm',
   lg: 'w-14 h-14 text-lg',
   xl: 'w-24 h-24 text-3xl',
+  '2xl': 'w-32 h-32 text-4xl',
 }
 
 const statusSizeClasses = {
@@ -39,6 +40,7 @@ const statusSizeClasses = {
   md: 'w-3 h-3 border-2',
   lg: 'w-4 h-4 border-2',
   xl: 'w-6 h-6 border-2',
+  '2xl': 'w-8 h-8 border-2',
 }
 
 const statusColors: Record<Exclude<UserStatus, null>, string> = {

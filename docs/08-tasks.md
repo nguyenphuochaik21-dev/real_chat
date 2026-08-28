@@ -213,8 +213,40 @@
 - [x] Duration timer (MM:SS format)
 - [x] Local video preview (picture-in-picture)
 
-## Phase 5 — Voice/Video
-(chưa bắt đầu)
+## Phase 5 — Voice/Video (WebRTC) 🚧 (2026-08-27)
+
+### 5.1. Database Schema 🚧
+- [x] Migration `20250105000000_webrtc_calls.sql`
+- [x] Bảng `call_sessions` với WebRTC signaling data
+- [x] Bảng `call_history` cho lịch sử cuộc gọi
+- [x] RPC functions: initiate_call, update_call_status, end_call, get_call_history
+- [x] RLS policies cho call sessions/history
+- [x] Realtime enabled trên call_sessions
+
+### 5.2. WebRTC Service ✅
+- [x] `lib/webrtc.ts` - WebRTCService class
+- [x] RTCPeerConnection management
+- [x] Signaling qua Supabase broadcast channels
+- [x] ICE candidate handling
+- [x] Media controls (mute, camera toggle, switch camera)
+
+### 5.3. Call Provider & Hooks ✅
+- [x] `hooks/use-webrtc-call.ts` - WebRTC lifecycle hook
+- [x] `hooks/use-call-history.ts` - Call history hook
+- [x] `components/calls/call-provider.tsx` - Call provider
+- [x] Event-based communication (call:initiate, etc.)
+
+### 5.4. UI Integration ✅
+- [x] Cập nhật call-screen với remote stream display
+- [x] Cập nhật incoming-call-modal với real actions
+- [x] Cập nhật chat-view dispatch events
+- [x] Wrap app với CallProvider
+- [x] Cập nhật calls/page.tsx với real history
+
+### 5.5. Call History Page ✅
+- [x] Sử dụng `useCallHistory` hook
+- [x] Group calls by date
+- [x] Filter: All, Missed, Incoming, Outgoing
 
 ## Phase 6 — Group & Stories
 (chưa bắt đầu)

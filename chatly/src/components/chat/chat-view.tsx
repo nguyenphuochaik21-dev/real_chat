@@ -1008,11 +1008,18 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
             size="icon"
             onClick={() => {
               if (conversationId && participant) {
-                useCallStore.getState().initiateCall(conversationId, {
-                  id: participant.id,
-                  displayName: participant.display_name,
-                  avatarUrl: participant.avatar_url || undefined,
-                }, 'voice')
+                // Dispatch event for CallProvider to handle
+                window.dispatchEvent(new CustomEvent('call:initiate', {
+                  detail: {
+                    conversationId,
+                    remoteUser: {
+                      id: participant.id,
+                      displayName: participant.display_name,
+                      avatarUrl: participant.avatar_url || undefined,
+                    },
+                    type: 'voice',
+                  },
+                }));
               }
             }}
           >
@@ -1023,11 +1030,18 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
             size="icon"
             onClick={() => {
               if (conversationId && participant) {
-                useCallStore.getState().initiateCall(conversationId, {
-                  id: participant.id,
-                  displayName: participant.display_name,
-                  avatarUrl: participant.avatar_url || undefined,
-                }, 'video')
+                // Dispatch event for CallProvider to handle
+                window.dispatchEvent(new CustomEvent('call:initiate', {
+                  detail: {
+                    conversationId,
+                    remoteUser: {
+                      id: participant.id,
+                      displayName: participant.display_name,
+                      avatarUrl: participant.avatar_url || undefined,
+                    },
+                    type: 'video',
+                  },
+                }));
               }
             }}
           >

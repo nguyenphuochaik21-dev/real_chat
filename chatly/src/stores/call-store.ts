@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 
 export type CallType = 'voice' | 'video';
-export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'declined' | 'missed';
+export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'declined' | 'missed' | 'failed';
 
 interface CallParticipant {
   id: string;
@@ -22,6 +22,7 @@ interface CallState {
 
   // Call metadata
   conversationId: string | null;
+  sessionId: string | null; // WebRTC session ID from database
   startedAt: Date | null;
   duration: number; // seconds
 
@@ -29,19 +30,23 @@ interface CallState {
   isMuted: boolean;
   isVideoOff: boolean;
   isSpeakerOn: boolean;
+
+  // Error state
+  error: string | null;
 }
 
 interface CallActions {
   // Initiate a call
-  initiateCall: (conversationId: string, remoteUser: CallParticipant, type: CallType) => void;
+  initiateCall: (conversationId: string, remoteUser: CallParticipant, type: CallType, sessionId?: string) => void;
 
   // Handle incoming call
-  receiveCall: (conversationId: string, remoteUser: CallParticipant, type: CallType) => void;
+  receiveCall: (sessionId: string, remoteUser: CallParticipant, type: CallType) => void;
 
   // Call actions
   acceptCall: () => void;
   declineCall: () => void;
   endCall: () => void;
+  setConnected: () => void;
 
   // Media controls
   toggleMute: () => void;
@@ -50,6 +55,9 @@ interface CallActions {
 
   // Update duration (called every second when connected)
   updateDuration: () => void;
+
+  // Error handling
+  setError: (error: string | null) => void;
 
   // Reset state
   reset: () => void;
@@ -61,46 +69,52 @@ const initialState: CallState = {
   currentUser: null,
   remoteUser: null,
   conversationId: null,
+  sessionId: null,
   startedAt: null,
   duration: 0,
   isMuted: false,
   isVideoOff: false,
   isSpeakerOn: true,
+  error: null,
 };
 
 export const useCallStore = create<CallState & CallActions>((set, get) => ({
   ...initialState,
 
-  initiateCall: (conversationId, remoteUser, type) => {
+  initiateCall: (conversationId, remoteUser, type, sessionId) => {
     set({
       status: 'calling',
       type,
       conversationId,
+      sessionId: sessionId || null,
       remoteUser,
       startedAt: null,
       duration: 0,
       isMuted: false,
       isVideoOff: type === 'voice',
+      error: null,
     });
 
-    // Simulate remote user answering after 3 seconds (for demo)
-    // In real implementation, this would be triggered by WebRTC signaling
+    // Auto-end if no response after 60 seconds (handled by server, but backup)
     setTimeout(() => {
-      if (get().status === 'calling') {
+      if (get().status === 'calling' || get().status === 'ringing') {
         set({
-          status: 'ringing',
+          status: 'missed',
+          error: 'No answer',
         });
+        setTimeout(() => set(initialState), 2000);
       }
-    }, 2000);
+    }, 60000);
   },
 
-  receiveCall: (conversationId, remoteUser, type) => {
+  receiveCall: (sessionId, remoteUser, type) => {
     set({
       status: 'ringing',
       type,
-      conversationId,
+      sessionId,
       remoteUser,
       isVideoOff: type === 'voice',
+      error: null,
     });
   },
 
@@ -109,7 +123,20 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
       status: 'connected',
       startedAt: new Date(),
       duration: 0,
+      error: null,
     });
+  },
+
+  setConnected: () => {
+    const current = get();
+    if (current.status === 'calling' || current.status === 'ringing') {
+      set({
+        status: 'connected',
+        startedAt: new Date(),
+        duration: 0,
+        error: null,
+      });
+    }
   },
 
   declineCall: () => {
@@ -149,6 +176,14 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
   updateDuration: () => {
     if (get().status === 'connected') {
       set((state) => ({ duration: state.duration + 1 }));
+    }
+  },
+
+  setError: (error) => {
+    set({ error });
+    if (error) {
+      set({ status: 'failed' });
+      setTimeout(() => set(initialState), 3000);
     }
   },
 
