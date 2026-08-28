@@ -20,11 +20,52 @@ export interface WebRTCConfig {
   onError: (error: Error) => void;
 }
 
+// ICE Servers configuration
+// STUN: Google's free STUN servers
+// TURN: Free TURN server from metered.ca (500MB/month free)
+// For production, use Twilio TURN or Xirsys
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  // Add TURN server here for production (e.g., Twilio, Xirsys)
+  { urls: 'stun:stun2.l.google.com:19302' },
+  // Free TURN server (Metered.ca) - no credentials needed for basic usage
+  {
+    urls: 'turn:a.production.metered.ca:80',
+    username: 'webrtc',
+    credential: 'turn',
+  },
+  {
+    urls: 'turn:a.production.metered.ca:443',
+    username: 'webrtc',
+    credential: 'turn',
+  },
 ];
+
+// TURN server configuration - can be configured via environment variables
+// NEXT_PUBLIC_TURN_URL, NEXT_PUBLIC_TURN_USERNAME, NEXT_PUBLIC_TURN_CREDENTIAL
+export function getIceServers(): RTCIceServer[] {
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+
+  if (turnUrl) {
+    const customServers: RTCIceServer[] = [
+      { urls: turnUrl },
+    ];
+
+    const username = process.env.NEXT_PUBLIC_TURN_USERNAME;
+    const credential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+
+    if (username && credential) {
+      customServers[0] = { urls: turnUrl, username, credential };
+    }
+
+    return [
+      { urls: 'stun:stun.l.google.com:19302' },
+      ...customServers,
+    ];
+  }
+
+  return ICE_SERVERS;
+}
 
 export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null;
@@ -94,7 +135,7 @@ export class WebRTCService {
   }
 
   private createPeerConnection(): void {
-    this.peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.peerConnection = new RTCPeerConnection({ iceServers: getIceServers() });
 
     // Add local tracks to connection
     if (this.localStream) {
