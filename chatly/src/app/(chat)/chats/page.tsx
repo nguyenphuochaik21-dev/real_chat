@@ -37,14 +37,14 @@ export default function ChatsPage() {
 
   return (
     <div className="flex h-full flex-1">
-      {/* Chats List Panel */}
+      {/* Chats List Panel — full width on mobile, fixed width on desktop */}
       <ChatsList
         selectedConversationId={null}
         currentUserId={currentUserId}
       />
 
-      {/* Empty state - conversations show in the list, detail shows in [id] route */}
-      <div className="flex flex-1 flex-col items-center justify-center bg-[var(--bg-app)] text-[var(--text-muted)]">
+      {/* Empty state — desktop only */}
+      <div className="hidden flex-1 flex-col items-center justify-center bg-[var(--bg-app)] text-[var(--text-muted)] md:flex">
         <div className="text-center">
           <p className="text-lg">Select a conversation</p>
           <p className="mt-2 text-sm">Choose a chat from the list</p>

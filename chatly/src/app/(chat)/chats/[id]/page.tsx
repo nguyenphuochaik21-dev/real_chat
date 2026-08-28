@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { ChatsList } from '@/components/chat/chats-list'
 import { ChatView } from '@/components/chat/chat-view'
 import { createClient } from '@/lib/supabase/client'
@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 export default function ChatDetailPage() {
   const params = useParams()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const conversationId = params.id as string
   const scrollToMessageId = searchParams.get('scrollTo') || undefined
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -27,7 +28,9 @@ export default function ChatDetailPage() {
   if (loading) {
     return (
       <div className="flex h-full flex-1">
-        <ChatsList selectedConversationId={conversationId} currentUserId="" />
+        <div className="hidden md:block md:w-80">
+          <ChatsList selectedConversationId={conversationId} currentUserId="" />
+        </div>
         <div className="flex flex-1 items-center justify-center bg-[var(--bg-app)]">
           <div className="h-8 w-8 animate-spin rounded-full border-3 border-primary-500 border-t-transparent" />
         </div>
@@ -38,7 +41,9 @@ export default function ChatDetailPage() {
   if (!currentUserId) {
     return (
       <div className="flex h-full flex-1">
-        <ChatsList selectedConversationId={conversationId} currentUserId="" />
+        <div className="hidden md:block md:w-80">
+          <ChatsList selectedConversationId={conversationId} currentUserId="" />
+        </div>
         <div className="flex flex-1 items-center justify-center bg-[var(--bg-app)]">
           <p className="text-[var(--text-muted)]">Please sign in to view chats</p>
         </div>
@@ -48,15 +53,18 @@ export default function ChatDetailPage() {
 
   return (
     <div className="flex h-full flex-1">
-      {/* Chats List Panel */}
-      <ChatsList selectedConversationId={conversationId} currentUserId={currentUserId} />
+      {/* Chats List Panel — desktop only on detail route (mobile shows chat fullscreen) */}
+      <div className="hidden md:block md:w-80 md:shrink-0">
+        <ChatsList selectedConversationId={conversationId} currentUserId={currentUserId} />
+      </div>
 
       {/* Chat View */}
-      <div className="flex flex-1">
+      <div className="flex flex-1 min-w-0">
         <ChatView
           conversationId={conversationId}
           currentUserId={currentUserId}
-          showBackButton={false}
+          showBackButton
+          onBack={() => router.push('/chats')}
           scrollToMessageId={scrollToMessageId}
         />
       </div>

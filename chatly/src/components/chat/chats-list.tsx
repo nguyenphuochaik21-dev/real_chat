@@ -629,7 +629,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   ]
 
   return (
-    <div className="flex h-full w-80 flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)]">
+    <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)] md:w-80">
       {/* Header */}
       <div className="p-4">
         <div className="mb-4 flex items-center justify-between">
