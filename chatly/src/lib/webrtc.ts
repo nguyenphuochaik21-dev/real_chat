@@ -1,67 +1,45 @@
 'use client';
 
-import { createClient } from '@/lib/supabase/client';
-
 export type CallType = 'voice' | 'video';
 
+export type SignalType =
+  | 'offer'
+  | 'answer'
+  | 'ice-candidate'
+  | 'call-end';
+
 export interface SignalingMessage {
-  type: 'offer' | 'answer' | 'ice-candidate' | 'call-request' | 'call-accept' | 'call-decline' | 'call-end';
+  type: SignalType;
   sessionId: string;
   fromUserId: string;
   toUserId: string;
-  payload?: RTCSessionDescriptionInit | RTCIceCandidateInit | Record<string, unknown>;
+  payload?: RTCSessionDescriptionInit | RTCIceCandidateInit | null;
   timestamp?: number;
 }
 
 export interface WebRTCConfig {
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionStateChange: (state: RTCPeerConnectionState) => void;
-  onIceCandidate: (candidate: RTCIceCandidate) => void;
+  onIceCandidate?: (candidate: RTCIceCandidate) => void;
   onError: (error: Error) => void;
 }
 
-// ICE Servers configuration
-// STUN: Google's free STUN servers
-// TURN: Free TURN server from metered.ca (500MB/month free)
-// For production, use Twilio TURN or Xirsys
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
-  // Free TURN server (Metered.ca) - no credentials needed for basic usage
-  {
-    urls: 'turn:a.production.metered.ca:80',
-    username: 'webrtc',
-    credential: 'turn',
-  },
-  {
-    urls: 'turn:a.production.metered.ca:443',
-    username: 'webrtc',
-    credential: 'turn',
-  },
 ];
 
-// TURN server configuration - can be configured via environment variables
-// NEXT_PUBLIC_TURN_URL, NEXT_PUBLIC_TURN_USERNAME, NEXT_PUBLIC_TURN_CREDENTIAL
 export function getIceServers(): RTCIceServer[] {
   const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
 
   if (turnUrl) {
-    const customServers: RTCIceServer[] = [
-      { urls: turnUrl },
-    ];
-
     const username = process.env.NEXT_PUBLIC_TURN_USERNAME;
     const credential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
-
-    if (username && credential) {
-      customServers[0] = { urls: turnUrl, username, credential };
-    }
-
-    return [
-      { urls: 'stun:stun.l.google.com:19302' },
-      ...customServers,
-    ];
+    const customServer: RTCIceServer = username && credential
+      ? { urls: turnUrl, username, credential }
+      : { urls: turnUrl };
+    return [{ urls: 'stun:stun.l.google.com:19302' }, customServer];
   }
 
   return ICE_SERVERS;
@@ -73,9 +51,12 @@ export class WebRTCService {
   private config: WebRTCConfig;
   private callType: CallType;
   private isInitiator: boolean;
-  private supabase = createClient();
+
   private channelName: string;
-  private channel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null;
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+
   private userId: string;
   private remoteUserId: string;
   private sessionId: string;
@@ -99,15 +80,9 @@ export class WebRTCService {
 
   async initialize(): Promise<void> {
     try {
-      // Get local media stream
       await this.acquireLocalStream();
-
-      // Create peer connection
       this.createPeerConnection();
-
-      // Setup signaling channel
-      this.setupSignaling();
-
+      this.connectSignaling();
     } catch (error) {
       this.config.onError(error instanceof Error ? error : new Error('Failed to initialize WebRTC'));
       throw error;
@@ -117,16 +92,15 @@ export class WebRTCService {
   private async acquireLocalStream(): Promise<MediaStream> {
     const constraints: MediaStreamConstraints = {
       audio: true,
-      video: this.callType === 'video',
+      video: this.callType === 'video' ? { width: 1280, height: 720 } : false,
     };
 
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
       return this.localStream;
     } catch (error) {
-      // Try audio only if video fails
       if (this.callType === 'video') {
-        console.warn('Video not available, switching to audio-only');
+        // Fallback to audio only
         this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         return this.localStream;
       }
@@ -135,26 +109,26 @@ export class WebRTCService {
   }
 
   private createPeerConnection(): void {
-    this.peerConnection = new RTCPeerConnection({ iceServers: getIceServers() });
+    this.peerConnection = new RTCPeerConnection({
+      iceServers: getIceServers(),
+      iceCandidatePoolSize: 10,
+    });
 
-    // Add local tracks to connection
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
         this.peerConnection!.addTrack(track, this.localStream!);
       });
     }
 
-    // Handle incoming tracks
     this.peerConnection.ontrack = (event) => {
       if (event.streams[0]) {
         this.config.onRemoteStream(event.streams[0]);
       }
     };
 
-    // Handle ICE candidates
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.sendSignalingMessage({
+        this.sendSignal({
           type: 'ice-candidate',
           sessionId: this.sessionId,
           fromUserId: this.userId,
@@ -164,38 +138,48 @@ export class WebRTCService {
       }
     };
 
-    // Handle connection state changes
     this.peerConnection.onconnectionstatechange = () => {
       if (this.peerConnection) {
         this.config.onConnectionStateChange(this.peerConnection.connectionState);
       }
     };
-
-    // Handle ICE connection state
-    this.peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE connection state:', this.peerConnection?.iceConnectionState);
-    };
   }
 
-  private setupSignaling(): void {
-    this.channel = this.supabase.channel(this.channelName, {
+  /**
+   * Use Supabase Realtime broadcast for signaling.
+   * The channel name is unique per call session, both peers subscribe.
+   */
+  private async connectSignaling(): Promise<void> {
+    const { createClient } = await import('@/lib/supabase/client');
+    const supabase = createClient();
+
+    const channel = supabase.channel(this.channelName, {
       config: {
-        broadcast: { self: false },
+        broadcast: { self: false, ack: false },
       },
     });
 
-    this.channel.on('broadcast', { event: '*' }, (payload) => {
-      this.handleSignalingMessage(payload.payload as SignalingMessage);
+    channel.on('broadcast', { event: 'signal' }, (payload) => {
+      this.handleSignal(payload.payload as SignalingMessage);
     });
 
-    this.channel.subscribe();
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        // Once subscribed, the initiator can create the offer
+        if (this.isInitiator) {
+          // small delay to ensure both peers are subscribed
+          setTimeout(() => this.createOffer(), 500);
+        }
+      }
+    });
+
+    // Save for cleanup
+    (this as any)._channel = channel;
   }
 
-  private handleSignalingMessage(message: SignalingMessage): void {
-    // Ignore messages from self
-    if (message.fromUserId === this.userId) return;
-
-    // Ignore messages for other sessions
+  private handleSignal(message: SignalingMessage): void {
+    if (!message || message.fromUserId === this.userId) return;
+    if (message.toUserId !== this.userId) return;
     if (message.sessionId !== this.sessionId) return;
 
     switch (message.type) {
@@ -209,30 +193,31 @@ export class WebRTCService {
         this.handleIceCandidate(message.payload as RTCIceCandidateInit);
         break;
       case 'call-end':
-        this.handleRemoteEnd();
+        this.config.onConnectionStateChange('disconnected');
         break;
     }
   }
 
-  private sendSignalingMessage(message: SignalingMessage): void {
-    if (this.channel) {
-      this.channel.send({
-        type: 'broadcast',
-        event: 'signal',
-        payload: { ...message, timestamp: Date.now() },
-      });
-    }
+  private async sendSignal(message: SignalingMessage): Promise<void> {
+    const channel = (this as any)._channel;
+    if (!channel) return;
+    await channel.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: { ...message, timestamp: Date.now() },
+    });
   }
 
   async createOffer(): Promise<void> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not initialized');
-    }
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
 
-    const offer = await this.peerConnection.createOffer();
+    const offer = await this.peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: this.callType === 'video',
+    });
     await this.peerConnection.setLocalDescription(offer);
 
-    this.sendSignalingMessage({
+    await this.sendSignal({
       type: 'offer',
       sessionId: this.sessionId,
       fromUserId: this.userId,
@@ -242,15 +227,13 @@ export class WebRTCService {
   }
 
   private async handleOffer(offer: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not initialized');
-    }
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
 
-    this.sendSignalingMessage({
+    await this.sendSignal({
       type: 'answer',
       sessionId: this.sessionId,
       fromUserId: this.userId,
@@ -260,18 +243,12 @@ export class WebRTCService {
   }
 
   private async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not initialized');
-    }
-
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
   }
 
   private async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not initialized');
-    }
-
+    if (!this.peerConnection) return;
     try {
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (error) {
@@ -279,123 +256,102 @@ export class WebRTCService {
     }
   }
 
-  private handleRemoteEnd(): void {
-    this.cleanup();
-  }
-
-  // Media controls
   toggleMicrophone(enabled: boolean): void {
-    if (this.localStream) {
-      this.localStream.getAudioTracks().forEach(track => {
-        track.enabled = enabled;
-      });
-    }
+    this.localStream?.getAudioTracks().forEach(t => (t.enabled = enabled));
   }
 
   toggleCamera(enabled: boolean): void {
-    if (this.localStream) {
-      this.localStream.getVideoTracks().forEach(track => {
-        track.enabled = enabled;
-      });
-    }
+    this.localStream?.getVideoTracks().forEach(t => (t.enabled = enabled));
   }
 
   async switchCamera(): Promise<void> {
     if (!this.localStream || this.callType !== 'video') return;
-
     const videoTrack = this.localStream.getVideoTracks()[0];
     if (!videoTrack) return;
 
-    // Get all video devices
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+    const cams = devices.filter(d => d.kind === 'videoinput');
+    if (cams.length < 2) return;
 
-    if (videoDevices.length < 2) return;
+    const currentId = videoTrack.getSettings().deviceId;
+    const idx = cams.findIndex(d => d.deviceId === currentId);
+    const nextCam = cams[(idx + 1) % cams.length];
 
-    // Find current device and switch to next
-    const currentDeviceId = videoTrack.getSettings().deviceId;
-    const currentIndex = videoDevices.findIndex(d => d.deviceId === currentDeviceId);
-    const nextIndex = (currentIndex + 1) % videoDevices.length;
-    const nextDevice = videoDevices[nextIndex];
-
-    // Get new stream from next camera
     const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: nextDevice.deviceId } },
+      video: { deviceId: { exact: nextCam.deviceId } },
       audio: false,
     });
+    const newTrack = newStream.getVideoTracks()[0];
 
-    const newVideoTrack = newStream.getVideoTracks()[0];
-
-    // Replace track in peer connection
     const sender = this.peerConnection?.getSenders().find(s => s.track?.kind === 'video');
-    if (sender) {
-      await sender.replaceTrack(newVideoTrack);
-    }
+    if (sender) await sender.replaceTrack(newTrack);
 
-    // Update local stream
     this.localStream.removeTrack(videoTrack);
-    this.localStream.addTrack(newVideoTrack);
+    this.localStream.addTrack(newTrack);
     videoTrack.stop();
-  }
-
-  async setSpeaker(enabled: boolean): Promise<void> {
-    // This is handled at the audio element level, not in WebRTC
-    // We'll return this info to the UI layer
   }
 
   getLocalStream(): MediaStream | null {
     return this.localStream;
   }
 
-  sendEndCall(): void {
-    this.sendSignalingMessage({
+  async sendEndCall(): Promise<void> {
+    await this.sendSignal({
       type: 'call-end',
       sessionId: this.sessionId,
       fromUserId: this.userId,
       toUserId: this.remoteUserId,
+      payload: null,
     });
   }
 
   cleanup(): void {
-    // Stop all tracks
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream.getTracks().forEach(t => t.stop());
       this.localStream = null;
     }
 
-    // Close peer connection
     if (this.peerConnection) {
       this.peerConnection.close();
       this.peerConnection = null;
     }
 
-    // Remove signaling channel
-    if (this.channel) {
-      this.supabase.removeChannel(this.channel);
-      this.channel = null;
+    const channel = (this as any)._channel;
+    if (channel) {
+      // Fire and forget - remove channel
+      import('@/lib/supabase/client').then(({ createClient }) => {
+        const supabase = createClient();
+        supabase.removeChannel(channel);
+      });
+      (this as any)._channel = null;
     }
   }
 }
 
-// Utility function to check browser support
 export function isWebRTCSupported(): boolean {
-  return typeof window !== 'undefined' && !!(
-    window.RTCPeerConnection &&
-    navigator.mediaDevices?.getUserMedia
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.RTCPeerConnection !== 'undefined' &&
+    !!navigator.mediaDevices?.getUserMedia
   );
 }
 
-// Utility function to request microphone/camera permissions
-export async function requestMediaPermissions(): Promise<{
+export async function requestMediaPermissions(type: CallType = 'voice'): Promise<{
   audio: boolean;
   video: boolean;
 }> {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    stream.getTracks().forEach(track => track.stop());
-    return { audio: true, video: true };
+    const constraints: MediaStreamConstraints = {
+      audio: true,
+      video: type === 'video',
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const audio = stream.getAudioTracks().length > 0;
+    const video = stream.getVideoTracks().length > 0;
+    stream.getTracks().forEach(t => t.stop());
+    return { audio, video };
   } catch (error) {
-    console.error('Error checking permissions:', error);
+    console.error('Permission request failed:', error);
     return { audio: false, video: false };
   }
 }

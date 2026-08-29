@@ -3,7 +3,16 @@
 import { create } from 'zustand';
 
 export type CallType = 'voice' | 'video';
-export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'declined' | 'missed' | 'failed';
+export type CallStatus =
+  | 'idle'
+  | 'calling'       // Outgoing - waiting for answer
+  | 'ringing'       // Incoming - waiting for accept
+  | 'connecting'    // WebRTC connecting
+  | 'connected'     // WebRTC connected
+  | 'ended'         // Call ended normally
+  | 'declined'      // Recipient declined
+  | 'missed'        // Recipient didn't answer
+  | 'failed';       // Technical error
 
 interface CallParticipant {
   id: string;
@@ -12,54 +21,55 @@ interface CallParticipant {
 }
 
 interface CallState {
-  // Call state
   status: CallStatus;
   type: CallType | null;
 
-  // Participants
   currentUser: CallParticipant | null;
   remoteUser: CallParticipant | null;
 
-  // Call metadata
+  // DB session id (call_sessions.id) - used as signaling channel name
+  sessionId: string | null;
+  // Conversation the call belongs to
   conversationId: string | null;
-  sessionId: string | null; // WebRTC session ID from database
-  startedAt: Date | null;
-  duration: number; // seconds
 
-  // Media states
+  startedAt: Date | null;
+  duration: number;
+
   isMuted: boolean;
   isVideoOff: boolean;
   isSpeakerOn: boolean;
 
-  // Error state
   error: string | null;
 }
 
 interface CallActions {
-  // Initiate a call
-  initiateCall: (conversationId: string, remoteUser: CallParticipant, type: CallType, sessionId?: string) => void;
+  initiateCall: (
+    conversationId: string,
+    sessionId: string,
+    remoteUser: CallParticipant,
+    type: CallType
+  ) => void;
 
-  // Handle incoming call
-  receiveCall: (sessionId: string, remoteUser: CallParticipant, type: CallType) => void;
+  receiveCall: (
+    sessionId: string,
+    conversationId: string,
+    remoteUser: CallParticipant,
+    type: CallType
+  ) => void;
 
-  // Call actions
   acceptCall: () => void;
   declineCall: () => void;
   endCall: () => void;
   setConnected: () => void;
+  setConnecting: () => void;
 
-  // Media controls
   toggleMute: () => void;
   toggleVideo: () => void;
   toggleSpeaker: () => void;
 
-  // Update duration (called every second when connected)
   updateDuration: () => void;
 
-  // Error handling
   setError: (error: string | null) => void;
-
-  // Reset state
   reset: () => void;
 }
 
@@ -68,8 +78,8 @@ const initialState: CallState = {
   type: null,
   currentUser: null,
   remoteUser: null,
-  conversationId: null,
   sessionId: null,
+  conversationId: null,
   startedAt: null,
   duration: 0,
   isMuted: false,
@@ -81,12 +91,12 @@ const initialState: CallState = {
 export const useCallStore = create<CallState & CallActions>((set, get) => ({
   ...initialState,
 
-  initiateCall: (conversationId, remoteUser, type, sessionId) => {
+  initiateCall: (conversationId, sessionId, remoteUser, type) => {
     set({
       status: 'calling',
       type,
       conversationId,
-      sessionId: sessionId || null,
+      sessionId,
       remoteUser,
       startedAt: null,
       duration: 0,
@@ -95,23 +105,22 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
       error: null,
     });
 
-    // Auto-end if no response after 60 seconds (handled by server, but backup)
+    // Auto-end as missed if no answer after 60s
     setTimeout(() => {
-      if (get().status === 'calling' || get().status === 'ringing') {
-        set({
-          status: 'missed',
-          error: 'No answer',
-        });
+      const s = get().status;
+      if (s === 'calling') {
+        set({ status: 'missed', error: 'No answer' });
         setTimeout(() => set(initialState), 2000);
       }
     }, 60000);
   },
 
-  receiveCall: (sessionId, remoteUser, type) => {
+  receiveCall: (sessionId, conversationId, remoteUser, type) => {
     set({
       status: 'ringing',
       type,
       sessionId,
+      conversationId,
       remoteUser,
       isVideoOff: type === 'voice',
       error: null,
@@ -120,62 +129,45 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
 
   acceptCall: () => {
     set({
-      status: 'connected',
+      status: 'connecting',
       startedAt: new Date(),
       duration: 0,
       error: null,
     });
   },
 
+  setConnecting: () => {
+    set({ status: 'connecting' });
+  },
+
   setConnected: () => {
     const current = get();
-    if (current.status === 'calling' || current.status === 'ringing') {
+    if (current.status === 'calling' || current.status === 'ringing' || current.status === 'connecting') {
       set({
         status: 'connected',
-        startedAt: new Date(),
-        duration: 0,
+        startedAt: current.startedAt ?? new Date(),
         error: null,
       });
     }
   },
 
   declineCall: () => {
-    set({
-      status: 'declined',
-    });
-
-    // Reset after showing declined state
-    setTimeout(() => {
-      set(initialState);
-    }, 2000);
+    set({ status: 'declined' });
+    setTimeout(() => set(initialState), 2000);
   },
 
   endCall: () => {
-    set({
-      status: 'ended',
-    });
-
-    // Reset after showing ended state
-    setTimeout(() => {
-      set(initialState);
-    }, 2000);
+    set({ status: 'ended' });
+    setTimeout(() => set(initialState), 2000);
   },
 
-  toggleMute: () => {
-    set((state) => ({ isMuted: !state.isMuted }));
-  },
-
-  toggleVideo: () => {
-    set((state) => ({ isVideoOff: !state.isVideoOff }));
-  },
-
-  toggleSpeaker: () => {
-    set((state) => ({ isSpeakerOn: !state.isSpeakerOn }));
-  },
+  toggleMute: () => set(s => ({ isMuted: !s.isMuted })),
+  toggleVideo: () => set(s => ({ isVideoOff: !s.isVideoOff })),
+  toggleSpeaker: () => set(s => ({ isSpeakerOn: !s.isSpeakerOn })),
 
   updateDuration: () => {
     if (get().status === 'connected') {
-      set((state) => ({ duration: state.duration + 1 }));
+      set(s => ({ duration: s.duration + 1 }));
     }
   },
 
@@ -187,14 +179,11 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
     }
   },
 
-  reset: () => {
-    set(initialState);
-  },
+  reset: () => set(initialState),
 }));
 
-// Helper to format duration
 export function formatCallDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Video, VideoOff, Mic, MicOff, Volume2, PhoneOff, RefreshCw } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { useCallStore, formatCallDuration } from '@/stores/call-store';
 
 interface CallScreenProps {
@@ -19,7 +18,6 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
     duration,
     isMuted,
     isVideoOff,
-    isSpeakerOn,
     error,
     endCall,
   } = useCallStore();
@@ -28,39 +26,29 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [connectionState, setConnectionState] = useState<string>('connecting');
 
-  // Attach local stream to video element
+  // Attach local stream
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream]);
 
-  // Attach remote stream to video/audio elements
+  // Attach remote stream
   useEffect(() => {
-    if (remoteStream) {
-      const isVideoCall = type === 'video';
+    if (!remoteStream) return;
+    const isVideoCall = type === 'video';
 
-      if (isVideoCall && remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        setConnectionState('connected');
-      } else if (!isVideoCall && remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = remoteStream;
-        remoteAudioRef.current.play().catch(console.error);
-        setConnectionState('connected');
-      }
-
-      // Update connection state based on stream
-      remoteStream.getTracks().forEach(track => {
-        track.onended = () => {
-          setConnectionState('disconnected');
-        };
-      });
+    if (isVideoCall && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(console.error);
+    } else if (!isVideoCall && remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(console.error);
     }
   }, [remoteStream, type]);
 
-  // Start duration timer when connected
+  // Duration timer
   useEffect(() => {
     if (status === 'connected') {
       intervalRef.current = setInterval(() => {
@@ -74,18 +62,16 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
     }
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [status]);
 
-  if (status === 'idle' || status === 'ended' || status === 'declined' || status === 'missed') {
-    return null;
-  }
+  // Only render for active call states
+  const visibleStatuses = ['calling', 'connecting', 'connected'];
+  if (!visibleStatuses.includes(status)) return null;
 
   const isVideo = type === 'video';
-  const showLocalVideo = isVideo && !isVideoOff;
+  const showLocalVideo = isVideo && localStream;
   const showRemoteVideo = isVideo && remoteStream;
 
   const remoteUserData = remoteUser ? {
@@ -95,17 +81,17 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
     status: null,
   } : null;
 
-  const getStatusText = () => {
+  const getStatusText = (): string => {
     if (error) return error;
     switch (status) {
       case 'calling':
         return 'Calling...';
       case 'ringing':
         return 'Ringing...';
+      case 'connecting':
+        return 'Connecting...';
       case 'connected':
         return formatCallDuration(duration);
-      case 'failed':
-        return 'Connection failed';
       default:
         return '';
     }
@@ -113,55 +99,45 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
 
   const handleEndCall = () => {
     window.dispatchEvent(new CustomEvent('call:end'));
-    endCall();
   };
 
   const handleToggleMute = () => {
-    const newState = !isMuted;
-    window.dispatchEvent(new CustomEvent('call:mute', { detail: newState }));
+    window.dispatchEvent(new CustomEvent('call:mute', { detail: !isMuted }));
   };
 
   const handleToggleVideo = () => {
-    const newState = !isVideoOff;
-    window.dispatchEvent(new CustomEvent('call:video', { detail: newState }));
-  };
-
-  const handleToggleSpeaker = () => {
-    window.dispatchEvent(new CustomEvent('call:speaker', { detail: !isSpeakerOn }));
+    window.dispatchEvent(new CustomEvent('call:video', { detail: !isVideoOff }));
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Hidden remote audio element for voice calls */}
+    <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      {/* Hidden audio element for voice calls */}
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
-      {/* Remote Video (full screen background) */}
+      {/* Remote video (full screen) or avatar fallback */}
       {showRemoteVideo ? (
         <div className="absolute inset-0">
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
           />
-          {/* Overlay gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
         </div>
       ) : (
-        // Avatar fallback
         <div className="absolute inset-0 flex items-center justify-center">
-          {remoteUser && (
+          {remoteUserData && (
             <div className="relative">
               <Avatar
-                user={remoteUserData!}
+                user={remoteUserData}
                 size="2xl"
                 className="ring-4 ring-white/20"
               />
-              {/* Pulse animation while connecting */}
-              {connectionState !== 'connected' && (
+              {status !== 'connected' && (
                 <>
-                  <div className="absolute inset-0 rounded-full bg-indigo-500/30 animate-ping" />
-                  <div className="absolute inset-0 rounded-full bg-indigo-500/20 animate-pulse" />
+                  <div className="absolute inset-0 animate-ping rounded-full bg-indigo-500/30" />
+                  <div className="absolute inset-0 animate-pulse rounded-full bg-indigo-500/20" />
                 </>
               )}
             </div>
@@ -169,96 +145,87 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
         </div>
       )}
 
-      {/* Top section: Remote user info */}
+      {/* Top info section */}
       <div className="relative z-10 flex flex-col items-center gap-4 pt-16">
         <div className="text-center">
           <h1 className="text-3xl font-semibold text-white drop-shadow-lg">
             {remoteUser?.displayName || 'Unknown'}
           </h1>
-          <p className={`mt-2 text-lg ${status === 'connected' ? 'text-emerald-400' : 'text-slate-300'}`}>
+          <p className={`mt-2 text-lg ${
+            status === 'connected' ? 'text-emerald-400' : 'text-slate-300'
+          }`}>
             {getStatusText()}
           </p>
         </div>
 
-        {/* Call type badge */}
-        <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm">
+        <div className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 backdrop-blur-sm">
           {isVideo ? (
-            <Video className="w-4 h-4 text-indigo-300" />
+            <Video className="h-4 w-4 text-indigo-300" />
           ) : (
-            <Mic className="w-4 h-4 text-indigo-300" />
+            <Mic className="h-4 w-4 text-indigo-300" />
           )}
-          <span className="text-sm text-white/80 capitalize">{type} call</span>
+          <span className="text-sm capitalize text-white/80">
+            {isVideo ? 'Video call' : 'Voice call'}
+          </span>
         </div>
       </div>
 
-      {/* Local Video Preview (Picture-in-Picture) */}
+      {/* Local video preview */}
       {showLocalVideo && (
-        <div className="absolute bottom-28 right-4 w-40 h-52 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-white/30 bg-slate-800">
+        <div className="absolute bottom-28 right-4 h-52 w-40 overflow-hidden rounded-2xl bg-slate-800 shadow-2xl ring-2 ring-white/30">
           <video
             ref={localVideoRef}
             autoPlay
             muted
             playsInline
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
           />
           {isVideoOff && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900">
-              <VideoOff className="w-8 h-8 text-slate-400 mb-2" />
+              <VideoOff className="mb-2 h-8 w-8 text-slate-400" />
               <span className="text-xs text-slate-500">Camera off</span>
             </div>
           )}
-          {/* Camera switch button */}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="absolute bottom-2 right-2 bg-black/40 hover:bg-black/60 text-white"
-            onClick={() => {
-              // TODO: Implement camera switch
-            }}
+          <button
+            className="absolute bottom-2 right-2 rounded-full bg-black/40 p-1.5 text-white hover:bg-black/60"
+            onClick={() => window.dispatchEvent(new CustomEvent('call:video', { detail: !isVideoOff }))}
           >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Call Controls */}
-      <div className="relative z-10 flex items-center justify-center gap-4 pb-16">
-        {/* Mute Button */}
+      {/* Call controls */}
+      <div className="relative z-10 mt-auto flex items-center justify-center gap-4 pb-12">
         <ControlButton
-          icon={isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+          icon={isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           label={isMuted ? 'Unmute' : 'Mute'}
-          active={!isMuted}
           onClick={handleToggleMute}
           variant={isMuted ? 'danger' : 'secondary'}
         />
 
-        {/* Video Toggle (only for video calls) */}
         {isVideo && (
           <ControlButton
-            icon={isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+            icon={isVideoOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
             label={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
-            active={!isVideoOff}
             onClick={handleToggleVideo}
             variant={isVideoOff ? 'danger' : 'secondary'}
           />
         )}
 
-        {/* Speaker Toggle */}
         <ControlButton
-          icon={<Volume2 className="w-6 h-6" />}
-          label={isSpeakerOn ? 'Speaker off' : 'Speaker on'}
-          active={isSpeakerOn}
-          onClick={handleToggleSpeaker}
-          variant={isSpeakerOn ? 'secondary' : 'secondary'}
+          icon={<Volume2 className="h-6 w-6" />}
+          label="Speaker"
+          onClick={() => window.dispatchEvent(new CustomEvent('call:speaker', { detail: true }))}
+          variant="secondary"
         />
 
-        {/* End Call Button */}
         <ControlButton
-          icon={<PhoneOff className="w-6 h-6" />}
+          icon={<PhoneOff className="h-6 w-6" />}
           label="End call"
           onClick={handleEndCall}
           variant="danger"
-          className="w-16 h-16"
+          className="h-16 w-16 shadow-lg"
         />
       </div>
     </div>
@@ -268,42 +235,28 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
 interface ControlButtonProps {
   icon: React.ReactNode;
   label: string;
-  active?: boolean;
   onClick: () => void;
   variant?: 'primary' | 'secondary' | 'danger';
   className?: string;
 }
 
-function ControlButton({
-  icon,
-  label,
-  active = true,
-  onClick,
-  variant = 'secondary',
-  className = 'w-14 h-14',
-}: ControlButtonProps) {
-  const baseClasses = `
-    rounded-full flex items-center justify-center
-    transition-all duration-200 hover:scale-105 active:scale-95
-    ${className}
-  `;
+function ControlButton({ icon, label, onClick, variant = 'secondary', className = 'h-14 w-14' }: ControlButtonProps) {
+  const base = `rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 ${className}`;
 
-  const variantClasses = {
+  const variants = {
     primary: 'bg-indigo-500 text-white hover:bg-indigo-600',
-    secondary: active
-      ? 'bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm'
-      : 'bg-red-500/90 text-white hover:bg-red-600',
-    danger: 'bg-red-500 text-white hover:bg-red-600 shadow-lg',
+    secondary: 'bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm',
+    danger: 'bg-red-500 text-white hover:bg-red-600',
   };
 
   return (
-    <Button
-      variant="ghost"
-      className={`${baseClasses} ${variantClasses[variant]}`}
+    <button
+      className={`${base} ${variants[variant]}`}
       onClick={onClick}
       title={label}
+      aria-label={label}
     >
       {icon}
-    </Button>
+    </button>
   );
 }

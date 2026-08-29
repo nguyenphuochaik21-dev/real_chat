@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { WebRTCService, type CallType, isWebRTCSupported, requestMediaPermissions } from '@/lib/webrtc';
 import { useCallStore } from '@/stores/call-store';
@@ -17,33 +17,112 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   const supabase = createClient();
 
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [hasPermissions, setHasPermissions] = useState<boolean | null>(null);
 
   const webrtcRef = useRef<WebRTCService | null>(null);
-  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null);
+  // Ref so the useEffect closure can call startWebRTC without circular deps
+  const startWebRTCRef = useRef<((isInitiator: boolean) => Promise<void>) | null>(null);
+  const onCallStartedRef = useRef(onCallStarted);
+  const onCallEndedRef = useRef(onCallEnded);
+  const onErrorRef = useRef(onError);
 
   const store = useCallStore();
 
-  // Check permissions on mount
+  // Keep callbacks in refs to avoid stale closures
+  useEffect(() => { onCallStartedRef.current = onCallStarted; }, [onCallStarted]);
+  useEffect(() => { onCallEndedRef.current = onCallEnded; }, [onCallEnded]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      webrtcRef.current?.cleanup();
+      webrtcRef.current = null;
+    };
+  }, []);
+
+  // Initial permission check
   useEffect(() => {
     if (!isWebRTCSupported()) {
       setHasPermissions(false);
-      onError?.(new Error('WebRTC is not supported in this browser'));
       return;
     }
-
-    requestMediaPermissions()
-      .then(perms => setHasPermissions(perms.audio))
+    requestMediaPermissions('video')
+      .then(p => setHasPermissions(p.audio))
       .catch(() => setHasPermissions(false));
-  }, [onError]);
+  }, []);
 
-  // Subscribe to incoming calls
+  /**
+   * Start WebRTC peer connection.
+   * isInitiator=true → we create offer (caller after callee answers).
+   * isInitiator=false → we wait for offer (callee after accepting).
+   */
+  const startWebRTC = useCallback(async (isInitiator: boolean) => {
+    const s = useCallStore.getState();
+    if (!s.remoteUser || !s.sessionId || !s.type) return;
+
+    try {
+      const perms = await requestMediaPermissions(s.type);
+      if (!perms.audio) throw new Error('Microphone permission denied');
+
+      webrtcRef.current?.cleanup();
+
+      const webrtc = new WebRTCService(
+        userId,
+        s.remoteUser.id,
+        s.sessionId,
+        s.type,
+        isInitiator,
+        {
+          onRemoteStream: (stream) => setRemoteStream(stream),
+          onConnectionStateChange: (state) => {
+            if (state === 'connected') {
+              useCallStore.getState().setConnected();
+              onCallStartedRef.current?.();
+            } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+              const cur = useCallStore.getState();
+              if (cur.status === 'connected' || cur.status === 'connecting') {
+                webrtcRef.current?.cleanup();
+                webrtcRef.current = null;
+                setRemoteStream(null);
+                setLocalStream(null);
+                store.endCall();
+              }
+            }
+          },
+          onError: (error) => {
+            console.error('[WebRTC error]', error);
+            onErrorRef.current?.(error);
+          },
+        }
+      );
+
+      await webrtc.initialize();
+      const ls = webrtc.getLocalStream();
+      if (ls) setLocalStream(ls);
+      webrtcRef.current = webrtc;
+    } catch (error) {
+      console.error('[startWebRTC failed]', error);
+      onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to start WebRTC'));
+      webrtcRef.current?.cleanup();
+      webrtcRef.current = null;
+      store.setError(error instanceof Error ? error.message : 'Failed to start call');
+    }
+  }, [userId, store]);
+
+  // Keep ref updated
+  useEffect(() => {
+    startWebRTCRef.current = startWebRTC;
+  }, [startWebRTC]);
+
+  // Subscribe to call sessions (incoming calls + status changes)
   useEffect(() => {
     if (!userId) return;
 
     const channel = supabase
-      .channel(`incoming-calls-${userId}`)
+      .channel(`call-sessions-${userId}`)
+      // New incoming call (we are the callee)
       .on(
         'postgres_changes',
         {
@@ -58,10 +137,11 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
             caller_id: string;
             call_type: CallType;
             conversation_id: string;
-            offer_sdp?: string;
           };
 
-          // Get caller info
+          const current = useCallStore.getState();
+          if (current.sessionId === session.id) return;
+
           const { data: caller } = await supabase
             .from('profiles')
             .select('id, display_name, avatar_url')
@@ -69,196 +149,173 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
             .single();
 
           if (caller) {
-            // Update store with incoming call
-            store.receiveCall(session.conversation_id, {
-              id: caller.id,
-              displayName: caller.display_name,
-              avatarUrl: caller.avatar_url || undefined,
-            }, session.call_type);
+            store.receiveCall(
+              session.id,
+              session.conversation_id,
+              {
+                id: caller.id,
+                displayName: caller.display_name,
+                avatarUrl: caller.avatar_url || undefined,
+              },
+              session.call_type
+            );
+          }
+        }
+      )
+      // Updates as callee (caller ends the call while we're ringing/connected)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'call_sessions',
+          filter: `callee_id=eq.${userId}`,
+        },
+        (payload) => {
+          const session = payload.new as { id: string; status: string };
+          const current = useCallStore.getState();
+          if (current.sessionId !== session.id) return;
 
-            // Store session info for later use
-            useCallStore.setState({
-              conversationId: session.conversation_id,
-            });
+          const terminal = ['declined', 'missed', 'ended', 'failed'];
+          if (terminal.includes(session.status)) {
+            webrtcRef.current?.cleanup();
+            webrtcRef.current = null;
+            setRemoteStream(null);
+            setLocalStream(null);
+            store.endCall();
+          }
+        }
+      )
+      // Updates as caller (callee accepts/declines/ends)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'call_sessions',
+          filter: `caller_id=eq.${userId}`,
+        },
+        async (payload) => {
+          const session = payload.new as { id: string; status: string };
+          const current = useCallStore.getState();
+          if (current.sessionId !== session.id) return;
+
+          if (current.status === 'calling' && session.status === 'answered') {
+            store.setConnecting();
+            await startWebRTCRef.current?.(true);
+          }
+
+          const terminal = ['declined', 'missed', 'ended', 'failed'];
+          if (
+            (current.status === 'calling' || current.status === 'connected' || current.status === 'connecting') &&
+            terminal.includes(session.status)
+          ) {
+            webrtcRef.current?.cleanup();
+            webrtcRef.current = null;
+            setRemoteStream(null);
+            setLocalStream(null);
+            store.endCall();
           }
         }
       )
       .subscribe();
 
-    channelRef.current = channel;
-
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
+      supabase.removeChannel(channel);
     };
   }, [userId, supabase, store]);
 
-  // Handle call acceptance - this watches the store and initiates WebRTC
-  useEffect(() => {
-    if (store.status !== 'connected' || !userId || !store.remoteUser) return;
+  // Callee accepts the incoming call
+  const acceptCall = useCallback(async () => {
+    const s = useCallStore.getState();
+    if (s.status !== 'ringing' || !s.sessionId) return;
 
-    const initiateWebRTC = async () => {
-      try {
-        // Check permissions
-        const perms = await requestMediaPermissions();
-        if (!perms.audio) {
-          throw new Error('Microphone permission denied');
-        }
+    try {
+      await supabase.rpc('update_call_status', {
+        p_session_id: s.sessionId,
+        p_status: 'answered',
+      });
+    } catch (err) {
+      console.error('[acceptCall] DB update failed', err);
+    }
 
-        const webrtc = new WebRTCService(
-          userId,
-          store.remoteUser!.id,
-          store.conversationId || 'temp-session',
-          store.type || 'voice',
-          true, // Current user initiated
-          {
-            onRemoteStream: (stream) => {
-              setRemoteStream(stream);
-            },
-            onConnectionStateChange: (state) => {
-              setConnectionState(state);
+    store.acceptCall();
+    await startWebRTC(false);
+  }, [supabase, store, startWebRTC]);
 
-              if (state === 'connected') {
-                onCallStarted?.();
-              } else if (state === 'failed' || state === 'disconnected') {
-                handleCallEnd();
-              }
-            },
-            onIceCandidate: (candidate) => {
-              // ICE candidates are sent via WebRTC service
-            },
-            onError: (error) => {
-              console.error('WebRTC error:', error);
-              onError?.(error);
-            },
-          }
-        );
-
-        await webrtc.initialize();
-        webrtcRef.current = webrtc;
-
-        // Create and send offer
-        await webrtc.createOffer();
-
-      } catch (error) {
-        console.error('Failed to initialize WebRTC:', error);
-        onError?.(error instanceof Error ? error : new Error('Failed to start call'));
-        store.endCall();
-      }
-    };
-
-    initiateWebRTC();
-
-    return () => {
-      webrtcRef.current?.cleanup();
-      webrtcRef.current = null;
-    };
-  }, [store.status, userId, store.remoteUser?.id, store.conversationId, store.type, onCallStarted, onError]);
-
-  const handleCallEnd = useCallback(() => {
-    webrtcRef.current?.sendEndCall();
-    webrtcRef.current?.cleanup();
-    webrtcRef.current = null;
-    setRemoteStream(null);
-    setConnectionState('closed');
-
-    onCallEnded?.(store.duration);
-    store.endCall();
-  }, [store, onCallEnded]);
-
+  // Caller initiates an outgoing call
   const initiateCall = useCallback(async (
     conversationId: string,
     remoteUser: { id: string; displayName: string; avatarUrl?: string },
     type: CallType
   ) => {
     try {
-      // Check permissions first
       if (hasPermissions === false) {
-        throw new Error('Microphone permission denied. Please enable microphone access.');
+        throw new Error('Microphone permission denied');
       }
 
-      // Create call session in database
-      const { data: session, error } = await supabase.rpc('initiate_call', {
+      const perms = await requestMediaPermissions(type);
+      if (!perms.audio) {
+        throw new Error('Microphone permission denied');
+      }
+
+      const { data: sessionId, error } = await supabase.rpc('initiate_call', {
         p_callee_id: remoteUser.id,
         p_conversation_id: conversationId,
         p_call_type: type,
       });
 
-      if (error) {
-        console.error('Failed to create call session:', error);
-        throw error;
-      }
+      if (error) throw error;
+      if (!sessionId) throw new Error('No session id returned');
 
-      // Update store
-      store.initiateCall(conversationId, remoteUser, type);
-
-      // Store session ID
-      if (session) {
-        useCallStore.setState({ conversationId: session.id });
-      }
-
+      store.initiateCall(conversationId, sessionId, remoteUser, type);
     } catch (error) {
-      console.error('Failed to initiate call:', error);
-      onError?.(error instanceof Error ? error : new Error('Failed to initiate call'));
-      store.reset();
+      console.error('[initiateCall]', error);
+      onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to initiate call'));
+      store.setError(error instanceof Error ? error.message : 'Failed to initiate call');
     }
-  }, [hasPermissions, supabase, store, onError]);
+  }, [hasPermissions, supabase, store]);
 
-  const acceptCall = useCallback(async () => {
-    const currentStore = useCallStore.getState();
-    if (currentStore.status !== 'ringing') return;
-
-    try {
-      // Update database
-      await supabase.rpc('update_call_status', {
-        p_session_id: currentStore.conversationId,
-        p_status: 'answered',
-      });
-
-      // Update local store
-      store.acceptCall();
-
-    } catch (error) {
-      console.error('Failed to accept call:', error);
-      onError?.(error instanceof Error ? error : new Error('Failed to accept call'));
-    }
-  }, [supabase, store, onError]);
-
+  // Decline an incoming call
   const declineCall = useCallback(async () => {
-    const currentStore = useCallStore.getState();
-
-    try {
-      // Update database
-      await supabase.rpc('update_call_status', {
-        p_session_id: currentStore.conversationId,
-        p_status: 'declined',
-      });
-
-      store.declineCall();
-
-    } catch (error) {
-      console.error('Failed to decline call:', error);
-      store.declineCall();
+    const s = useCallStore.getState();
+    if (s.sessionId) {
+      try {
+        await supabase.rpc('update_call_status', {
+          p_session_id: s.sessionId,
+          p_status: 'declined',
+        });
+      } catch (err) {
+        console.error('[declineCall] DB update failed', err);
+      }
     }
+    store.declineCall();
   }, [supabase, store]);
 
+  // End an active call
   const endCall = useCallback(async () => {
-    const currentStore = useCallStore.getState();
+    const s = useCallStore.getState();
 
-    try {
-      // End call in database
-      await supabase.rpc('end_call', {
-        p_session_id: currentStore.conversationId,
-        p_status: 'ended',
-      });
-    } catch (error) {
-      console.error('Failed to end call in database:', error);
+    if (s.sessionId) {
+      try {
+        await supabase.rpc('end_call', {
+          p_session_id: s.sessionId,
+          p_status: 'ended',
+        });
+      } catch (err) {
+        console.error('[endCall] DB update failed', err);
+      }
     }
 
-    // End WebRTC
-    handleCallEnd();
-  }, [supabase, handleCallEnd]);
+    await webrtcRef.current?.sendEndCall();
+    webrtcRef.current?.cleanup();
+    webrtcRef.current = null;
+    setRemoteStream(null);
+    setLocalStream(null);
+
+    onCallEndedRef.current?.(s.duration);
+    store.endCall();
+  }, [supabase, store]);
 
   const toggleMute = useCallback((enabled: boolean) => {
     webrtcRef.current?.toggleMicrophone(enabled);
@@ -271,7 +328,6 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   }, [store]);
 
   const toggleSpeaker = useCallback((enabled: boolean) => {
-    // Speaker is handled at audio element level
     store.toggleSpeaker();
   }, [store]);
 
@@ -279,23 +335,16 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
     await webrtcRef.current?.switchCamera();
   }, []);
 
-  const getLocalStream = useCallback(() => {
-    return webrtcRef.current?.getLocalStream() || null;
-  }, []);
+  const getLocalStream = useCallback(() => webrtcRef.current?.getLocalStream() ?? null, []);
 
   return {
-    // State
     remoteStream,
-    connectionState,
+    localStream,
     hasPermissions,
-
-    // Call actions
     initiateCall,
     acceptCall,
     declineCall,
     endCall,
-
-    // Media controls
     toggleMute,
     toggleVideo,
     toggleSpeaker,
