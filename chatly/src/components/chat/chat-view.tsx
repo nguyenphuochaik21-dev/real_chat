@@ -52,6 +52,7 @@ import {
 import { useReactions } from '@/hooks/use-reactions'
 import { useStarredMessages } from '@/hooks/use-starred-messages'
 import { useCallStore } from '@/stores/call-store'
+import { useChatCacheStore } from '@/stores/chat-cache-store'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -308,19 +309,34 @@ interface ChatViewProps {
 }
 
 export function ChatView({ conversationId, currentUserId, onBack, showBackButton = false, scrollToMessageId }: ChatViewProps) {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [participant, setParticipant] = useState<Profile | null>(null)
-  const [inputValue, setInputValue] = useState('')
-  const [loading, setLoading] = useState(true)
+  // Use cache store so navigating between chats is instant (no loading flash).
+  // Select only the methods we need to avoid re-rendering on every cache mutation.
+  const getCached = useChatCacheStore((s) => s.getCached)
+  const setCached = useChatCacheStore((s) => s.setCached)
+  const getInput = useChatCacheStore((s) => s.getInput)
+  const setInput = useChatCacheStore((s) => s.setInput)
+  const cached = conversationId ? getCached(conversationId) : undefined
+
+  const [messages, setMessages] = useState<Message[]>(cached?.messages || [])
+  const [participant, setParticipant] = useState<Profile | null>(cached?.participant || null)
+  const [inputValue, setInputValue] = useState(() =>
+    conversationId ? getInput(conversationId) : ''
+  )
+  // Show loading only if we don't have cached data
+  const [loading, setLoading] = useState(!cached)
   const [sending, setSending] = useState(false)
-  const [participantStatus, setParticipantStatus] = useState<'online' | 'offline' | 'away' | 'busy'>('offline')
+  const [participantStatus, setParticipantStatus] = useState<'online' | 'offline' | 'away' | 'busy'>(
+    cached?.participantStatus || 'offline'
+  )
   const [showMediaGallery, setShowMediaGallery] = useState(false)
   // Track realtime status for messages
-  const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(new Map())
+  const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(cached?.messageStatuses || new Map())
   // Edit state
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   // Reactions per message
-  const [messageReactions, setMessageReactions] = useState<Map<string, { emoji: string; count: number; userReacted: boolean }[]>>(new Map())
+  const [messageReactions, setMessageReactions] = useState<Map<string, { emoji: string; count: number; userReacted: boolean }[]>>(
+    cached?.messageReactions || new Map()
+  )
   // Store hooks
   const { isReplying, replyToMessage, clearReply, setReplyTo } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
@@ -370,6 +386,25 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     is_archived: false,
   })
 
+  // Sync current state into cache so navigating away/back is instant
+  useEffect(() => {
+    if (!conversationId) return
+    setCached(conversationId, {
+      messages,
+      participant,
+      participantStatus,
+      messageStatuses,
+      messageReactions,
+    })
+  }, [conversationId, messages, participant, participantStatus, messageStatuses, messageReactions, setCached])
+
+  // Persist input value per conversation (so draft survives navigation)
+  useEffect(() => {
+    if (conversationId) {
+      setInput(conversationId, inputValue)
+    }
+  }, [conversationId, inputValue, setInput])
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const inputRef = useRef<HTMLInputElement>(null)
@@ -387,8 +422,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Fetch participant info and their status
   useEffect(() => {
     const fetchParticipant = async () => {
-      if (!conversationId) {
-        setParticipant(null)
+      if (!conversationId || !currentUserId) {
         return
       }
 
@@ -440,7 +474,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
 
   // Subscribe to participant's status changes
   useEffect(() => {
-    if (!participant?.id) return
+    if (!participant?.id || !currentUserId) return
 
     const channel = supabase
       .channel(`participant-status-${participant.id}`)
@@ -495,13 +529,17 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Fetch messages
   useEffect(() => {
     const fetchMessages = async () => {
-      if (!conversationId) {
+      if (!conversationId || !currentUserId) {
         setMessages([])
         setLoading(false)
         return
       }
 
-      setLoading(true)
+      // If we have cached data, don't show loading — just refresh in background
+      const hasCached = !!getCached(conversationId)
+      if (!hasCached) {
+        setLoading(true)
+      }
 
       try {
         const { data, error } = await supabase
@@ -523,11 +561,11 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     }
 
     fetchMessages()
-  }, [conversationId, supabase, markAsRead])
+  }, [conversationId, currentUserId, supabase, markAsRead, getCached])
 
   // Subscribe to real-time messages and status updates
   useEffect(() => {
-    if (!conversationId) return
+    if (!conversationId || !currentUserId) return
 
     const channel = supabase
       .channel(`messages-${conversationId}`)
@@ -660,15 +698,59 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     inputRef.current?.focus()
   }, [conversationId])
 
-  // Restore draft when conversation changes
+  // When conversationId changes, restore cached state immediately
+  const prevConversationIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevConversationIdRef.current === conversationId) return
+    prevConversationIdRef.current = conversationId
+
+    if (!conversationId) {
+      setMessages([])
+      setParticipant(null)
+      setParticipantStatus('offline')
+      setMessageStatuses(new Map())
+      setMessageReactions(new Map())
+      setInputValue('')
+      setEditingMessage(null)
+      setLoading(false)
+      return
+    }
+
+    // Restore from cache if available
+    const cached = getCached(conversationId)
+    if (cached) {
+      setMessages(cached.messages)
+      setParticipant(cached.participant)
+      setParticipantStatus(cached.participantStatus)
+      setMessageStatuses(cached.messageStatuses)
+      setMessageReactions(cached.messageReactions)
+      setInputValue(getInput(conversationId))
+      // No loading — we have data; background refetch will refresh
+    } else {
+      // No cache — start fresh
+      setMessages([])
+      setParticipant(null)
+      setParticipantStatus('offline')
+      setMessageStatuses(new Map())
+      setMessageReactions(new Map())
+      setInputValue(getInput(conversationId))
+      setEditingMessage(null)
+      setLoading(true)
+    }
+  }, [conversationId, getCached, getInput])
+
+  // Restore draft when conversation changes (fallback to draft store)
   useEffect(() => {
     if (conversationId) {
       const draft = getDraft(conversationId)
-      if (draft) {
-        setInputValue(draft)
+      const cachedInput = getInput(conversationId)
+      // Prefer cache (more recent), fall back to draft store
+      const finalValue = cachedInput || draft
+      if (finalValue) {
+        setInputValue(finalValue)
       }
     }
-  }, [conversationId, getDraft])
+  }, [conversationId, getDraft, getInput])
 
   // Cleanup typing on unmount
   useEffect(() => {
@@ -970,17 +1052,23 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   return (
     <div className="flex h-full w-full min-w-0 flex-col bg-[var(--bg-app)]">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-3 md:px-4">
         {showBackButton && (
-          <Button variant="ghost" size="icon-sm" onClick={onBack} className="mr-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onBack}
+            className="mr-1 shrink-0"
+            aria-label="Back to chats"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
         )}
 
         {participant && (
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {/* Avatar with dynamic status */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <Avatar user={participant} size="md" showStatus={false} />
               <span
                 className={cn(
@@ -989,10 +1077,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
                 )}
               />
             </div>
-            <div>
-              <h2 className="font-semibold text-[var(--text-primary)]">{participant.display_name}</h2>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate font-semibold text-[var(--text-primary)]">{participant.display_name}</h2>
               <p className={cn(
-                'text-xs',
+                'truncate text-xs',
                 typingUserIds.length > 0 ? 'text-primary-500 animate-pulse' : 'text-[var(--text-secondary)]'
               )}>
                 {getStatusText()}
@@ -1001,8 +1089,12 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           </div>
         )}
 
+        {!participant && showBackButton && (
+          <div className="flex-1" />
+        )}
+
         {/* Actions */}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Button
             variant="ghost"
             size="icon"

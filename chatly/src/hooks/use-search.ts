@@ -42,6 +42,12 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     filters: conversationId ? { conversationId } : {},
   })
 
+  // Use refs to avoid dependency changes that cause infinite loops
+  const conversationIdRef = useRef(conversationId)
+  const stateRef = useRef(state)
+  conversationIdRef.current = conversationId
+  stateRef.current = state
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const hasMoreRef = useRef(true)
 
@@ -68,7 +74,9 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     // Debounce the search
     debounceRef.current = setTimeout(async () => {
       try {
-        const filters = conversationId ? { conversationId } : state.filters
+        const filters = conversationIdRef.current
+          ? { conversationId: conversationIdRef.current }
+          : stateRef.current.filters
         const results = await searchMessages(query, filters, PAGE_SIZE, 0)
 
         setState(prev => ({
@@ -87,7 +95,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         }))
       }
     }, DEBOUNCE_MS)
-  }, [conversationId, state.filters])
+  }, []) // No dependencies - uses refs instead
 
   const searchContacts = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -107,10 +115,10 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     setState(prev => ({ ...prev, filters }))
 
     // Re-run search with new filters if we have a query
-    if (state.query) {
-      search(state.query)
+    if (stateRef.current.query) {
+      search(stateRef.current.query)
     }
-  }, [state.query, search])
+  }, [search]) // No state.query dependency - use ref instead
 
   const clearSearch = useCallback(() => {
     if (debounceRef.current) {
@@ -129,17 +137,19 @@ export function useSearch(conversationId?: string): UseSearchReturn {
   }, [conversationId])
 
   const loadMore = useCallback(async () => {
-    if (state.loading || !hasMoreRef.current || !state.query) return
+    if (stateRef.current.loading || !hasMoreRef.current || !stateRef.current.query) return
 
     setState(prev => ({ ...prev, loading: true }))
 
     try {
-      const filters = conversationId ? { conversationId } : state.filters
+      const filters = conversationIdRef.current
+        ? { conversationId: conversationIdRef.current }
+        : stateRef.current.filters
       const results = await searchMessages(
-        state.query,
+        stateRef.current.query,
         filters,
         PAGE_SIZE,
-        state.results.length
+        stateRef.current.results.length
       )
 
       setState(prev => ({
@@ -148,7 +158,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         total: results.total,
         loading: false,
       }))
-      hasMoreRef.current = state.results.length + results.results.length < results.total
+      hasMoreRef.current = stateRef.current.results.length + results.results.length < results.total
     } catch (err) {
       setState(prev => ({
         ...prev,
@@ -156,7 +166,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         error: err instanceof Error ? err.message : 'Load more failed',
       }))
     }
-  }, [state.loading, state.query, state.results.length, state.filters, conversationId])
+  }, []) // No dependencies - uses refs instead
 
   return {
     state,

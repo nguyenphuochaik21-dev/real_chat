@@ -16,6 +16,10 @@ const items = [
 export function MobileNav() {
   const pathname = usePathname()
 
+  // Hide nav when inside a conversation chat (Messenger-style)
+  const isInChat = /^\/chats\/[^/]+/.test(pathname)
+  if (isInChat) return null
+
   const isActive = (href: string) => {
     if (href === '/chats') return pathname.startsWith('/chats') || pathname === '/'
     return pathname.startsWith(href)

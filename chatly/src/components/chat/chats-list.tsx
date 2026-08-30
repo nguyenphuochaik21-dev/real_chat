@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { Search, Pin, BellOff, MessageSquare, Archive, Tag, X, ChevronDown } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
+import { Search, Pin, BellOff, MessageSquare, Archive, Tag, ChevronDown, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
@@ -15,27 +16,12 @@ import { createClient } from '@/lib/supabase/client'
 import { getBlockedUsers } from '@/lib/actions/block'
 import { useDraftStore } from '@/stores/draft-store'
 import { useConversationLabels } from '@/hooks/use-conversation-labels'
+import { useSearch } from '@/hooks/use-search'
+import { useChatsListStore, type ConversationWithDetails } from '@/stores/chats-list-store'
 import type { Tables } from '@/types'
 
-type Message = Tables<'messages'>
 type Profile = Tables<'profiles'>
-
-interface ConversationWithDetails {
-  id: string
-  type: 'direct' | 'group'
-  title: string | null
-  avatar_url: string | null
-  created_by: string | null
-  last_message_at: string
-  created_at: string
-  updated_at: string
-  participant: Profile
-  last_message: Message | null
-  unread_count: number
-  is_pinned: boolean
-  is_muted: boolean
-  is_archived: boolean
-}
+type Message = Tables<'messages'>
 
 function formatMessageTime(dateStr: string | null): string {
   if (!dateStr) return ''
@@ -65,7 +51,6 @@ interface ConversationItemProps {
 function ConversationItem({ conversation, isActive, currentUserId, participantStatus, labels = [], draft }: ConversationItemProps) {
   const isFromMe = conversation.last_message?.sender_id === currentUserId
 
-  // Get status color for avatar
   const getStatusColor = (): string => {
     switch (participantStatus) {
       case 'online':
@@ -88,13 +73,8 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
         conversation.unread_count > 0 && !isActive && 'bg-[var(--bg-hover)]'
       )}
     >
-      {/* Avatar with dynamic status from DB */}
       <div className="relative">
-        <Avatar
-          user={conversation.participant}
-          size="lg"
-          showStatus={false}
-        />
+        <Avatar user={conversation.participant} size="lg" showStatus={false} />
         <span
           className={cn(
             'absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
@@ -103,7 +83,6 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
         />
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -116,7 +95,6 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
             {conversation.is_muted && (
               <BellOff className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
             )}
-            {/* Label dots */}
             {labels.length > 0 && (
               <div className="flex gap-1">
                 {labels.slice(0, 3).map((label) => (
@@ -165,27 +143,41 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
 }
 
 interface ChatsListProps {
-  selectedConversationId?: string | null
   currentUserId: string
 }
 
 type TabType = 'all' | 'unread' | 'archived'
 
-export function ChatsList({ selectedConversationId, currentUserId }: ChatsListProps) {
+// Refresh conversations list if cache is older than 30 seconds
+const CACHE_STALE_MS = 30_000
+
+export function ChatsList({ currentUserId }: ChatsListProps) {
+  const pathname = usePathname()
+  // Derive selected conversation from URL — works even when component never remounts
+  const selectedConversationId = pathname.startsWith('/chats/')
+    ? pathname.split('/chats/')[1]
+    : null
+  const router = useRouter()
   const [search, setSearch] = useState('')
-  // Always start with 'all' to avoid hydration mismatch
-  // Then read from localStorage after mount
   const [activeTab, setActiveTab] = useState<TabType>('all')
   const [hydrated, setHydrated] = useState(false)
-  const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
-  const [archivedConversations, setArchivedConversations] = useState<ConversationWithDetails[]>([])
-  const [loading, setLoading] = useState(true)
-  // Track participant statuses from DB
-  const [participantStatuses, setParticipantStatuses] = useState<Map<string, 'online' | 'offline' | 'away' | 'busy'>>(new Map())
-  // Track blocked user IDs
-  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set())
-  // Track conversation IDs in ref (for filtering in callbacks)
-  const conversationIdsRef = useRef<string[]>([])
+
+  // Use store-backed state — persists across navigation, no remount flash
+  const conversations = useChatsListStore((s) => s.conversations)
+  const archivedConversations = useChatsListStore((s) => s.archivedConversations)
+  const participantStatuses = useChatsListStore((s) => s.participantStatuses)
+  const blockedUserIds = useChatsListStore((s) => s.blockedUserIds)
+  const loading = useChatsListStore((s) => s.loading)
+  const lastFetchedAt = useChatsListStore((s) => s.lastFetchedAt)
+  const setAll = useChatsListStore((s) => s.setAll)
+  const setLoading = useChatsListStore((s) => s.setLoading)
+  const setBlockedUserIds = useChatsListStore((s) => s.setBlockedUserIds)
+  const upsertConversation = useChatsListStore((s) => s.upsertConversation)
+  const updateConversation = useChatsListStore((s) => s.updateConversation)
+  const incrementUnread = useChatsListStore((s) => s.incrementUnread)
+  const updateLastMessage = useChatsListStore((s) => s.updateLastMessage)
+  const setParticipantStatus = useChatsListStore((s) => s.setParticipantStatus)
+  const storeConversationIdsRef = useRef<string[]>([])
   const supabase = createClient()
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
@@ -200,6 +192,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
   // Conversation labels (userId comes from provider)
   const { labels, conversationLabels, loadLabelsForConversations } = useConversationLabels()
 
+  // Global search — messages + contacts
+  const { state: searchState, search: runMessageSearch, searchContacts, clearSearch } = useSearch()
+
   // Restore tab from localStorage after hydration to avoid mismatch
   useEffect(() => {
     try {
@@ -211,7 +206,20 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     setHydrated(true)
   }, [])
 
-  // Persist tab choice
+  useEffect(() => {
+    const query = search.trim()
+    if (!query) {
+      clearSearch()
+      return
+    }
+    runMessageSearch(query)
+    searchContacts(query)
+  }, [search, runMessageSearch, searchContacts, clearSearch])
+
+  const showSearchResults = search.trim().length > 0
+  const hasMessageResults = searchState.results.length > 0
+  const hasContactResults = searchState.contacts.length > 0
+
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab)
     try {
@@ -226,11 +234,10 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     } catch (err) {
       console.error('Failed to fetch blocked users:', err)
     }
-  }, [])
+  }, [setBlockedUserIds])
 
   const fetchConversations = useCallback(async () => {
     if (!currentUserId) {
-      setConversations([])
       setLoading(false)
       return
     }
@@ -238,15 +245,9 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     setLoading(true)
 
     try {
-      // Get all conversations for this user
       const { data: participations, error: partError } = await supabase
         .from('conversation_participants')
-        .select(`
-          *,
-          conversation:conversations(
-            *
-          )
-        `)
+        .select(`*, conversation:conversations(*)`)
         .eq('user_id', currentUserId)
         .order('last_read_at', { ascending: false })
 
@@ -259,7 +260,6 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         const conv = part.conversation
         if (!conv) continue
 
-        // Get the other participant(s) in this conversation
         const { data: otherParticipants } = await supabase
           .from('conversation_participants')
           .select('user_id')
@@ -267,10 +267,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           .neq('user_id', currentUserId)
 
         const otherUserId = otherParticipants?.[0]?.user_id
-
-        if (otherUserId) {
-          participantIds.push(otherUserId)
-        }
+        if (otherUserId) participantIds.push(otherUserId)
 
         let participant: Profile | null = null
         if (otherUserId) {
@@ -282,7 +279,6 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           participant = data
         }
 
-        // Get last message
         const { data: lastMessage } = await supabase
           .from('messages')
           .select('*')
@@ -291,7 +287,6 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           .limit(1)
           .single()
 
-        // Count unread messages
         const { count: unreadCount } = await supabase
           .from('messages')
           .select('*', { count: 'exact', head: true })
@@ -312,19 +307,13 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         }
       }
 
-      // Separate archived from active conversations
       const active: ConversationWithDetails[] = []
       const archived: ConversationWithDetails[] = []
-
       for (const conv of conversationsWithParticipants) {
-        if (conv.is_archived) {
-          archived.push(conv)
-        } else {
-          active.push(conv)
-        }
+        if (conv.is_archived) archived.push(conv)
+        else active.push(conv)
       }
 
-      // Sort: pinned first, then by last message time
       const sortFn = (a: ConversationWithDetails, b: ConversationWithDetails) => {
         if (a.is_pinned && !b.is_pinned) return -1
         if (!a.is_pinned && b.is_pinned) return 1
@@ -333,19 +322,17 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         return dateB - dateA
       }
 
-      setConversations(active.sort(sortFn))
-      setArchivedConversations(archived.sort(sortFn))
+      active.sort(sortFn)
+      archived.sort(sortFn)
 
-      // Save conversation IDs for filtering realtime updates (ref for immediate access in callbacks)
       const ids: string[] = []
-      active.forEach(c => ids.push(c.id))
-      archived.forEach(c => ids.push(c.id))
-      conversationIdsRef.current = ids
+      active.forEach((c) => ids.push(c.id))
+      archived.forEach((c) => ids.push(c.id))
+      storeConversationIdsRef.current = ids
 
-      // Load labels for all conversations
       loadLabelsForConversations(ids)
 
-      // Update participant statuses
+      let newStatuses = new Map<string, 'online' | 'offline' | 'away' | 'busy'>()
       if (participantIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
@@ -353,30 +340,46 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           .in('id', participantIds)
 
         if (profiles) {
-          const newStatuses = new Map<string, 'online' | 'offline' | 'away' | 'busy'>()
-          profiles.forEach(p => {
+          profiles.forEach((p) => {
             newStatuses.set(p.id, (p.status as 'online' | 'offline' | 'away' | 'busy') || 'offline')
-          })
-          setParticipantStatuses(prev => {
-            const next = new Map(prev)
-            newStatuses.forEach((status, id) => next.set(id, status))
-            return next
           })
         }
       }
+
+      setAll({
+        conversations: active,
+        archivedConversations: archived,
+        participantStatuses: newStatuses,
+        blockedUserIds,
+      })
     } catch (err) {
       console.error('Failed to fetch conversations:', err)
     } finally {
       setLoading(false)
     }
-  }, [currentUserId, supabase])
+  }, [currentUserId, supabase, setAll, setLoading, blockedUserIds, loadLabelsForConversations])
 
+  // Fetch conversations — but only if cache is stale or empty
+  useEffect(() => {
+    if (!currentUserId) return
+
+    const isStale = Date.now() - lastFetchedAt > CACHE_STALE_MS
+    const isEmpty = conversations.length === 0 && archivedConversations.length === 0
+
+    if (isStale || isEmpty) {
+      fetchConversations()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId])
+
+  // Fetch blocked users once (independent of conversations cache)
   useEffect(() => {
     fetchBlockedUsers()
-    fetchConversations()
+  }, [fetchBlockedUsers])
 
-    // Subscribe to conversation participant changes (last_read_at updates)
-    // Use unique channel name per user to avoid conflicts
+  useEffect(() => {
+    if (!currentUserId) return
+
     const channel = supabase
       .channel(`conversations-changes-${currentUserId}`)
       .on(
@@ -396,85 +399,14 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
             is_archived: boolean | null
           }
 
-          // Update the conversation in both lists (active + archived) for all fields
-          // If is_archived changed, move between lists
-          setConversations(prev => {
-            const conv = prev.find(c => c.id === updated.conversation_id)
-            if (!conv) return prev
-
-            const updatedConv: ConversationWithDetails = {
-              ...conv,
-              is_pinned: updated.is_pinned ?? conv.is_pinned,
-              is_muted: updated.is_muted ?? conv.is_muted,
-              is_archived: updated.is_archived ?? conv.is_archived,
-              unread_count: updated.last_read_at && updated.last_read_at !== conv.last_message_at
-                ? 0 : conv.unread_count,
-            }
-
-            // If is_archived changed, remove from this list
-            if (updated.is_archived !== undefined && updated.is_archived !== conv.is_archived) {
-              // Move to archived list
-              if (updated.is_archived) {
-                setArchivedConversations(prevA => {
-                  const exists = prevA.find(c => c.id === updatedConv.id)
-                  if (exists) {
-                    return prevA.map(c => c.id === updatedConv.id ? updatedConv : c)
-                  }
-                  return [...prevA, updatedConv].sort((a, b) => {
-                    if (a.is_pinned && !b.is_pinned) return -1
-                    if (!a.is_pinned && b.is_pinned) return 1
-                    const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
-                    const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
-                    return dateB - dateA
-                  })
-                })
-                return prev.filter(c => c.id !== updatedConv.id)
-              } else {
-                // Move from archived to active
-                return [...prev, updatedConv]
-              }
-            }
-
-            return prev.map(c => c.id === updatedConv.id ? updatedConv : c)
-          })
-
-          setArchivedConversations(prev => {
-            const conv = prev.find(c => c.id === updated.conversation_id)
-            if (!conv) return prev
-
-            const updatedConv: ConversationWithDetails = {
-              ...conv,
-              is_pinned: updated.is_pinned ?? conv.is_pinned,
-              is_muted: updated.is_muted ?? conv.is_muted,
-              is_archived: updated.is_archived ?? conv.is_archived,
-              unread_count: updated.last_read_at && updated.last_read_at !== conv.last_message_at
-                ? 0 : conv.unread_count,
-            }
-
-            // If is_archived changed, remove from this list
-            if (updated.is_archived !== undefined && updated.is_archived !== conv.is_archived) {
-              if (!updated.is_archived) {
-                // Move to active list
-                setConversations(prevA => {
-                  const exists = prevA.find(c => c.id === updatedConv.id)
-                  if (exists) {
-                    return prevA.map(c => c.id === updatedConv.id ? updatedConv : c)
-                  }
-                  return [...prevA, updatedConv].sort((a, b) => {
-                    if (a.is_pinned && !b.is_pinned) return -1
-                    if (!a.is_pinned && b.is_pinned) return 1
-                    const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
-                    const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
-                    return dateB - dateA
-                  })
-                })
-                return prev.filter(c => c.id !== updatedConv.id)
-              } else {
-                return [...prev, updatedConv]
-              }
-            }
-
-            return prev.map(c => c.id === updatedConv.id ? updatedConv : c)
+          updateConversation(updated.conversation_id, {
+            is_pinned: updated.is_pinned ?? undefined,
+            is_muted: updated.is_muted ?? undefined,
+            is_archived: updated.is_archived ?? undefined,
+            unread_count:
+              updated.last_read_at && updated.last_read_at !== updated.conversation_id
+                ? 0
+                : undefined,
           })
         }
       )
@@ -488,11 +420,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         async (payload) => {
           const updated = payload.new as { id: string; last_message_at: string }
 
-          console.log('[ChatsList] Conversation updated:', updated.id)
-
-          // Check if we know this conversation
-          if (conversationIdsRef.current.includes(updated.id)) {
-            // Fetch the new message and update
+          if (storeConversationIdsRef.current.includes(updated.id)) {
             try {
               const { data: lastMessage } = await supabase
                 .from('messages')
@@ -502,33 +430,13 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
                 .limit(1)
                 .single()
 
-              if (lastMessage && lastMessage.sender_id !== currentUserId) {
-                // New message from someone else - increase unread
-                setConversations(prev => prev.map(conv => {
-                  if (conv.id === updated.id) {
-                    return {
-                      ...conv,
-                      unread_count: conv.unread_count + 1,
-                      last_message: lastMessage
-                    }
-                  }
-                  return conv
-                }))
-              } else if (lastMessage) {
-                // Message from self - just update last_message
-                setConversations(prev => prev.map(conv => {
-                  if (conv.id === updated.id) {
-                    return { ...conv, last_message: lastMessage }
-                  }
-                  return conv
-                }))
+              if (lastMessage) {
+                incrementUnread(updated.id, lastMessage, lastMessage.sender_id !== currentUserId)
               }
             } catch (err) {
               console.error('[ChatsList] Error fetching last message:', err)
             }
           } else {
-            // Unknown conversation - refetch
-            console.log('[ChatsList] New conversation detected, refetching...')
             fetchConversations()
           }
         }
@@ -541,11 +449,11 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
       supabase.removeChannel(channel)
       channelRef.current = null
     }
-  }, [currentUserId, supabase, fetchConversations])
+  }, [currentUserId, supabase, updateConversation, incrementUnread, fetchConversations])
 
   // Subscribe to profile status changes for all participants
   useEffect(() => {
-    const participantIds = conversations.map(c => c.participant.id)
+    const participantIds = conversations.map((c) => c.participant.id)
     if (participantIds.length === 0) return
 
     const channel = supabase
@@ -560,11 +468,10 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         (payload) => {
           const updated = payload.new as Profile
           if (participantIds.includes(updated.id)) {
-            setParticipantStatuses(prev => {
-              const next = new Map(prev)
-              next.set(updated.id, updated.status as 'online' | 'offline' | 'away' | 'busy')
-              return next
-            })
+            setParticipantStatus(
+              updated.id,
+              updated.status as 'online' | 'offline' | 'away' | 'busy'
+            )
           }
         }
       )
@@ -576,47 +483,33 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
       supabase.removeChannel(channel)
       statusChannelRef.current = null
     }
-  }, [currentUserId, supabase, conversations])
+  }, [currentUserId, supabase, conversations, setParticipantStatus])
 
   const filteredConversations = conversations.filter((conv) => {
-    // Filter out blocked users
     if (blockedUserIds.has(conv.participant.id)) return false
-
-    // Search filter
     const matchesSearch = conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
-
-    // Tab filter
     let matchesTab = true
     if (activeTab === 'unread') {
       matchesTab = conv.unread_count > 0
     } else if (activeTab === 'all') {
-      // Don't show archived in 'all' tab
       matchesTab = !conv.is_archived
     }
-
-    // Label filter
     let matchesLabels = true
     if (selectedLabelIds.size > 0) {
       const convLabels = conversationLabels.get(conv.id) || []
-      const convLabelIds = new Set(convLabels.map(l => l.id))
-      matchesLabels = Array.from(selectedLabelIds).some(id => convLabelIds.has(id))
+      const convLabelIds = new Set(convLabels.map((l) => l.id))
+      matchesLabels = Array.from(selectedLabelIds).some((id) => convLabelIds.has(id))
     }
-
     return matchesSearch && matchesTab && matchesLabels
   })
 
-  const filteredArchived = archivedConversations.filter((conv) => {
-    // Search filter
-    return conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
-  })
+  const filteredArchived = archivedConversations.filter((conv) =>
+    conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
+  )
 
-  // Sort: pinned first, then by last message time
   const sortedConversations = [...filteredConversations].sort((a, b) => {
-    // Pinned conversations first
     if (a.is_pinned && !b.is_pinned) return -1
     if (!a.is_pinned && b.is_pinned) return 1
-
-    // Then by last message time
     const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
     const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
     return dateB - dateA
@@ -628,22 +521,88 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
     { key: 'archived', label: 'Archived' },
   ]
 
+  const startConversationWithContact = useCallback(
+    async (contactId: string) => {
+      if (!currentUserId) return
+
+      try {
+        const { data: existingConvs } = await supabase
+          .from('conversation_participants')
+          .select('conversation_id')
+          .eq('user_id', currentUserId)
+
+        let conversationId: string | null = null
+
+        for (const part of existingConvs || []) {
+          const { data: otherParts } = await supabase
+            .from('conversation_participants')
+            .select('user_id')
+            .eq('conversation_id', part.conversation_id)
+            .eq('user_id', contactId)
+
+          if (otherParts && otherParts.length > 0) {
+            conversationId = part.conversation_id
+            break
+          }
+        }
+
+        if (!conversationId) {
+          const { data: newConv, error: createError } = await supabase
+            .from('conversations')
+            .insert({ created_by: currentUserId, type: 'direct' })
+            .select()
+            .single()
+
+          if (createError || !newConv) {
+            throw new Error(createError?.message || 'Failed to create conversation')
+          }
+
+          conversationId = newConv.id
+
+          const { error: addSelfError } = await supabase
+            .from('conversation_participants')
+            .insert({ conversation_id: conversationId, user_id: currentUserId })
+
+          if (addSelfError) throw new Error(addSelfError.message)
+
+          const { error: addOtherError } = await supabase.rpc('add_conversation_participant', {
+            p_conversation_id: conversationId,
+            p_user_id: contactId,
+          })
+
+          if (addOtherError) throw new Error(addOtherError.message)
+        }
+
+        setSearch('')
+        clearSearch()
+        router.push(`/chats/${conversationId}`)
+      } catch (err) {
+        console.error('Failed to start conversation from search:', err)
+      }
+    },
+    [currentUserId, supabase, router, clearSearch]
+  )
+
+  const openMessageInConversation = useCallback(
+    (conversationId: string, messageId: string) => {
+      setSearch('')
+      clearSearch()
+      router.push(`/chats/${conversationId}?scrollTo=${messageId}`)
+    },
+    [router, clearSearch]
+  )
+
   return (
     <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)] md:w-80">
-      {/* Header */}
       <div className="p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-[var(--text-primary)]">Chats</h1>
-          {/* Label filter button */}
           {labels.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setLabelFilterOpen(!labelFilterOpen)}
-              className={cn(
-                'gap-1.5',
-                selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
-              )}
+              className={cn('gap-1.5', selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500')}
             >
               <Tag className="h-4 w-4" />
               {selectedLabelIds.size > 0 && (
@@ -656,7 +615,6 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           )}
         </div>
 
-        {/* Label filter dropdown */}
         {labelFilterOpen && labels.length > 0 && (
           <div className="mb-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] p-2">
             <div className="mb-2 flex items-center justify-between">
@@ -676,11 +634,8 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
                   key={label.id}
                   onClick={() => {
                     const newSelected = new Set(selectedLabelIds)
-                    if (newSelected.has(label.id)) {
-                      newSelected.delete(label.id)
-                    } else {
-                      newSelected.add(label.id)
-                    }
+                    if (newSelected.has(label.id)) newSelected.delete(label.id)
+                    else newSelected.add(label.id)
                     setSelectedLabelIds(newSelected)
                   }}
                   className={cn(
@@ -690,10 +645,7 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
                       : 'bg-[var(--bg-hover)] hover:bg-[var(--bg-active)]'
                   )}
                 >
-                  <div
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: label.color || '#8B5CF6' }}
-                  />
+                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: label.color || '#8B5CF6' }} />
                   <span>{label.name}</span>
                 </button>
               ))}
@@ -701,7 +653,6 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
           </div>
         )}
 
-        {/* Search */}
         <div className="relative">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
           <Input
@@ -714,7 +665,6 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 px-4">
         {tabs.map((tab) => (
           <button
@@ -734,18 +684,88 @@ export function ChatsList({ selectedConversationId, currentUserId }: ChatsListPr
 
       <Separator className="mt-4" />
 
-      {/* Notification permission prompt */}
       <NotificationPermission />
 
-      {/* Conversations list */}
       <ScrollArea className="flex-1">
         <div className="py-2">
-          {loading ? (
+          {loading && conversations.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
             </div>
+          ) : showSearchResults ? (
+            <div className="px-1">
+              {searchState.loading && !hasMessageResults && !hasContactResults ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+                </div>
+              ) : (
+                <>
+                  {hasContactResults && (
+                    <>
+                      <p className="px-3 py-2 text-xs font-medium text-[var(--text-muted)]">Contacts</p>
+                      {searchState.contacts.map((contact) => (
+                        <button
+                          key={contact.id}
+                          onClick={() => startConversationWithContact(contact.id)}
+                          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                        >
+                          <Avatar user={contact} size="md" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-[var(--text-primary)]">
+                              {contact.display_name}
+                            </p>
+                            {contact.username && (
+                              <p className="truncate text-xs text-[var(--text-muted)]">@{contact.username}</p>
+                            )}
+                          </div>
+                          <User className="h-4 w-4 text-[var(--text-muted)]" />
+                        </button>
+                      ))}
+                      <Separator className="my-2" />
+                    </>
+                  )}
+
+                  {hasMessageResults && (
+                    <>
+                      <p className="px-3 py-2 text-xs font-medium text-[var(--text-muted)]">
+                        Messages ({searchState.total})
+                      </p>
+                      {searchState.results.map((result) => {
+                        if (!result.conversation_id) return null
+                        return (
+                          <button
+                            key={result.id}
+                            onClick={() => openMessageInConversation(result.conversation_id!, result.id)}
+                            className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+                          >
+                            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-secondary)]">
+                              <MessageSquare className="h-4 w-4 text-primary-500" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-medium text-[var(--text-secondary)]">
+                                {result.conversation_title || 'Conversation'}
+                              </p>
+                              <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-primary)]">
+                                {result.content}
+                              </p>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </>
+                  )}
+
+                  {!hasContactResults && !hasMessageResults && (
+                    <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
+                      <Search className="mb-3 h-12 w-12 opacity-50" />
+                      <p className="text-sm">No results for "{search}"</p>
+                      <p className="mt-1 text-xs">Try different keywords</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           ) : activeTab === 'archived' ? (
-            // Show archived conversations
             filteredArchived.length > 0 ? (
               <>
                 <div className="px-3 py-2">

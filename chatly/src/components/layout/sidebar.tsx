@@ -75,6 +75,10 @@ export function Sidebar() {
     const addNotification = useNotificationStore.getState().addNotification
 
     const setupNotificationSubscription = (userId: string) => {
+      if (notificationChannel) {
+        supabase.removeChannel(notificationChannel)
+        notificationChannel = null
+      }
       notificationChannel = supabase
         .channel(`notifications:${userId}`)
         .on(
@@ -181,8 +185,13 @@ export function Sidebar() {
     // Subscribe to message inserts and participant updates
     const setupUnreadSubscription = (userId: string) => {
       currentUserId = userId
-      unreadChannel = supabase
-        .channel('sidebar-unread-count')
+      // Remove old channel first to avoid "already subscribed" errors
+      if (unreadChannel) {
+        supabase.removeChannel(unreadChannel)
+        unreadChannel = null
+      }
+      const channel = supabase
+        .channel(`sidebar-unread-${userId}`)
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
@@ -213,7 +222,8 @@ export function Sidebar() {
         }, () => {
           fetchUnreadCount(userId)
         })
-        .subscribe()
+      unreadChannel = channel
+      channel.subscribe()
     }
 
     const loadProfile = async () => {
