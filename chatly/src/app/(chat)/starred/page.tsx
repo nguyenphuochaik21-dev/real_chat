@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { Star, MessageSquare, ArrowLeft } from 'lucide-react'
-import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useStarredMessages } from '@/hooks/use-starred-messages'
@@ -10,17 +9,19 @@ import { useAuth } from '@/hooks/use-auth'
 import { formatDistanceToNow } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { Tables } from '@/types'
+import { useI18n } from '@/lib/i18n'
 
 type Message = Tables<'messages'>
 
 export default function StarredMessagesPage() {
+  const { t } = useI18n()
   const { user } = useAuth()
   const { starredMessages, loading, toggleStarMessage } = useStarredMessages(user?.id || null)
 
   if (!user) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)]">
-        <p className="text-[var(--text-muted)]">Please sign in to view starred messages</p>
+        <p className="text-[var(--text-muted)]">{t('starred.signIn')}</p>
       </div>
     )
   }
@@ -37,9 +38,11 @@ export default function StarredMessagesPage() {
           </Link>
           <Star className="h-6 w-6 fill-yellow-400 text-yellow-400" />
           <div>
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Starred Messages</h1>
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+              {t('starred.title')}
+            </h1>
             <p className="text-sm text-[var(--text-muted)]">
-              {starredMessages.length} starred message{starredMessages.length !== 1 ? 's' : ''}
+              {t('starred.count', { count: starredMessages.length })}
             </p>
           </div>
         </div>
@@ -50,15 +53,15 @@ export default function StarredMessagesPage() {
         <div className="p-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+              <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" />
             </div>
           ) : starredMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Star className="mb-3 h-12 w-12 text-[var(--text-muted)] opacity-50" />
-              <p className="text-sm font-medium text-[var(--text-secondary)]">No starred messages</p>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                Star messages to save them for later
+              <p className="text-sm font-medium text-[var(--text-secondary)]">
+                {t('starred.none')}
               </p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">{t('starred.noneHint')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -83,6 +86,7 @@ interface StarredMessageCardProps {
 }
 
 function StarredMessageCard({ message, onUnstar }: StarredMessageCardProps) {
+  const { locale, t } = useI18n()
   const createdAt = message.created_at ? new Date(message.created_at) : new Date()
 
   return (
@@ -105,29 +109,24 @@ function StarredMessageCard({ message, onUnstar }: StarredMessageCardProps) {
           )}
 
           {/* Message content */}
-          <p className="text-sm text-[var(--text-primary)] line-clamp-3">
-            {message.content || '[Media message]'}
+          <p className="line-clamp-3 text-sm text-[var(--text-primary)]">
+            {message.content || t('starred.media')}
           </p>
 
           {/* Timestamp */}
           <p className="mt-2 text-xs text-[var(--text-muted)]">
-            {formatDistanceToNow(createdAt)}
+            {formatDistanceToNow(createdAt, locale)}
           </p>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <Link href={`/chats/${message.conversation_id}`}>
-            <Button variant="ghost" size="icon-sm" title="Go to conversation">
+            <Button variant="ghost" size="icon-sm" title={t('starred.open')}>
               <MessageSquare className="h-4 w-4" />
             </Button>
           </Link>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onUnstar}
-            title="Unstar"
-          >
+          <Button variant="ghost" size="icon-sm" onClick={onUnstar} title={t('starred.unstar')}>
             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
           </Button>
         </div>

@@ -1,30 +1,34 @@
-'use client';
+'use client'
 
-import { Phone, Video, PhoneOff } from 'lucide-react';
-import { Avatar } from '@/components/ui/avatar';
-import { useCallStore } from '@/stores/call-store';
+import { Phone, Video, PhoneOff } from 'lucide-react'
+import { Avatar } from '@/components/ui/avatar'
+import { useCallStore } from '@/stores/call-store'
+import { useI18n } from '@/lib/i18n'
 
 export function IncomingCallModal() {
-  const { status, type, remoteUser, acceptCall, declineCall } = useCallStore();
+  const { t } = useI18n()
+  const { status, type, remoteUser, acceptCall, declineCall } = useCallStore()
 
-  if (status !== 'ringing') return null;
+  if (status !== 'ringing') return null
 
-  const isVideo = type === 'video';
+  const isVideo = type === 'video'
 
-  const remoteUserData = remoteUser ? {
-    id: remoteUser.id,
-    display_name: remoteUser.displayName,
-    avatar_url: remoteUser.avatarUrl || null,
-    status: null,
-  } : null;
+  const remoteUserData = remoteUser
+    ? {
+        id: remoteUser.id,
+        display_name: remoteUser.displayName,
+        avatar_url: remoteUser.avatarUrl || null,
+        status: null,
+      }
+    : null
 
   const handleAccept = () => {
-    acceptCall();
-  };
+    acceptCall()
+  }
 
   const handleDecline = () => {
-    declineCall();
-  };
+    declineCall()
+  }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-md">
@@ -42,10 +46,10 @@ export function IncomingCallModal() {
 
         {/* Name */}
         <h2 className="mb-1 text-xl font-semibold text-white">
-          {remoteUser?.displayName || 'Unknown'}
+          {remoteUser?.displayName || t('calls.unknownUser')}
         </h2>
         <p className="mb-6 text-sm text-slate-400">
-          {isVideo ? 'Incoming video call' : 'Incoming voice call'}
+          {isVideo ? t('call.incomingVideo') : t('call.incomingVoice')}
         </p>
 
         {/* Type indicator */}
@@ -57,7 +61,7 @@ export function IncomingCallModal() {
               <Phone className="h-5 w-5 text-indigo-400" />
             )}
             <span className="mt-1 text-xs text-slate-500">
-              {isVideo ? 'Video' : 'Voice'}
+              {isVideo ? t('call.video') : t('call.voice')}
             </span>
           </div>
         </div>
@@ -68,22 +72,22 @@ export function IncomingCallModal() {
             <button
               className="mb-2 h-16 w-16 rounded-full bg-red-500 text-white transition-all hover:scale-105 hover:bg-red-600 active:scale-95"
               onClick={handleDecline}
-              aria-label="Decline"
+              aria-label={t('call.decline')}
             >
               <PhoneOff className="mx-auto h-6 w-6" />
             </button>
-            <span className="text-xs text-slate-400">Decline</span>
+            <span className="text-xs text-slate-400">{t('call.decline')}</span>
           </div>
 
           <div className="flex flex-col items-center">
             <button
               className="mb-2 h-16 w-16 rounded-full bg-emerald-500 text-white transition-all hover:scale-105 hover:bg-emerald-600 active:scale-95"
               onClick={handleAccept}
-              aria-label="Accept"
+              aria-label={t('call.accept')}
             >
               <Phone className="mx-auto h-6 w-6" />
             </button>
-            <span className="text-xs text-slate-400">Accept</span>
+            <span className="text-xs text-slate-400">{t('call.accept')}</span>
           </div>
         </div>
 
@@ -104,5 +108,5 @@ export function IncomingCallModal() {
         </div>
       </div>
     </div>
-  );
+  )
 }

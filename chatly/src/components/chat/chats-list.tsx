@@ -20,24 +20,25 @@ import { useConversationLabels } from '@/hooks/use-conversation-labels'
 import { useSearch } from '@/hooks/use-search'
 import { useChatsListStore, type ConversationWithDetails } from '@/stores/chats-list-store'
 import type { Tables } from '@/types'
+import { useI18n } from '@/lib/i18n'
 
 type Profile = Tables<'profiles'>
 type Message = Tables<'messages'>
 
-function formatMessageTime(dateStr: string | null): string {
+function formatMessageTime(dateStr: string | null, dateLocale: string, yesterday: string): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   const now = new Date()
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
   } else if (diffDays === 1) {
-    return 'Yesterday'
+    return yesterday
   } else if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' })
+    return date.toLocaleDateString(dateLocale, { weekday: 'short' })
   }
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' })
 }
 
 interface ConversationItemProps {
@@ -49,7 +50,15 @@ interface ConversationItemProps {
   draft?: string
 }
 
-function ConversationItem({ conversation, isActive, currentUserId, participantStatus, labels = [], draft }: ConversationItemProps) {
+function ConversationItem({
+  conversation,
+  isActive,
+  currentUserId,
+  participantStatus,
+  labels = [],
+  draft,
+}: ConversationItemProps) {
+  const { t, dateLocale } = useI18n()
   const isFromMe = conversation.last_message?.sender_id === currentUserId
 
   const getStatusColor = (): string => {
@@ -78,7 +87,7 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
         <Avatar user={conversation.participant} size="lg" showStatus={false} />
         <span
           className={cn(
-            'absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
+            'absolute right-0 bottom-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
             getStatusColor()
           )}
         />
@@ -110,24 +119,30 @@ function ConversationItem({ conversation, isActive, currentUserId, participantSt
             )}
           </div>
           <span className="shrink-0 text-xs text-[var(--text-muted)]">
-            {formatMessageTime(conversation.last_message?.created_at || conversation.last_message_at)}
+            {formatMessageTime(
+              conversation.last_message?.created_at || conversation.last_message_at,
+              dateLocale,
+              t('chatList.yesterday')
+            )}
           </span>
         </div>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className={cn(
-            'truncate text-sm',
-            draft ? 'text-primary-500 italic' : 'text-[var(--text-secondary)]'
-          )}>
+          <p
+            className={cn(
+              'truncate text-sm',
+              draft ? 'text-primary-500 italic' : 'text-[var(--text-secondary)]'
+            )}
+          >
             {draft ? (
               <span className="flex items-center gap-1">
-                <span className="text-[var(--text-muted)]">Draft: </span>
+                <span className="text-[var(--text-muted)]">{t('chatList.draft')}: </span>
                 {draft}
               </span>
             ) : (
               <>
-                {isFromMe && <span className="text-[var(--text-muted)]">You: </span>}
-                {conversation.last_message?.content || 'No messages yet'}
+                {isFromMe && <span className="text-[var(--text-muted)]">{t('common.you')}: </span>}
+                {conversation.last_message?.content || t('chatList.noMessages')}
               </>
             )}
           </p>
@@ -153,6 +168,7 @@ type TabType = 'all' | 'unread' | 'archived'
 const CACHE_STALE_MS = 30_000
 
 export function ChatsList({ currentUserId }: ChatsListProps) {
+  const { t } = useI18n()
   const pathname = usePathname()
   // Derive selected conversation from URL — works even when component never remounts
   const selectedConversationId = pathname.startsWith('/chats/')
@@ -161,7 +177,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('all')
-  const [hydrated, setHydrated] = useState(false)
 
   // Use store-backed state — persists across navigation, no remount flash
   const conversations = useChatsListStore((s) => s.conversations)
@@ -181,7 +196,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const storeConversationIdsRef = useRef<string[]>([])
   const supabase = createClient()
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
-  const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
+  const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(
+    null
+  )
 
   // Label filter
   const [labelFilterOpen, setLabelFilterOpen] = useState(false)
@@ -198,13 +215,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   // Restore tab from localStorage after hydration to avoid mismatch
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('chats-list-tab')
-      if (saved === 'all' || saved === 'unread' || saved === 'archived') {
-        setActiveTab(saved)
-      }
-    } catch {}
-    setHydrated(true)
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const saved = localStorage.getItem('chats-list-tab')
+        if (saved === 'all' || saved === 'unread' || saved === 'archived') {
+          setActiveTab(saved)
+        }
+      } catch {}
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [])
 
   useEffect(() => {
@@ -333,7 +352,10 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
       loadLabelsForConversations(ids)
 
-      let newStatuses = new Map<string, { status: 'online' | 'offline' | 'away' | 'busy'; lastSeen: string | null }>()
+      const newStatuses = new Map<
+        string,
+        { status: 'online' | 'offline' | 'away' | 'busy'; lastSeen: string | null }
+      >()
       if (participantIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
@@ -521,9 +543,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   })
 
   const tabs: { key: TabType; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'unread', label: 'Unread' },
-    { key: 'archived', label: 'Archived' },
+    { key: 'all', label: t('chatList.all') },
+    { key: 'unread', label: t('chatList.unread') },
+    { key: 'archived', label: t('chatList.archived') },
   ]
 
   const startConversationWithContact = useCallback(
@@ -601,17 +623,22 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)] md:w-80">
       <div className="p-4">
         <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Chats</h1>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+            {t('chatList.title')}
+          </h1>
           {labels.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setLabelFilterOpen(!labelFilterOpen)}
-              className={cn('gap-1.5', selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500')}
+              className={cn(
+                'gap-1.5',
+                selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
+              )}
             >
               <Tag className="h-4 w-4" />
               {selectedLabelIds.size > 0 && (
-                <span className="ml-1 rounded bg-primary-500 px-1.5 py-0.5 text-xs text-white">
+                <span className="bg-primary-500 ml-1 rounded px-1.5 py-0.5 text-xs text-white">
                   {selectedLabelIds.size}
                 </span>
               )}
@@ -623,13 +650,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         {labelFilterOpen && labels.length > 0 && (
           <div className="mb-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] p-2">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">Filter by label</span>
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
+                {t('chatList.filterByLabel')}
+              </span>
               {selectedLabelIds.size > 0 && (
                 <button
                   onClick={() => setSelectedLabelIds(new Set())}
-                  className="text-xs text-primary-500 hover:underline"
+                  className="text-primary-500 text-xs hover:underline"
                 >
-                  Clear
+                  {t('common.clear')}
                 </button>
               )}
             </div>
@@ -646,11 +675,14 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                   className={cn(
                     'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors',
                     selectedLabelIds.has(label.id)
-                      ? 'bg-[var(--bg-active)] ring-1 ring-primary-500'
+                      ? 'ring-primary-500 bg-[var(--bg-active)] ring-1'
                       : 'bg-[var(--bg-hover)] hover:bg-[var(--bg-active)]'
                   )}
                 >
-                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: label.color || '#8B5CF6' }} />
+                  <div
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: label.color || '#8B5CF6' }}
+                  />
                   <span>{label.name}</span>
                 </button>
               ))}
@@ -662,7 +694,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
           <Input
             type="search"
-            placeholder="Search or start new chat"
+            placeholder={t('chatList.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -695,19 +727,21 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         <div className="py-2">
           {loading && conversations.length === 0 ? (
             <div className="flex items-center justify-center py-12">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+              <div className="border-primary-500 h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
             </div>
           ) : showSearchResults ? (
             <div className="px-1">
               {searchState.loading && !hasMessageResults && !hasContactResults ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+                  <div className="border-primary-500 h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
                 </div>
               ) : (
                 <>
                   {hasContactResults && (
                     <>
-                      <p className="px-3 py-2 text-xs font-medium text-[var(--text-muted)]">Contacts</p>
+                      <p className="px-3 py-2 text-xs font-medium text-[var(--text-muted)]">
+                        {t('chatList.contacts')}
+                      </p>
                       {searchState.contacts.map((contact) => (
                         <button
                           key={contact.id}
@@ -720,7 +754,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                               {contact.display_name}
                             </p>
                             {contact.username && (
-                              <p className="truncate text-xs text-[var(--text-muted)]">@{contact.username}</p>
+                              <p className="truncate text-xs text-[var(--text-muted)]">
+                                @{contact.username}
+                              </p>
                             )}
                           </div>
                           <User className="h-4 w-4 text-[var(--text-muted)]" />
@@ -733,22 +769,24 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                   {hasMessageResults && (
                     <>
                       <p className="px-3 py-2 text-xs font-medium text-[var(--text-muted)]">
-                        Messages ({searchState.total})
+                        {t('chatList.messages')} ({searchState.total})
                       </p>
                       {searchState.results.map((result) => {
                         if (!result.conversation_id) return null
                         return (
                           <button
                             key={result.id}
-                            onClick={() => openMessageInConversation(result.conversation_id!, result.id)}
+                            onClick={() =>
+                              openMessageInConversation(result.conversation_id!, result.id)
+                            }
                             className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
                           >
                             <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-secondary)]">
-                              <MessageSquare className="h-4 w-4 text-primary-500" />
+                              <MessageSquare className="text-primary-500 h-4 w-4" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs font-medium text-[var(--text-secondary)]">
-                                {result.conversation_title || 'Conversation'}
+                                {result.conversation_title || t('chat.selectConversation')}
                               </p>
                               <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-primary)]">
                                 {result.content}
@@ -763,8 +801,8 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                   {!hasContactResults && !hasMessageResults && (
                     <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
                       <Search className="mb-3 h-12 w-12 opacity-50" />
-                      <p className="text-sm">No results for "{search}"</p>
-                      <p className="mt-1 text-xs">Try different keywords</p>
+                      <p className="text-sm">{t('chatList.noResults', { query: search })}</p>
+                      <p className="mt-1 text-xs">{t('chatList.tryDifferent')}</p>
                     </div>
                   )}
                 </>
@@ -775,54 +813,54 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
               <>
                 <div className="px-3 py-2">
                   <p className="text-xs text-[var(--text-muted)]">
-                    {filteredArchived.length} archived {filteredArchived.length === 1 ? 'conversation' : 'conversations'}
+                    {t('chatList.archivedCount', { count: filteredArchived.length })}
                   </p>
                 </div>
                 {filteredArchived.map((conversation, index) => {
                   const ps = participantStatuses.get(conversation.participant.id)
                   return (
-                  <div key={conversation.id}>
-                    <ConversationItem
-                      conversation={conversation}
-                      isActive={selectedConversationId === conversation.id}
-                      currentUserId={currentUserId}
-                      participantStatus={resolvePresence(ps)}
-                      labels={conversationLabels.get(conversation.id) || []}
-                      draft={drafts.get(conversation.id)}
-                    />
-                    {index < filteredArchived.length - 1 && <Separator />}
-                  </div>
+                    <div key={conversation.id}>
+                      <ConversationItem
+                        conversation={conversation}
+                        isActive={selectedConversationId === conversation.id}
+                        currentUserId={currentUserId}
+                        participantStatus={resolvePresence(ps)}
+                        labels={conversationLabels.get(conversation.id) || []}
+                        draft={drafts.get(conversation.id)}
+                      />
+                      {index < filteredArchived.length - 1 && <Separator />}
+                    </div>
                   )
                 })}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
                 <Archive className="mb-3 h-12 w-12 opacity-50" />
-                <p className="text-sm">No archived conversations</p>
+                <p className="text-sm">{t('chatList.noArchived')}</p>
               </div>
             )
           ) : sortedConversations.length > 0 ? (
             sortedConversations.map((conversation, index) => {
               const ps = participantStatuses.get(conversation.participant.id)
               return (
-              <div key={conversation.id}>
-                <ConversationItem
-                  conversation={conversation}
-                  isActive={selectedConversationId === conversation.id}
-                  currentUserId={currentUserId}
-                  participantStatus={resolvePresence(ps)}
-                  labels={conversationLabels.get(conversation.id) || []}
-                  draft={drafts.get(conversation.id)}
-                />
-                {index < sortedConversations.length - 1 && <Separator />}
-              </div>
+                <div key={conversation.id}>
+                  <ConversationItem
+                    conversation={conversation}
+                    isActive={selectedConversationId === conversation.id}
+                    currentUserId={currentUserId}
+                    participantStatus={resolvePresence(ps)}
+                    labels={conversationLabels.get(conversation.id) || []}
+                    draft={drafts.get(conversation.id)}
+                  />
+                  {index < sortedConversations.length - 1 && <Separator />}
+                </div>
               )
             })
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <MessageSquare className="mb-3 h-12 w-12 opacity-50" />
               <p className="text-sm">
-                {activeTab === 'unread' ? 'No unread conversations' : 'No conversations found'}
+                {activeTab === 'unread' ? t('chatList.noUnread') : t('chatList.noConversations')}
               </p>
             </div>
           )}

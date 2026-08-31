@@ -37,7 +37,8 @@ export function useConversations(userId: string | null) {
       // Get all conversations for this user
       const { data: participations, error: partError } = await supabase
         .from('conversation_participants')
-        .select(`
+        .select(
+          `
           *,
           conversation:conversations(
             *,
@@ -49,7 +50,8 @@ export function useConversations(userId: string | null) {
               status
             )
           )
-        `)
+        `
+        )
         .eq('user_id', userId)
         .order('last_read_at', { ascending: false })
 
@@ -128,31 +130,40 @@ export function useConversations(userId: string | null) {
   }, [userId, supabase])
 
   useEffect(() => {
-    fetchConversations()
+    const timeoutId = window.setTimeout(() => void fetchConversations(), 0)
 
     // Subscribe to real-time changes
-    if (!userId) return
+    if (!userId) return () => window.clearTimeout(timeoutId)
 
     const channel = supabase
       .channel('conversations-changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'conversation_participants',
-        filter: `user_id=eq.${userId}`,
-      }, () => {
-        fetchConversations()
-      })
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-      }, () => {
-        fetchConversations()
-      })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversation_participants',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          fetchConversations()
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        () => {
+          fetchConversations()
+        }
+      )
       .subscribe()
 
     return () => {
+      window.clearTimeout(timeoutId)
       supabase.removeChannel(channel)
     }
   }, [userId, fetchConversations, supabase])

@@ -1,19 +1,21 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Bell, BellOff } from 'lucide-react'
+import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useNotificationStore } from '@/stores/notification-store'
+import { useI18n } from '@/lib/i18n'
 
 export function NotificationPermission() {
+  const { t } = useI18n()
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPermission(Notification.permission)
-    }
+    const timeoutId = window.setTimeout(() => {
+      setMounted(true)
+      if ('Notification' in window) setPermission(Notification.permission)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [])
 
   const requestPermission = async () => {
@@ -41,18 +43,11 @@ export function NotificationPermission() {
       <div className="flex items-start gap-3">
         <Bell className="h-5 w-5 shrink-0 text-[var(--text-muted)]" />
         <div className="flex-1">
-          <p className="text-sm text-[var(--text-primary)]">Enable notifications</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Get notified when you receive messages
-          </p>
+          <p className="text-sm text-[var(--text-primary)]">{t('notifications.enable')}</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">{t('notifications.enableHint')}</p>
         </div>
-        <Button
-          size="sm"
-          variant="default"
-          onClick={requestPermission}
-          className="shrink-0"
-        >
-          Enable
+        <Button size="sm" variant="default" onClick={requestPermission} className="shrink-0">
+          {t('notifications.enable')}
         </Button>
       </div>
     </div>
@@ -65,10 +60,11 @@ export function useBrowserNotificationPermission() {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPermission(Notification.permission)
-    }
+    const timeoutId = window.setTimeout(() => {
+      setMounted(true)
+      if ('Notification' in window) setPermission(Notification.permission)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [])
 
   const requestPermission = async (): Promise<boolean> => {

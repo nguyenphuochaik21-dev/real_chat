@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Tag, Plus, X, Check, Trash2, Edit2 } from 'lucide-react'
+import { Tag, Plus, X, Check, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { Tables } from '@/types'
+import { useI18n } from '@/lib/i18n'
 
 type Label = Tables<'conversation_labels'>
 
@@ -47,7 +48,8 @@ function ColorPicker({
           onClick={() => onColorSelect(color)}
           className={cn(
             'h-6 w-6 rounded-full transition-transform',
-            selectedColor === color && 'ring-2 ring-offset-2 ring-offset-[var(--bg-panel)] scale-110'
+            selectedColor === color &&
+              'scale-110 ring-2 ring-offset-2 ring-offset-[var(--bg-panel)]'
           )}
           style={{ backgroundColor: color }}
         />
@@ -65,7 +67,6 @@ function ColorPicker({
 export function LabelManager({
   isOpen,
   onClose,
-  conversationId,
   currentLabels,
   allLabels,
   onAssignLabel,
@@ -73,6 +74,7 @@ export function LabelManager({
   onCreateLabel,
   onDeleteLabel,
 }: LabelManagerProps) {
+  const { t } = useI18n()
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newLabelName, setNewLabelName] = useState('')
   const [newLabelColor, setNewLabelColor] = useState(PRESET_COLORS[0])
@@ -112,18 +114,15 @@ export function LabelManager({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/50"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--bg-panel)] shadow-2xl">
+      <div className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-1rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--bg-panel)] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] p-4">
           <div className="flex items-center gap-2">
-            <Tag className="h-5 w-5 text-primary-500" />
-            <h2 className="font-semibold text-[var(--text-primary)]">Labels</h2>
+            <Tag className="text-primary-500 h-5 w-5" />
+            <h2 className="font-semibold text-[var(--text-primary)]">{t('labels.title')}</h2>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={onClose}>
             <X className="h-4 w-4" />
@@ -136,7 +135,7 @@ export function LabelManager({
           <div className="space-y-2">
             {allLabels.length === 0 && !showCreateForm ? (
               <p className="py-4 text-center text-sm text-[var(--text-muted)]">
-                No labels yet. Create one to organize your conversations.
+                {t('labels.none')}
               </p>
             ) : (
               allLabels.map((label) => (
@@ -160,16 +159,14 @@ export function LabelManager({
                     </span>
 
                     {/* Check mark if assigned */}
-                    {isLabelAssigned(label.id) && (
-                      <Check className="h-4 w-4 text-primary-500" />
-                    )}
+                    {isLabelAssigned(label.id) && <Check className="text-primary-500 h-4 w-4" />}
                   </button>
 
                   {/* Delete button (on hover) */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (confirm(`Delete label "${label.name}"?`)) {
+                      if (confirm(t('labels.deleteConfirm', { name: label.name || '' }))) {
                         onDeleteLabel(label.id)
                       }
                     }}
@@ -185,21 +182,20 @@ export function LabelManager({
           {/* Create new label form */}
           {showCreateForm ? (
             <div className="mt-4 rounded-lg border border-[var(--border-default)] p-4">
-              <p className="mb-3 text-sm font-medium text-[var(--text-secondary)]">New Label</p>
+              <p className="mb-3 text-sm font-medium text-[var(--text-secondary)]">
+                {t('labels.new')}
+              </p>
 
               <Input
-                placeholder="Label name"
+                placeholder={t('labels.name')}
                 value={newLabelName}
                 onChange={(e) => setNewLabelName(e.target.value)}
                 className="mb-3"
                 autoFocus
               />
 
-              <p className="mb-2 text-xs text-[var(--text-muted)]">Color</p>
-              <ColorPicker
-                selectedColor={newLabelColor}
-                onColorSelect={setNewLabelColor}
-              />
+              <p className="mb-2 text-xs text-[var(--text-muted)]">{t('labels.color')}</p>
+              <ColorPicker selectedColor={newLabelColor} onColorSelect={setNewLabelColor} />
 
               <div className="mt-4 flex justify-end gap-2">
                 <Button
@@ -211,14 +207,14 @@ export function LabelManager({
                     setNewLabelColor(PRESET_COLORS[0])
                   }}
                 >
-                  Cancel
+                  {t('labels.cancel')}
                 </Button>
                 <Button
                   size="sm"
                   onClick={handleCreateLabel}
                   disabled={!newLabelName.trim() || isCreating}
                 >
-                  Create
+                  {t('labels.create')}
                 </Button>
               </div>
             </div>
@@ -229,16 +225,14 @@ export function LabelManager({
               onClick={() => setShowCreateForm(true)}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Create new label
+              {t('labels.createNew')}
             </Button>
           )}
         </div>
 
         {/* Footer */}
         <div className="border-t border-[var(--border-default)] p-4">
-          <p className="text-xs text-[var(--text-muted)]">
-            Click a label to assign or remove it from this conversation.
-          </p>
+          <p className="text-xs text-[var(--text-muted)]">{t('labels.hint')}</p>
         </div>
       </div>
     </>

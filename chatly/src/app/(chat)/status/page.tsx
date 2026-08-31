@@ -8,8 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { mockStatuses, getRecentStatuses, getSeenStatuses } from '@/lib/mock/status'
 import { currentUser } from '@/lib/mock/users'
+import { useI18n, type Locale } from '@/lib/i18n'
 
-function formatStatusTime(dateStr: string): string {
+function formatStatusTime(dateStr: string, locale: Locale): string {
   const date = new Date(dateStr)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
@@ -18,15 +19,16 @@ function formatStatusTime(dateStr: string): string {
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
   if (diffMins < 60) {
-    return `${diffMins}m ago`
+    return locale === 'vi' ? `${diffMins} phút trước` : `${diffMins}m ago`
   } else if (diffHours < 24) {
-    return `${diffHours}h ago`
+    return locale === 'vi' ? `${diffHours} giờ trước` : `${diffHours}h ago`
   } else {
-    return `${diffDays}d ago`
+    return locale === 'vi' ? `${diffDays} ngày trước` : `${diffDays}d ago`
   }
 }
 
 export default function StatusPage() {
+  const { locale, t } = useI18n()
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null)
   const recentStatuses = getRecentStatuses()
   const seenStatuses = getSeenStatuses()
@@ -46,7 +48,9 @@ export default function StatusPage() {
               <Avatar user={selected.user} size="md" showStatus />
               <div>
                 <p className="font-medium">{selected.user.display_name}</p>
-                <p className="text-xs text-white/70">{formatStatusTime(selected.created_at)}</p>
+                <p className="text-xs text-white/70">
+                  {formatStatusTime(selected.created_at, locale)}
+                </p>
               </div>
               <Button
                 variant="ghost"
@@ -70,7 +74,7 @@ export default function StatusPage() {
               <div className="flex items-center justify-between rounded-xl bg-white/20 p-3 backdrop-blur-sm">
                 <input
                   type="text"
-                  placeholder="Reply..."
+                  placeholder={t('status.reply')}
                   className="flex-1 bg-transparent text-white placeholder:text-white/60 focus:outline-none"
                 />
                 <Button variant="ghost" size="icon" className="text-white">
@@ -95,8 +99,8 @@ export default function StatusPage() {
     <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
-        <h1 className="text-xl font-semibold text-[var(--text-primary)]">Status</h1>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">View updates from your contacts</p>
+        <h1 className="text-xl font-semibold text-[var(--text-primary)]">{t('status.title')}</h1>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">{t('status.subtitle')}</p>
       </div>
 
       {/* Content */}
@@ -111,8 +115,8 @@ export default function StatusPage() {
               </button>
             </div>
             <div>
-              <p className="font-medium text-[var(--text-primary)]">My Status</p>
-              <p className="text-sm text-[var(--text-muted)]">Tap to add status update</p>
+              <p className="font-medium text-[var(--text-primary)]">{t('status.myStatus')}</p>
+              <p className="text-sm text-[var(--text-muted)]">{t('status.add')}</p>
             </div>
           </div>
 
@@ -122,7 +126,9 @@ export default function StatusPage() {
           {recentStatuses.length > 0 && (
             <>
               <div className="mb-2">
-                <h3 className="text-sm font-medium text-[var(--text-muted)]">Recent updates</h3>
+                <h3 className="text-sm font-medium text-[var(--text-muted)]">
+                  {t('status.recent')}
+                </h3>
               </div>
               <div className="space-y-2">
                 {recentStatuses.map((status) => (
@@ -139,7 +145,7 @@ export default function StatusPage() {
                         {status.user.display_name}
                       </p>
                       <p className="text-xs text-[var(--text-muted)]">
-                        {formatStatusTime(status.created_at)}
+                        {formatStatusTime(status.created_at, locale)}
                       </p>
                     </div>
                   </div>
@@ -154,7 +160,9 @@ export default function StatusPage() {
           {seenStatuses.length > 0 && (
             <>
               <div className="mb-2">
-                <h3 className="text-sm font-medium text-[var(--text-muted)]">Viewed updates</h3>
+                <h3 className="text-sm font-medium text-[var(--text-muted)]">
+                  {t('status.viewed')}
+                </h3>
               </div>
               <div className="space-y-2">
                 {seenStatuses.map((status) => (
@@ -172,7 +180,7 @@ export default function StatusPage() {
                       </p>
                       <p className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
                         <Eye className="h-3 w-3" />
-                        {formatStatusTime(status.created_at)}
+                        {formatStatusTime(status.created_at, locale)}
                       </p>
                     </div>
                   </div>
@@ -194,8 +202,8 @@ export default function StatusPage() {
                   />
                 </svg>
               </div>
-              <p className="text-sm">No status updates yet</p>
-              <p className="mt-1 text-xs">Status updates from your contacts will appear here</p>
+              <p className="text-sm">{t('status.none')}</p>
+              <p className="mt-1 text-xs">{t('status.noneHint')}</p>
             </div>
           )}
         </div>

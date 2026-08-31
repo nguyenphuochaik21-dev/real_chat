@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
+import { useI18n } from '@/lib/i18n'
 
 export default function RegisterPage() {
+  const { t } = useI18n()
   const router = useRouter()
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
@@ -20,10 +22,10 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
 
   const passwordRequirements = [
-    { met: password.length >= 8, text: 'At least 8 characters' },
-    { met: /[A-Z]/.test(password), text: 'One uppercase letter' },
-    { met: /[a-z]/.test(password), text: 'One lowercase letter' },
-    { met: /[0-9]/.test(password), text: 'One number' },
+    { met: password.length >= 8, text: t('auth.passwordLength') },
+    { met: /[A-Z]/.test(password), text: t('auth.passwordUpper') },
+    { met: /[a-z]/.test(password), text: t('auth.passwordLower') },
+    { met: /[0-9]/.test(password), text: t('auth.passwordNumber') },
   ]
 
   const allRequirementsMet = passwordRequirements.every((r) => r.met)
@@ -34,7 +36,7 @@ export default function RegisterPage() {
     setError('')
 
     if (!allRequirementsMet) {
-      setError('Please meet all password requirements')
+      setError(t('auth.passwordRequirements'))
       setIsLoading(false)
       return
     }
@@ -82,22 +84,22 @@ export default function RegisterPage() {
 
   return (
     <div>
-      <div className="lg:hidden mb-8 flex justify-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500 text-white">
+      <div className="mb-8 flex justify-center lg:hidden">
+        <div className="bg-primary-500 flex h-12 w-12 items-center justify-center rounded-xl text-white">
           <MessageSquare className="h-6 w-6" />
         </div>
       </div>
 
-      <h2 className="text-2xl font-bold text-[var(--text-primary)]">Create your account</h2>
+      <h2 className="text-2xl font-bold text-[var(--text-primary)]">{t('auth.registerTitle')}</h2>
       <p className="mt-2 text-[var(--text-secondary)]">
-        Already have an account?{' '}
-        <Link href="/login" className="font-medium text-primary-500 hover:underline">
-          Sign in
+        {t('auth.hasAccount')}{' '}
+        <Link href="/login" className="text-primary-500 font-medium hover:underline">
+          {t('auth.signIn')}
         </Link>
       </p>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-600 dark:text-red-400">
+        <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {error}
         </div>
       )}
@@ -128,7 +130,7 @@ export default function RegisterPage() {
               d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
             />
           </svg>
-          Continue with Google
+          {t('auth.continueGoogle')}
         </Button>
         <Button
           variant="outline"
@@ -143,21 +145,24 @@ export default function RegisterPage() {
               d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
             />
           </svg>
-          Continue with GitHub
+          {t('auth.continueGithub')}
         </Button>
       </div>
 
       <div className="mt-6 flex items-center gap-4">
         <Separator className="flex-1" />
-        <span className="text-sm text-[var(--text-muted)]">or</span>
+        <span className="text-sm text-[var(--text-muted)]">{t('auth.or')}</span>
         <Separator className="flex-1" />
       </div>
 
       {/* Registration form */}
       <form onSubmit={handleRegister} className="mt-6 space-y-4">
         <div>
-          <label htmlFor="fullName" className="block text-sm font-medium text-[var(--text-primary)]">
-            Full Name
+          <label
+            htmlFor="fullName"
+            className="block text-sm font-medium text-[var(--text-primary)]"
+          >
+            {t('auth.fullName')}
           </label>
           <Input
             id="fullName"
@@ -171,8 +176,11 @@ export default function RegisterPage() {
         </div>
 
         <div>
-          <label htmlFor="username" className="block text-sm font-medium text-[var(--text-primary)]">
-            Username
+          <label
+            htmlFor="username"
+            className="block text-sm font-medium text-[var(--text-primary)]"
+          >
+            {t('auth.username')}
           </label>
           <Input
             id="username"
@@ -187,7 +195,7 @@ export default function RegisterPage() {
 
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-[var(--text-primary)]">
-            Email
+            {t('auth.email')}
           </label>
           <Input
             id="email"
@@ -201,8 +209,11 @@ export default function RegisterPage() {
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-[var(--text-primary)]">
-            Password
+          <label
+            htmlFor="password"
+            className="block text-sm font-medium text-[var(--text-primary)]"
+          >
+            {t('auth.password')}
           </label>
           <div className="relative mt-1">
             <Input
@@ -239,13 +250,11 @@ export default function RegisterPage() {
         </div>
 
         <Button type="submit" className="w-full" disabled={isLoading || !allRequirementsMet}>
-          {isLoading ? 'Creating account...' : 'Create account'}
+          {isLoading ? t('auth.creating') : t('auth.createAccount')}
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-xs text-[var(--text-muted)]">
-        By creating an account, you agree to our Terms of Service and Privacy Policy.
-      </p>
+      <p className="mt-6 text-center text-xs text-[var(--text-muted)]">{t('auth.terms')}</p>
     </div>
   )
 }

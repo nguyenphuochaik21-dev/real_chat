@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useCallHistoryFiltered } from '@/hooks/use-call-history'
 import { formatCallDuration } from '@/stores/call-store'
+import { useI18n } from '@/lib/i18n'
 
 type CallFilter = 'all' | 'missed' | 'incoming' | 'outgoing'
 
@@ -31,34 +32,37 @@ function CallIcon({ direction, status }: { direction: string; status?: string })
   return <PhoneOutgoing className="h-4 w-4 text-blue-500" />
 }
 
-function formatCallTime(dateStr: string | null): string {
+function formatCallTime(dateStr: string | null, dateLocale: string, yesterday: string): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   const now = new Date()
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
   } else if (diffDays === 1) {
-    return 'Yesterday'
+    return yesterday
   } else if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' })
+    return date.toLocaleDateString(dateLocale, { weekday: 'short' })
   }
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' })
 }
 
-function formatCallDate(dateStr: string | null): string {
+function formatCallDate(dateStr: string | null, dateLocale: string): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
-  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+  return date.toLocaleDateString(dateLocale, { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 // Group calls by date
-function groupCallsByDate(calls: ReturnType<typeof useCallHistoryFiltered>['calls']) {
+function groupCallsByDate(
+  calls: ReturnType<typeof useCallHistoryFiltered>['calls'],
+  dateLocale: string
+) {
   const groups: { date: string; calls: typeof calls }[] = []
   const dateMap = new Map<string, typeof calls>()
 
-  calls.forEach(call => {
+  calls.forEach((call) => {
     const dateKey = new Date(call.started_at).toDateString()
     if (!dateMap.has(dateKey)) {
       dateMap.set(dateKey, [])
@@ -68,7 +72,7 @@ function groupCallsByDate(calls: ReturnType<typeof useCallHistoryFiltered>['call
 
   dateMap.forEach((groupCalls, dateKey) => {
     groups.push({
-      date: formatCallDate(dateKey),
+      date: formatCallDate(dateKey, dateLocale),
       calls: groupCalls,
     })
   })
@@ -77,6 +81,7 @@ function groupCallsByDate(calls: ReturnType<typeof useCallHistoryFiltered>['call
 }
 
 export default function CallsPage() {
+  const { t, dateLocale } = useI18n()
   const [filter, setFilter] = useState<CallFilter>('all')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
@@ -85,34 +90,31 @@ export default function CallsPage() {
     const getCurrentUser = async () => {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || null)
     }
     getCurrentUser()
   }, [])
 
   const { calls, loading, error, refresh } = useCallHistoryFiltered(currentUserId || '', filter)
-  const groupedCalls = groupCallsByDate(calls)
+  const groupedCalls = groupCallsByDate(calls, dateLocale)
 
   const filters: { key: CallFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'missed', label: 'Missed' },
-    { key: 'incoming', label: 'Incoming' },
-    { key: 'outgoing', label: 'Outgoing' },
+    { key: 'all', label: t('calls.all') },
+    { key: 'missed', label: t('calls.missed') },
+    { key: 'incoming', label: t('calls.incoming') },
+    { key: 'outgoing', label: t('calls.outgoing') },
   ]
 
   return (
     <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Calls</h1>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={refresh}
-            disabled={loading}
-          >
+        <div className="mb-4 flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">{t('calls.title')}</h1>
+          <Button variant="ghost" size="icon" onClick={refresh} disabled={loading}>
             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           </Button>
         </div>
@@ -141,14 +143,14 @@ export default function CallsPage() {
         <div className="p-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+              <div className="border-primary-500 h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <Phone className="mb-3 h-12 w-12 opacity-50" />
               <p className="text-sm text-red-500">{error}</p>
               <Button variant="ghost" size="sm" onClick={refresh} className="mt-2">
-                Retry
+                {t('calls.retry')}
               </Button>
             </div>
           ) : groupedCalls.length > 0 ? (
@@ -163,29 +165,35 @@ export default function CallsPage() {
                   <div key={call.id}>
                     <div className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-[var(--bg-hover)]">
                       <Avatar
-                        user={call.other_user ?? {
-                          id: call.direction === 'outgoing' ? call.callee_id : call.caller_id,
-                          display_name: 'Unknown User',
-                          avatar_url: null,
-                        }}
+                        user={
+                          call.other_user ?? {
+                            id: call.direction === 'outgoing' ? call.callee_id : call.caller_id,
+                            display_name: t('calls.unknownUser'),
+                            avatar_url: null,
+                          }
+                        }
                         size="md"
                         showStatus
                       />
 
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <p className={cn(
-                            'font-medium',
-                            call.status === 'missed' || call.status === 'declined'
-                              ? 'text-red-500'
-                              : 'text-[var(--text-primary)]'
-                          )}>
-                            {call.other_user?.display_name || 'Unknown User'}
+                          <p
+                            className={cn(
+                              'font-medium',
+                              call.status === 'missed' || call.status === 'declined'
+                                ? 'text-red-500'
+                                : 'text-[var(--text-primary)]'
+                            )}
+                          >
+                            {call.other_user?.display_name || t('calls.unknownUser')}
                           </p>
                           <CallIcon direction={call.direction} status={call.status} />
                         </div>
                         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                          <span>{formatCallTime(call.started_at)}</span>
+                          <span>
+                            {formatCallTime(call.started_at, dateLocale, t('calls.yesterday'))}
+                          </span>
                           {call.duration_seconds > 0 && (
                             <>
                               <span>•</span>
@@ -199,7 +207,7 @@ export default function CallsPage() {
                             ) : (
                               <Phone className="h-3 w-3" />
                             )}
-                            {call.call_type}
+                            {t(`calls.${call.call_type}`)}
                           </span>
                         </div>
                       </div>
@@ -229,7 +237,7 @@ export default function CallsPage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <Phone className="mb-3 h-12 w-12 opacity-50" />
-              <p className="text-sm">No calls found</p>
+              <p className="text-sm">{t('calls.none')}</p>
             </div>
           )}
         </div>

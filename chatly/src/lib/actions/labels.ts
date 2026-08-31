@@ -28,7 +28,9 @@ export async function createLabel(
 ): Promise<{ success: boolean; label?: Label; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -69,7 +71,9 @@ export async function updateLabel(
 ): Promise<{ success: boolean; label?: Label; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -127,12 +131,12 @@ export async function updateLabel(
 /**
  * Delete a conversation label
  */
-export async function deleteLabel(
-  labelId: string
-): Promise<{ success: boolean; error?: string }> {
+export async function deleteLabel(labelId: string): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -153,10 +157,7 @@ export async function deleteLabel(
   }
 
   // Delete the label (cascade will remove mappings)
-  const { error } = await supabase
-    .from('conversation_labels')
-    .delete()
-    .eq('id', labelId)
+  const { error } = await supabase.from('conversation_labels').delete().eq('id', labelId)
 
   if (error) {
     console.error('Failed to delete label:', error)
@@ -176,7 +177,9 @@ export async function getLabels(): Promise<{
 }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -204,7 +207,9 @@ export async function assignLabelToConversation(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -236,14 +241,15 @@ export async function assignLabelToConversation(
     return { success: false, error: 'Not authorized to use this label' }
   }
 
-  const { error } = await supabase
-    .from('conversation_label_map')
-    .upsert({
+  const { error } = await supabase.from('conversation_label_map').upsert(
+    {
       conversation_id: conversationId,
       label_id: labelId,
-    }, {
+    },
+    {
       onConflict: 'conversation_id,label_id',
-    })
+    }
+  )
 
   if (error) {
     console.error('Failed to assign label:', error)
@@ -262,7 +268,9 @@ export async function removeLabelFromConversation(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -296,16 +304,16 @@ export async function removeLabelFromConversation(
 /**
  * Get labels for a specific conversation
  */
-export async function getConversationLabels(
-  conversationId: string
-): Promise<{
+export async function getConversationLabels(conversationId: string): Promise<{
   success: boolean
   labels?: Label[]
   error?: string
 }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -324,11 +332,13 @@ export async function getConversationLabels(
 
   const { data, error } = await supabase
     .from('conversation_label_map')
-    .select(`
+    .select(
+      `
       label:conversation_labels(
         *
       )
-    `)
+    `
+    )
     .eq('conversation_id', conversationId)
 
   if (error) {
@@ -336,7 +346,7 @@ export async function getConversationLabels(
     return { success: false, error: error.message }
   }
 
-  const labels = (data || []).map((item: any) => item.label).filter(Boolean)
+  const labels = (data || []).flatMap((item) => (item.label as unknown as Label[] | null) ?? [])
 
   return { success: true, labels }
 }
@@ -344,9 +354,7 @@ export async function getConversationLabels(
 /**
  * Get labels for multiple conversations (batch query)
  */
-export async function getLabelsForConversations(
-  conversationIds: string[]
-): Promise<{
+export async function getLabelsForConversations(conversationIds: string[]): Promise<{
   success: boolean
   labelsByConversation?: Map<string, Label[]>
   error?: string
@@ -357,19 +365,23 @@ export async function getLabelsForConversations(
 
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
 
   const { data, error } = await supabase
     .from('conversation_label_map')
-    .select(`
+    .select(
+      `
       conversation_id,
       label:conversation_labels(
         *
       )
-    `)
+    `
+    )
     .in('conversation_id', conversationIds)
 
   if (error) {

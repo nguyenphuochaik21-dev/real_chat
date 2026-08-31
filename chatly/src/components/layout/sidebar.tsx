@@ -3,24 +3,36 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Users, Phone, Star, CircleDot, Settings, Search, MessageCircle } from 'lucide-react'
+import {
+  MessageSquare,
+  Users,
+  Phone,
+  CircleDot,
+  Settings,
+  Search,
+  MessageCircle,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { usePresence } from '@/hooks/use-presence'
 import { SearchModal } from '@/components/chat/search-modal'
-import { NotificationBell, NotificationToastContainer, NotificationCenter } from '@/components/notifications'
+import {
+  NotificationBell,
+  NotificationToastContainer,
+  NotificationCenter,
+} from '@/components/notifications'
 import { useNotificationStore } from '@/stores/notification-store'
+import { useI18n } from '@/lib/i18n'
 
 const navItems = [
-  { href: '/chats', icon: MessageSquare, label: 'Chats' },
-  { href: '/contacts', icon: Users, label: 'Contacts' },
-  { href: '/calls', icon: Phone, label: 'Calls' },
-  { href: '/favorites', icon: Star, label: 'Favorites' },
-  { href: '/starred', icon: MessageCircle, label: 'Starred' },
-  { href: '/status', icon: CircleDot, label: 'Status' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
+  { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
+  { href: '/contacts', icon: Users, labelKey: 'nav.contacts' },
+  { href: '/calls', icon: Phone, labelKey: 'nav.calls' },
+  { href: '/starred', icon: MessageCircle, labelKey: 'nav.starred' },
+  { href: '/status', icon: CircleDot, labelKey: 'nav.status' },
+  { href: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 
 interface Profile {
@@ -48,6 +60,7 @@ async function setUserOffline(supabase: ReturnType<typeof createClient>) {
 }
 
 export function Sidebar() {
+  const { t } = useI18n()
   const pathname = usePathname()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -60,7 +73,7 @@ export function Sidebar() {
   const notificationUnreadCount = useNotificationStore((s) => s.unreadCount)
 
   // Initialize presence tracking for current user
-  const { } = usePresence(profile?.id || null)
+  const {} = usePresence(profile?.id || null)
 
   // Load profile + fetch unread count + subscribe to updates
   useEffect(() => {
@@ -125,7 +138,9 @@ export function Sidebar() {
             const { data: blockCheck } = await supabase
               .from('user_blocks')
               .select('id')
-              .or(`and(blocker_id.eq.${userId},blocked_id.eq.${newMsg.sender_id}),and(blocker_id.eq.${newMsg.sender_id},blocked_id.eq.${userId})`)
+              .or(
+                `and(blocker_id.eq.${userId},blocked_id.eq.${newMsg.sender_id}),and(blocker_id.eq.${newMsg.sender_id},blocked_id.eq.${userId})`
+              )
               .limit(1)
 
             if (blockCheck?.length) {
@@ -192,49 +207,59 @@ export function Sidebar() {
       }
       const channel = supabase
         .channel(`sidebar-unread-${userId}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-        }, async (payload) => {
-          const newMsg = payload.new as { sender_id: string; conversation_id: string; created_at?: string }
-          if (newMsg.sender_id !== userId) {
-            const part = await supabase
-              .from('conversation_participants')
-              .select('last_read_at')
-              .eq('user_id', userId)
-              .eq('conversation_id', newMsg.conversation_id)
-              .single()
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+          },
+          async (payload) => {
+            const newMsg = payload.new as {
+              sender_id: string
+              conversation_id: string
+              created_at?: string
+            }
+            if (newMsg.sender_id !== userId) {
+              const part = await supabase
+                .from('conversation_participants')
+                .select('last_read_at')
+                .eq('user_id', userId)
+                .eq('conversation_id', newMsg.conversation_id)
+                .single()
 
-            const lastRead = part.data?.last_read_at || '1970-01-01T00:00:00Z'
-            const msgTime = newMsg.created_at || new Date().toISOString()
+              const lastRead = part.data?.last_read_at || '1970-01-01T00:00:00Z'
+              const msgTime = newMsg.created_at || new Date().toISOString()
 
-            if (msgTime > lastRead) {
-              setUnreadCount(prev => prev + 1)
+              if (msgTime > lastRead) {
+                setUnreadCount((prev) => prev + 1)
+              }
             }
           }
-        })
-        .on('postgres_changes', {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'conversation_participants',
-          filter: `user_id=eq.${userId}`,
-        }, () => {
-          fetchUnreadCount(userId)
-        })
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'conversation_participants',
+            filter: `user_id=eq.${userId}`,
+          },
+          () => {
+            fetchUnreadCount(userId)
+          }
+        )
       unreadChannel = channel
       channel.subscribe()
     }
 
     const loadProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
       if (user && mounted) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
+        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
 
         if (mounted) {
           setProfile(data)
@@ -267,7 +292,7 @@ export function Sidebar() {
     username: 'user',
     display_name: 'User',
     avatar_url: null,
-    status: 'offline' as const
+    status: 'offline' as const,
   }
 
   // Current user is always "online" since they're using the app
@@ -290,15 +315,14 @@ export function Sidebar() {
           <button
             onClick={() => setShowSearch(true)}
             className="flex h-12 w-12 items-center justify-center rounded-xl text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            title="Search"
+            title={t('nav.search')}
+            aria-label={t('nav.search')}
           >
             <Search className="h-5 w-5" />
           </button>
 
           {/* Notification bell */}
-          <NotificationBell
-            onClick={() => setShowNotifications(true)}
-          />
+          <NotificationBell onClick={() => setShowNotifications(true)} />
           {navItems.map((item) => {
             const isActive =
               item.href === '/chats'
@@ -316,7 +340,8 @@ export function Sidebar() {
                     ? 'text-primary-500 bg-[var(--bg-active)]'
                     : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
                 )}
-                title={item.label}
+                title={t(item.labelKey)}
+                aria-label={t(item.labelKey)}
               >
                 <item.icon className="h-5 w-5" />
 
@@ -327,7 +352,7 @@ export function Sidebar() {
 
                 {/* Unread badge */}
                 {showBadge && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-500 px-1 text-xs font-medium text-white">
+                  <span className="bg-primary-500 absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-medium text-white">
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
@@ -338,13 +363,11 @@ export function Sidebar() {
 
         {/* User avatar - show online status since user is active */}
         {!loading && (
-          <Link href="/settings" className="mt-auto rounded-xl transition-transform hover:scale-105">
-            <Avatar
-              user={userForAvatar}
-              size="md"
-              showStatus
-              statusOverride={currentUserStatus}
-            />
+          <Link
+            href="/settings"
+            className="mt-auto rounded-xl transition-transform hover:scale-105"
+          >
+            <Avatar user={userForAvatar} size="md" showStatus statusOverride={currentUserStatus} />
           </Link>
         )}
       </aside>
@@ -367,10 +390,7 @@ export function Sidebar() {
       <NotificationToastContainer />
 
       {/* Notification center */}
-      <NotificationCenter
-        isOpen={showNotifications}
-        onClose={() => setShowNotifications(false)}
-      />
+      <NotificationCenter isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
     </>
   )
 }

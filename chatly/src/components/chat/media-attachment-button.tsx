@@ -1,12 +1,14 @@
 'use client'
 
-import { useRef, useCallback } from 'react'
-import { Image, Video, Music, FileText } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useCallback, useRef } from 'react'
+import { FileAudio, Images } from 'lucide-react'
 import { useMediaUpload } from '@/hooks/use-media-upload'
+import { useI18n } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
+type AttachmentGroup = 'media' | 'files'
 
 interface MediaAttachmentButtonProps {
   conversationId: string
@@ -15,125 +17,92 @@ interface MediaAttachmentButtonProps {
   className?: string
 }
 
+const ACCEPTED_FILES: Record<AttachmentGroup, string> = {
+  media: 'image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm',
+  files:
+    'audio/mpeg,audio/ogg,audio/wav,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+
 export function MediaAttachmentButton({
   conversationId,
   userId,
   onUploadComplete,
   className,
 }: MediaAttachmentButtonProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
+  const mediaInputRef = useRef<HTMLInputElement>(null)
+  const filesInputRef = useRef<HTMLInputElement>(null)
+  const { t } = useI18n()
   const { upload, uploading, progress, error } = useMediaUpload({
     conversationId,
     userId,
     onUploadComplete,
-    onError: (err) => console.error('Upload error:', err),
+    onError: (uploadError) => console.error('Upload error:', uploadError),
   })
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      await upload(file)
-      // Reset input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    }
-  }, [upload])
+  const handleFileSelect = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFiles = Array.from(event.target.files ?? [])
+      event.target.value = ''
 
-  const handleClick = (type: 'image' | 'video' | 'audio' | 'file') => {
-    if (fileInputRef.current) {
-      // Set accept based on type
-      const accepts = {
-        image: 'image/jpeg,image/png,image/gif,image/webp',
-        video: 'video/mp4,video/webm',
-        audio: 'audio/mpeg,audio/ogg,audio/wav',
-        file: 'application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      for (const file of selectedFiles) {
+        await upload(file)
       }
-      fileInputRef.current.accept = accepts[type]
-      fileInputRef.current.click()
-    }
-  }
+    },
+    [upload]
+  )
+
+  const buttons = [
+    {
+      group: 'media' as const,
+      ref: mediaInputRef,
+      icon: Images,
+      label: t('attachment.media'),
+    },
+    {
+      group: 'files' as const,
+      ref: filesInputRef,
+      icon: FileAudio,
+      label: t('attachment.files'),
+    },
+  ]
 
   return (
-    <div className={cn('relative', className)}>
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
+    <div className={cn('relative flex shrink-0 items-center gap-0.5', className)}>
+      {buttons.map(({ group, ref, icon: Icon, label }) => (
+        <div key={group}>
+          <input
+            ref={ref}
+            type="file"
+            accept={ACCEPTED_FILES[group]}
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+          <button
+            type="button"
+            onClick={() => ref.current?.click()}
+            disabled={uploading}
+            className={cn(
+              'flex h-9 w-9 items-center justify-center rounded-lg transition-colors md:h-10 md:w-10',
+              'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
+              uploading && 'cursor-not-allowed opacity-50'
+            )}
+            title={label}
+            aria-label={label}
+          >
+            <Icon className="h-5 w-5" />
+          </button>
+        </div>
+      ))}
 
-      {/* Upload progress overlay */}
       {uploading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-          <div className="text-white text-sm font-medium">{progress}%</div>
+        <div className="absolute right-0 bottom-full left-0 mb-2 rounded-lg bg-black/80 px-2 py-1 text-center text-xs font-medium whitespace-nowrap text-white">
+          {t('attachment.uploading', { progress })}
         </div>
       )}
 
-      {/* Attachment button */}
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => handleClick('image')}
-          className={cn(
-            'p-2 rounded-lg transition-colors',
-            'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
-            uploading && 'opacity-50 cursor-not-allowed'
-          )}
-          title="Send image"
-          disabled={uploading}
-        >
-          <Image className="h-5 w-5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleClick('video')}
-          className={cn(
-            'p-2 rounded-lg transition-colors',
-            'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
-            uploading && 'opacity-50 cursor-not-allowed'
-          )}
-          title="Send video"
-          disabled={uploading}
-        >
-          <Video className="h-5 w-5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleClick('audio')}
-          className={cn(
-            'p-2 rounded-lg transition-colors',
-            'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
-            uploading && 'opacity-50 cursor-not-allowed'
-          )}
-          title="Send audio"
-          disabled={uploading}
-        >
-          <Music className="h-5 w-5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleClick('file')}
-          className={cn(
-            'p-2 rounded-lg transition-colors',
-            'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
-            uploading && 'opacity-50 cursor-not-allowed'
-          )}
-          title="Send file"
-          disabled={uploading}
-        >
-          <FileText className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* Error toast */}
       {error && (
-        <div className="absolute top-full left-0 mt-1 px-2 py-1 bg-red-500 text-white text-xs rounded whitespace-nowrap">
+        <div className="absolute bottom-full left-0 mb-2 max-w-56 rounded bg-red-500 px-2 py-1 text-xs text-white">
           {error}
         </div>
       )}

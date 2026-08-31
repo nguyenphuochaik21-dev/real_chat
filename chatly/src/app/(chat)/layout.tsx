@@ -18,7 +18,9 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     const supabase = createClient()
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setUser(user)
       setLoading(false)
     }
@@ -30,23 +32,20 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const isInChat = /^\/chats\/[^/]+/.test(pathname)
 
   return (
-    <div className="flex h-[100dvh] w-screen overflow-hidden bg-[var(--bg-app)]">
+    <div className="flex h-[100dvh] w-full min-w-0 overflow-hidden bg-[var(--bg-app)]">
       <div className="hidden md:block">
         <Sidebar />
       </div>
-      <div className={cn(
-        'flex flex-1 overflow-hidden md:pb-0',
-        isInChat ? 'pb-0' : 'pb-14'
-      )}>
+      <div
+        className={cn('flex min-w-0 flex-1 overflow-hidden md:pb-0', isInChat ? 'pb-0' : 'pb-14')}
+      >
         {loading ? (
           <div className="flex flex-1 items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+            <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" />
           </div>
         ) : user ? (
           <ConversationLabelsProvider userId={user.id}>
-            <CallProvider userId={user.id}>
-              {children}
-            </CallProvider>
+            <CallProvider userId={user.id}>{children}</CallProvider>
           </ConversationLabelsProvider>
         ) : (
           children

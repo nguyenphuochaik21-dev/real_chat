@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Clock, Calendar, Send, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/lib/i18n'
 
 interface SchedulePickerProps {
   isOpen: boolean
@@ -13,13 +14,13 @@ interface SchedulePickerProps {
 }
 
 interface QuickOption {
-  label: string
+  labelKey: string
   getDate: () => Date
 }
 
 const quickOptions: QuickOption[] = [
   {
-    label: 'Tomorrow 9:00 AM',
+    labelKey: 'schedule.tomorrowMorning',
     getDate: () => {
       const d = new Date()
       d.setDate(d.getDate() + 1)
@@ -28,7 +29,7 @@ const quickOptions: QuickOption[] = [
     },
   },
   {
-    label: 'Tomorrow 6:00 PM',
+    labelKey: 'schedule.tomorrowEvening',
     getDate: () => {
       const d = new Date()
       d.setDate(d.getDate() + 1)
@@ -37,7 +38,7 @@ const quickOptions: QuickOption[] = [
     },
   },
   {
-    label: 'Next Monday 9:00 AM',
+    labelKey: 'schedule.nextMonday',
     getDate: () => {
       const d = new Date()
       const day = d.getDay()
@@ -48,7 +49,7 @@ const quickOptions: QuickOption[] = [
     },
   },
   {
-    label: 'In 1 hour',
+    labelKey: 'schedule.inOneHour',
     getDate: () => {
       const d = new Date()
       d.setHours(d.getHours() + 1)
@@ -56,7 +57,7 @@ const quickOptions: QuickOption[] = [
     },
   },
   {
-    label: 'In 3 hours',
+    labelKey: 'schedule.inThreeHours',
     getDate: () => {
       const d = new Date()
       d.setHours(d.getHours() + 3)
@@ -65,8 +66,8 @@ const quickOptions: QuickOption[] = [
   },
 ]
 
-function formatDateTime(date: Date): string {
-  return date.toLocaleString([], {
+function formatDateTime(date: Date, dateLocale: string): string {
+  return date.toLocaleString(dateLocale, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -84,7 +85,8 @@ function formatDateInput(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
-export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: SchedulePickerProps) {
+export function SchedulePicker({ isOpen, onClose, onSchedule }: SchedulePickerProps) {
+  const { t, dateLocale } = useI18n()
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const d = new Date()
     d.setHours(d.getHours() + 1)
@@ -109,18 +111,15 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/50"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--bg-panel)] shadow-2xl">
+      <div className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-1rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--bg-panel)] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] p-4">
           <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary-500" />
-            <h2 className="font-semibold text-[var(--text-primary)]">Schedule Message</h2>
+            <Clock className="text-primary-500 h-5 w-5" />
+            <h2 className="font-semibold text-[var(--text-primary)]">{t('schedule.title')}</h2>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={onClose}>
             <X className="h-4 w-4" />
@@ -131,11 +130,13 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
         <div className="p-4">
           {/* Quick options */}
           <div className="mb-4">
-            <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">Quick options</p>
+            <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">
+              {t('schedule.quick')}
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {quickOptions.map((option) => (
                 <button
-                  key={option.label}
+                  key={option.labelKey}
                   onClick={() => handleQuickOption(option)}
                   className={cn(
                     'flex items-center gap-2 rounded-lg border border-[var(--border-default)] p-3 text-left transition-colors',
@@ -143,7 +144,7 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
                   )}
                 >
                   <Calendar className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
-                  <span className="text-xs text-[var(--text-primary)]">{option.label}</span>
+                  <span className="text-xs text-[var(--text-primary)]">{t(option.labelKey)}</span>
                 </button>
               ))}
             </div>
@@ -152,7 +153,7 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
           {/* Divider */}
           <div className="mb-4 flex items-center gap-3">
             <div className="h-px flex-1 bg-[var(--border-default)]" />
-            <span className="text-xs text-[var(--text-muted)]">or</span>
+            <span className="text-xs text-[var(--text-muted)]">{t('auth.or')}</span>
             <div className="h-px flex-1 bg-[var(--border-default)]" />
           </div>
 
@@ -167,7 +168,7 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
             >
               <Clock className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
               <span className="text-sm text-[var(--text-primary)]">
-                {showCustomPicker ? 'Custom date & time' : formatDateTime(selectedDate)}
+                {showCustomPicker ? t('schedule.custom') : formatDateTime(selectedDate, dateLocale)}
               </span>
             </button>
 
@@ -187,8 +188,8 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
                 />
                 <p className="mt-2 text-xs text-[var(--text-muted)]">
                   {selectedDate > new Date()
-                    ? `Will be sent: ${formatDateTime(selectedDate)}`
-                    : 'Please select a future date and time'}
+                    ? t('schedule.willSend', { time: formatDateTime(selectedDate, dateLocale) })
+                    : t('schedule.future')}
                 </p>
                 <Button
                   onClick={handleCustomSchedule}
@@ -197,7 +198,7 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
                   size="sm"
                 >
                   <Send className="mr-2 h-4 w-4" />
-                  Schedule
+                  {t('schedule.action')}
                 </Button>
               </div>
             )}
@@ -206,9 +207,7 @@ export function SchedulePicker({ isOpen, onClose, onSchedule, initialContent }: 
 
         {/* Footer */}
         <div className="border-t border-[var(--border-default)] p-4">
-          <p className="text-xs text-[var(--text-muted)]">
-            The message will be sent automatically at the scheduled time.
-          </p>
+          <p className="text-xs text-[var(--text-muted)]">{t('schedule.hint')}</p>
         </div>
       </div>
     </>

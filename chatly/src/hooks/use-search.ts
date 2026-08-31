@@ -58,7 +58,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     }
 
     if (!query.trim()) {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         query: '',
         results: [],
@@ -69,17 +69,18 @@ export function useSearch(conversationId?: string): UseSearchReturn {
       return
     }
 
-    setState(prev => ({ ...prev, loading: true, error: null }))
+    setState((prev) => ({ ...prev, loading: true, error: null }))
 
     // Debounce the search
     debounceRef.current = setTimeout(async () => {
       try {
-        const filters = conversationIdRef.current
-          ? { conversationId: conversationIdRef.current }
-          : stateRef.current.filters
+        const filters = {
+          ...stateRef.current.filters,
+          ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
+        }
         const results = await searchMessages(query, filters, PAGE_SIZE, 0)
 
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           query,
           results: results.results,
@@ -88,7 +89,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         }))
         hasMoreRef.current = results.results.length < results.total
       } catch (err) {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           loading: false,
           error: err instanceof Error ? err.message : 'Search failed',
@@ -99,26 +100,34 @@ export function useSearch(conversationId?: string): UseSearchReturn {
 
   const searchContacts = useCallback(async (query: string) => {
     if (!query.trim()) {
-      setState(prev => ({ ...prev, contacts: [] }))
+      setState((prev) => ({ ...prev, contacts: [] }))
       return
     }
 
     try {
       const contacts = await searchConversations(query)
-      setState(prev => ({ ...prev, contacts }))
+      setState((prev) => ({ ...prev, contacts }))
     } catch (err) {
       console.error('Contact search failed:', err)
     }
   }, [])
 
-  const setFilters = useCallback((filters: SearchFilters) => {
-    setState(prev => ({ ...prev, filters }))
+  const setFilters = useCallback(
+    (filters: SearchFilters) => {
+      const nextFilters = {
+        ...filters,
+        ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
+      }
+      stateRef.current = { ...stateRef.current, filters: nextFilters }
+      setState((prev) => ({ ...prev, filters: nextFilters }))
 
-    // Re-run search with new filters if we have a query
-    if (stateRef.current.query) {
-      search(stateRef.current.query)
-    }
-  }, [search]) // No state.query dependency - use ref instead
+      // Re-run search with new filters if we have a query
+      if (stateRef.current.query) {
+        search(stateRef.current.query)
+      }
+    },
+    [search]
+  ) // No state.query dependency - use ref instead
 
   const clearSearch = useCallback(() => {
     if (debounceRef.current) {
@@ -139,12 +148,13 @@ export function useSearch(conversationId?: string): UseSearchReturn {
   const loadMore = useCallback(async () => {
     if (stateRef.current.loading || !hasMoreRef.current || !stateRef.current.query) return
 
-    setState(prev => ({ ...prev, loading: true }))
+    setState((prev) => ({ ...prev, loading: true }))
 
     try {
-      const filters = conversationIdRef.current
-        ? { conversationId: conversationIdRef.current }
-        : stateRef.current.filters
+      const filters = {
+        ...stateRef.current.filters,
+        ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
+      }
       const results = await searchMessages(
         stateRef.current.query,
         filters,
@@ -152,7 +162,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         stateRef.current.results.length
       )
 
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         results: [...prev.results, ...results.results],
         total: results.total,
@@ -160,7 +170,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
       }))
       hasMoreRef.current = stateRef.current.results.length + results.results.length < results.total
     } catch (err) {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         loading: false,
         error: err instanceof Error ? err.message : 'Load more failed',

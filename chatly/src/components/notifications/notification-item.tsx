@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { type Notification, type NotificationType } from '@/stores/notification-store'
 import { formatDistanceToNow } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n'
 
 const iconMap: Record<NotificationType, typeof MessageSquare> = {
   message: MessageSquare,
@@ -26,6 +27,7 @@ export function NotificationItem({
   onRemove,
   onClick,
 }: NotificationItemProps) {
+  const { locale, t } = useI18n()
   const Icon = iconMap[notification.type]
 
   const handleClick = () => {
@@ -41,7 +43,7 @@ export function NotificationItem({
     <div
       className={cn(
         'group flex items-start gap-3 px-4 py-3 transition-colors',
-        'hover:bg-[var(--bg-hover)] cursor-pointer',
+        'cursor-pointer hover:bg-[var(--bg-hover)]',
         !notification.read && 'bg-[var(--bg-secondary)]'
       )}
       onClick={handleClick}
@@ -52,7 +54,7 @@ export function NotificationItem({
           <Avatar
             user={{
               id: notification.senderId || 'unknown',
-              display_name: notification.senderName || 'User',
+              display_name: notification.senderName || t('common.user'),
               avatar_url: notification.senderAvatar || null,
             }}
             size="sm"
@@ -65,26 +67,28 @@ export function NotificationItem({
 
         {/* Unread dot */}
         {!notification.read && (
-          <span className="bg-primary-500 absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-[var(--bg-primary)]" />
+          <span className="bg-primary-500 absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[var(--bg-primary)]" />
         )}
       </div>
 
       {/* Content */}
       <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
-          <p className={cn(
-            'text-sm truncate',
-            notification.read ? 'text-[var(--text-secondary)]' : 'font-medium text-[var(--text-primary)]'
-          )}>
+          <p
+            className={cn(
+              'truncate text-sm',
+              notification.read
+                ? 'text-[var(--text-secondary)]'
+                : 'font-medium text-[var(--text-primary)]'
+            )}
+          >
             {notification.title}
           </p>
           <span className="flex-shrink-0 text-xs text-[var(--text-muted)]">
-            {formatDistanceToNow(new Date(notification.createdAt))}
+            {formatDistanceToNow(new Date(notification.createdAt), locale)}
           </span>
         </div>
-        <p className="text-xs text-[var(--text-muted)] line-clamp-2">
-          {notification.body}
-        </p>
+        <p className="line-clamp-2 text-xs text-[var(--text-muted)]">{notification.body}</p>
       </div>
 
       {/* Actions (show on hover) */}
@@ -96,7 +100,7 @@ export function NotificationItem({
               onMarkAsRead?.(notification.id)
             }}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
-            title="Mark as read"
+            title={t('notifications.markRead')}
           >
             <Check className="h-3.5 w-3.5" />
           </button>
@@ -107,7 +111,7 @@ export function NotificationItem({
             onRemove?.(notification.id)
           }}
           className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-secondary)] hover:text-red-500"
-          title="Remove"
+          title={t('notifications.remove')}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>

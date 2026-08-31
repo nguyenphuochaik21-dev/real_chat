@@ -2,18 +2,20 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Users, Phone, Star, CircleDot, Settings } from 'lucide-react'
+import { MessageSquare, Users, Phone, CircleDot, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n'
 
 const items = [
-  { href: '/chats', icon: MessageSquare, label: 'Chats' },
-  { href: '/contacts', icon: Users, label: 'Contacts' },
-  { href: '/calls', icon: Phone, label: 'Calls' },
-  { href: '/status', icon: CircleDot, label: 'Status' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
+  { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
+  { href: '/contacts', icon: Users, labelKey: 'nav.contacts' },
+  { href: '/calls', icon: Phone, labelKey: 'nav.calls' },
+  { href: '/status', icon: CircleDot, labelKey: 'nav.status' },
+  { href: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 
 export function MobileNav() {
+  const { t } = useI18n()
   const pathname = usePathname()
 
   // Hide nav when inside a conversation chat (Messenger-style)
@@ -26,7 +28,7 @@ export function MobileNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 flex h-14 items-center justify-around border-t border-[var(--border-default)] bg-[var(--bg-panel)] pb-[env(safe-area-inset-bottom)] md:hidden">
+    <nav className="fixed right-0 bottom-0 left-0 z-40 flex h-14 items-center justify-around border-t border-[var(--border-default)] bg-[var(--bg-panel)] pb-[env(safe-area-inset-bottom)] md:hidden">
       {items.map((item) => {
         const active = isActive(item.href)
         return (
@@ -39,7 +41,7 @@ export function MobileNav() {
             )}
           >
             <item.icon className="h-5 w-5" />
-            <span className="text-[10px] font-medium">{item.label}</span>
+            <span className="text-[10px] font-medium">{t(item.labelKey)}</span>
           </Link>
         )
       })}

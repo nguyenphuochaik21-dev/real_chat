@@ -2,10 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import {
-  getStarredMessages,
-  toggleStar as toggleStarAction,
-} from '@/lib/actions/messages'
+import { getStarredMessages, toggleStar as toggleStarAction } from '@/lib/actions/messages'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -28,7 +25,7 @@ export function useStarredMessages(userId: string | null) {
     try {
       const messages = await getStarredMessages()
       setStarredMessages(messages)
-      setStarredMessageIds(new Set(messages.map(m => m.id)))
+      setStarredMessageIds(new Set(messages.map((m) => m.id)))
       setError(null)
     } catch (err) {
       console.error('Failed to fetch starred messages:', err)
@@ -40,7 +37,8 @@ export function useStarredMessages(userId: string | null) {
 
   // Initial fetch
   useEffect(() => {
-    fetchStarredMessages()
+    const timeoutId = window.setTimeout(() => void fetchStarredMessages(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [fetchStarredMessages])
 
   // Subscribe to starred message changes
@@ -67,28 +65,43 @@ export function useStarredMessages(userId: string | null) {
     }
   }, [userId, supabase, fetchStarredMessages])
 
-  const toggleStarMessage = useCallback(async (messageId: string) => {
-    const wasStarred = starredMessageIds.has(messageId)
+  const toggleStarMessage = useCallback(
+    async (messageId: string) => {
+      const wasStarred = starredMessageIds.has(messageId)
 
-    // Optimistic update
-    setStarredMessageIds(prev => {
-      const next = new Set(prev)
-      if (wasStarred) {
-        next.delete(messageId)
-      } else {
-        next.add(messageId)
-      }
-      return next
-    })
+      // Optimistic update
+      setStarredMessageIds((prev) => {
+        const next = new Set(prev)
+        if (wasStarred) {
+          next.delete(messageId)
+        } else {
+          next.add(messageId)
+        }
+        return next
+      })
 
-    try {
-      const result = await toggleStarAction(messageId)
-      if (result.success) {
-        // Refresh the full list to get updated data
-        fetchStarredMessages()
-      } else {
+      try {
+        const result = await toggleStarAction(messageId)
+        if (result.success) {
+          // Refresh the full list to get updated data
+          fetchStarredMessages()
+        } else {
+          // Revert on error
+          setStarredMessageIds((prev) => {
+            const next = new Set(prev)
+            if (wasStarred) {
+              next.add(messageId)
+            } else {
+              next.delete(messageId)
+            }
+            return next
+          })
+        }
+        return !wasStarred
+      } catch (err) {
+        console.error('Failed to toggle star:', err)
         // Revert on error
-        setStarredMessageIds(prev => {
+        setStarredMessageIds((prev) => {
           const next = new Set(prev)
           if (wasStarred) {
             next.add(messageId)
@@ -97,27 +110,18 @@ export function useStarredMessages(userId: string | null) {
           }
           return next
         })
+        return wasStarred
       }
-      return !wasStarred
-    } catch (err) {
-      console.error('Failed to toggle star:', err)
-      // Revert on error
-      setStarredMessageIds(prev => {
-        const next = new Set(prev)
-        if (wasStarred) {
-          next.add(messageId)
-        } else {
-          next.delete(messageId)
-        }
-        return next
-      })
-      return wasStarred
-    }
-  }, [starredMessageIds, fetchStarredMessages])
+    },
+    [starredMessageIds, fetchStarredMessages]
+  )
 
-  const isStarred = useCallback((messageId: string) => {
-    return starredMessageIds.has(messageId)
-  }, [starredMessageIds])
+  const isStarred = useCallback(
+    (messageId: string) => {
+      return starredMessageIds.has(messageId)
+    },
+    [starredMessageIds]
+  )
 
   return {
     starredMessages,

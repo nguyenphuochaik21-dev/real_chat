@@ -4,7 +4,21 @@ import { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types'
 
 type ScheduledMessage = Tables<'scheduled_messages'>
-type Message = Tables<'messages'>
+type ParticipantProfile = Pick<Tables<'profiles'>, 'display_name'>
+
+interface ScheduledConversationParticipant {
+  user_id: string
+  profile: ParticipantProfile[] | ParticipantProfile | null
+}
+
+interface ScheduledConversationRow {
+  title: string | null
+  conversation_participants: ScheduledConversationParticipant[]
+}
+
+type ScheduledMessageQueryRow = ScheduledMessage & {
+  conversation: ScheduledConversationRow[] | ScheduledConversationRow | null
+}
 
 export interface ScheduledMessageWithConversation extends ScheduledMessage {
   conversation?: {
@@ -42,7 +56,9 @@ export async function createScheduledMessage(
 ): Promise<ScheduledMessageResult> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -99,7 +115,9 @@ export async function cancelScheduledMessage(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -149,14 +167,17 @@ export async function getScheduledMessages(): Promise<{
 }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
 
   const { data, error } = await supabase
     .from('scheduled_messages')
-    .select(`
+    .select(
+      `
       *,
       conversation:conversations(
         id,
@@ -167,7 +188,8 @@ export async function getScheduledMessages(): Promise<{
           profile:profiles(display_name)
         )
       )
-    `)
+    `
+    )
     .eq('sender_id', user.id)
     .in('status', ['pending', 'sent'])
     .order('scheduled_at', { ascending: true })
@@ -178,18 +200,23 @@ export async function getScheduledMessages(): Promise<{
   }
 
   // Transform the data to include conversation info
-  const messages: ScheduledMessageWithConversation[] = (data || []).map((msg: any) => {
+  const rows = (data || []) as unknown as ScheduledMessageQueryRow[]
+  const messages: ScheduledMessageWithConversation[] = rows.map((msg) => {
+    const conversation = Array.isArray(msg.conversation) ? msg.conversation[0] : msg.conversation
+
     // Get the other participant for direct messages
-    const otherParticipant = msg.conversation?.conversation_participants
-      ?.find((p: any) => p.user_id !== user.id)
+    const otherParticipant = conversation?.conversation_participants.find(
+      (participant) => participant.user_id !== user.id
+    )
+    const participantProfile = Array.isArray(otherParticipant?.profile)
+      ? otherParticipant.profile[0]
+      : otherParticipant?.profile
 
     return {
       ...msg,
       conversation: {
-        title: msg.conversation?.title ||
-          otherParticipant?.profile?.display_name ||
-          'Unknown',
-        participant: otherParticipant?.profile,
+        title: conversation?.title || participantProfile?.display_name || 'Unknown',
+        participant: participantProfile ?? undefined,
       },
     }
   })
@@ -200,16 +227,16 @@ export async function getScheduledMessages(): Promise<{
 /**
  * Get scheduled messages for a specific conversation
  */
-export async function getScheduledMessagesForConversation(
-  conversationId: string
-): Promise<{
+export async function getScheduledMessagesForConversation(conversationId: string): Promise<{
   success: boolean
   messages?: ScheduledMessage[]
   error?: string
 }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -238,7 +265,9 @@ export async function sendScheduledMessageNow(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }

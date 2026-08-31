@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
 import type { Tables } from '@/types'
+import { useI18n } from '@/lib/i18n'
 
 type Profile = Tables<'profiles'>
 
@@ -26,6 +27,7 @@ function groupByLetter(users: Profile[]) {
 }
 
 export default function ContactsPage() {
+  const { t } = useI18n()
   const router = useRouter()
   const supabase = createClient()
   const [search, setSearch] = useState('')
@@ -36,7 +38,9 @@ export default function ContactsPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     setCurrentUserId(user?.id || null)
 
     if (user) {
@@ -54,84 +58,86 @@ export default function ContactsPage() {
   }, [supabase])
 
   useEffect(() => {
-    fetchData()
+    const timeoutId = window.setTimeout(() => void fetchData(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [fetchData])
 
-  const startConversation = useCallback(async (contactId: string) => {
-    if (!currentUserId || startingChat) return
+  const startConversation = useCallback(
+    async (contactId: string) => {
+      if (!currentUserId || startingChat) return
 
-    setStartingChat(contactId)
+      setStartingChat(contactId)
 
-    try {
-      // Check if conversation already exists
-      const { data: existingConvs } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', currentUserId)
-
-      let conversationId: string | null = null
-
-      for (const part of existingConvs || []) {
-        const { data: otherParts } = await supabase
+      try {
+        // Check if conversation already exists
+        const { data: existingConvs } = await supabase
           .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', part.conversation_id)
-          .eq('user_id', contactId)
+          .select('conversation_id')
+          .eq('user_id', currentUserId)
 
-        if (otherParts && otherParts.length > 0) {
-          conversationId = part.conversation_id
-          break
+        let conversationId: string | null = null
+
+        for (const part of existingConvs || []) {
+          const { data: otherParts } = await supabase
+            .from('conversation_participants')
+            .select('user_id')
+            .eq('conversation_id', part.conversation_id)
+            .eq('user_id', contactId)
+
+          if (otherParts && otherParts.length > 0) {
+            conversationId = part.conversation_id
+            break
+          }
         }
-      }
 
-      // Create new conversation if not found
-      if (!conversationId) {
-        const { data: newConv, error: createError } = await supabase
-          .from('conversations')
-          .insert({ created_by: currentUserId, type: 'direct' })
-          .select()
-          .single()
+        // Create new conversation if not found
+        if (!conversationId) {
+          const { data: newConv, error: createError } = await supabase
+            .from('conversations')
+            .insert({ created_by: currentUserId, type: 'direct' })
+            .select()
+            .single()
 
-        if (createError) {
-          console.error('Create conversation error:', createError)
-          throw new Error(`Failed to create conversation: ${createError.message}`)
-        }
-        if (!newConv) throw new Error('Failed to create conversation: no data returned')
+          if (createError) {
+            console.error('Create conversation error:', createError)
+            throw new Error(`Failed to create conversation: ${createError.message}`)
+          }
+          if (!newConv) throw new Error('Failed to create conversation: no data returned')
 
-        conversationId = newConv.id
+          conversationId = newConv.id
 
-        // Add current user first (RLS allows this)
-        const { error: addSelfError } = await supabase
-          .from('conversation_participants')
-          .insert({
+          // Add current user first (RLS allows this)
+          const { error: addSelfError } = await supabase.from('conversation_participants').insert({
             conversation_id: conversationId,
             user_id: currentUserId,
           })
 
-        if (addSelfError) {
-          console.error('Add self error:', addSelfError)
-          throw new Error(`Failed to add self: ${addSelfError.message}`)
+          if (addSelfError) {
+            console.error('Add self error:', addSelfError)
+            throw new Error(`Failed to add self: ${addSelfError.message}`)
+          }
+
+          // Add the other participant using a server action workaround
+          const { error: addOtherError } = await supabase.rpc('add_conversation_participant', {
+            p_conversation_id: conversationId,
+            p_user_id: contactId,
+          })
+
+          if (addOtherError) {
+            console.error('Add other error:', addOtherError)
+            throw new Error(`Failed to add other: ${addOtherError.message}`)
+          }
         }
 
-        // Add the other participant using a server action workaround
-        const { error: addOtherError } = await supabase.rpc('add_conversation_participant', {
-          p_conversation_id: conversationId,
-          p_user_id: contactId,
-        })
-
-        if (addOtherError) {
-          console.error('Add other error:', addOtherError)
-          throw new Error(`Failed to add other: ${addOtherError.message}`)
-        }
+        router.push(`/chats/${conversationId}`)
+      } catch (err) {
+        console.error('Failed to start conversation:', err)
+      } finally {
+        setStartingChat(null)
       }
-
-      router.push(`/chats/${conversationId}`)
-    } catch (err) {
-      console.error('Failed to start conversation:', err)
-    } finally {
-      setStartingChat(null)
-    }
-  }, [currentUserId, startingChat, router, supabase])
+    },
+    [currentUserId, startingChat, router, supabase]
+  )
 
   const filteredUsers = contacts.filter((user) =>
     user.display_name.toLowerCase().includes(search.toLowerCase())
@@ -142,7 +148,7 @@ export default function ContactsPage() {
   if (loading) {
     return (
       <div className="flex h-full flex-1 items-center justify-center bg-[var(--bg-app)]">
-        <div className="h-8 w-8 animate-spin rounded-full border-3 border-primary-500 border-t-transparent" />
+        <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-3 border-t-transparent" />
       </div>
     )
   }
@@ -152,10 +158,12 @@ export default function ContactsPage() {
       {/* Header */}
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
         <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Contacts</h1>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+            {t('contacts.title')}
+          </h1>
           <Button variant="outline" size="sm">
             <UserPlus className="mr-2 h-4 w-4" />
-            Add Contact
+            {t('contacts.add')}
           </Button>
         </div>
 
@@ -164,7 +172,7 @@ export default function ContactsPage() {
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
           <Input
             type="search"
-            placeholder="Search contacts"
+            placeholder={t('contacts.search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -204,7 +212,7 @@ export default function ContactsPage() {
                           disabled={startingChat === user.id}
                         >
                           {startingChat === user.id ? (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+                            <div className="border-primary-500 h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
                           ) : (
                             <MessageSquare className="h-4 w-4" />
                           )}
@@ -221,7 +229,7 @@ export default function ContactsPage() {
             ))
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
-              <p className="text-sm">No contacts found</p>
+              <p className="text-sm">{t('contacts.none')}</p>
             </div>
           )}
         </div>

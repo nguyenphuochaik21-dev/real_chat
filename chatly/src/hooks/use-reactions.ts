@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   toggleReaction as toggleReactionAction,
   getMessageReactions as getMessageReactionsAction,
-  type MessageReaction
+  type MessageReaction,
 } from '@/lib/actions/messages'
 
 export function useReactions(messageId: string | null) {
@@ -35,7 +35,8 @@ export function useReactions(messageId: string | null) {
 
   // Initial fetch
   useEffect(() => {
-    fetchReactions()
+    const timeoutId = window.setTimeout(() => void fetchReactions(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [fetchReactions])
 
   // Subscribe to reaction changes
@@ -63,37 +64,38 @@ export function useReactions(messageId: string | null) {
     }
   }, [messageId, supabase, fetchReactions])
 
-  const toggleReaction = useCallback(async (emoji: string) => {
-    if (!messageId) return
+  const toggleReaction = useCallback(
+    async (emoji: string) => {
+      if (!messageId) return
 
-    // Optimistic update
-    setReactions(prev => {
-      const existing = prev.find(r => r.emoji === emoji)
+      // Optimistic update
+      setReactions((prev) => {
+        const existing = prev.find((r) => r.emoji === emoji)
 
-      if (existing) {
-        if (existing.count <= 1) {
-          return prev.filter(r => r.emoji !== emoji)
+        if (existing) {
+          if (existing.count <= 1) {
+            return prev.filter((r) => r.emoji !== emoji)
+          }
+          return prev.map((r) =>
+            r.emoji === emoji ? { ...r, count: r.count - 1, userReacted: false } : r
+          )
         }
-        return prev.map(r =>
-          r.emoji === emoji
-            ? { ...r, count: r.count - 1, userReacted: false }
-            : r
-        )
-      }
-      return [...prev, { emoji, count: 1, userReacted: true }]
-    })
+        return [...prev, { emoji, count: 1, userReacted: true }]
+      })
 
-    try {
-      const result = await toggleReactionAction(messageId, emoji)
-      if (!result.success) {
-        // Revert on error
+      try {
+        const result = await toggleReactionAction(messageId, emoji)
+        if (!result.success) {
+          // Revert on error
+          fetchReactions()
+        }
+      } catch (err) {
+        console.error('Failed to toggle reaction:', err)
         fetchReactions()
       }
-    } catch (err) {
-      console.error('Failed to toggle reaction:', err)
-      fetchReactions()
-    }
-  }, [messageId, fetchReactions])
+    },
+    [messageId, fetchReactions]
+  )
 
   return { reactions, loading, error, toggleReaction, refetch: fetchReactions }
 }

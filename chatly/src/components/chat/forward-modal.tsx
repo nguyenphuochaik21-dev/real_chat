@@ -11,6 +11,7 @@ import { forwardMessage } from '@/lib/actions/messages'
 import { useConversations } from '@/hooks/use-conversations'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
+import { useI18n } from '@/lib/i18n'
 
 interface ForwardModalProps {
   currentUserId: string
@@ -18,6 +19,7 @@ interface ForwardModalProps {
 }
 
 export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalProps) {
+  const { t } = useI18n()
   const { forwardModalOpen, messagesToForward, closeForwardModal } = useMessageActionsStore()
   const { conversations, loading } = useConversations(currentUserId)
   const addToast = useNotificationStore((state) => state.addToast)
@@ -28,17 +30,18 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
 
   // Reset state when modal opens
   useEffect(() => {
-    if (forwardModalOpen) {
+    if (!forwardModalOpen) return
+    const timeoutId = window.setTimeout(() => {
       setSearchQuery('')
       setSelectedConversations(new Set())
-    }
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [forwardModalOpen])
 
   if (!forwardModalOpen) return null
 
-  const filteredConversations = conversations.filter(
-    (conv) =>
-      conv.participant?.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredConversations = conversations.filter((conv) =>
+    conv.participant?.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const toggleConversation = (conversationId: string) => {
@@ -61,24 +64,21 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
     try {
       // Forward each message to selected conversations
       for (const message of messagesToForward) {
-        const result = await forwardMessage(
-          message.id,
-          Array.from(selectedConversations)
-        )
+        const result = await forwardMessage(message.id, Array.from(selectedConversations))
 
         if (!result.success) {
           addToast({
             type: 'system',
-            title: 'Forward failed',
-            body: result.error || 'Unknown error',
+            title: t('forward.failed'),
+            body: result.error || t('common.unknownError'),
           })
         }
       }
 
       addToast({
         type: 'system',
-        title: 'Messages forwarded',
-        body: `Sent to ${selectedConversations.size} conversation${selectedConversations.size > 1 ? 's' : ''}`,
+        title: t('forward.success'),
+        body: t('forward.successBody', { count: selectedConversations.size }),
       })
 
       onForwardComplete?.()
@@ -86,8 +86,8 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
     } catch (err) {
       addToast({
         type: 'system',
-        title: 'Forward failed',
-        body: err instanceof Error ? err.message : 'Unknown error',
+        title: t('forward.failed'),
+        body: err instanceof Error ? err.message : t('common.unknownError'),
       })
     } finally {
       setSending(false)
@@ -105,19 +105,19 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
       {/* Modal */}
       <div
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
+          'fixed top-1/2 left-1/2 z-50 w-[calc(100%-1rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
           'rounded-2xl border border-[var(--border-default)]',
-          'bg-[var(--bg-panel)] shadow-2xl animate-fade-in'
+          'animate-fade-in bg-[var(--bg-panel)] shadow-2xl'
         )}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-              Forward to
+              {t('forward.title')}
             </h2>
             <p className="text-xs text-[var(--text-muted)]">
-              {messagesToForward.length} message{messagesToForward.length > 1 ? 's' : ''} selected
+              {t('forward.selected', { count: messagesToForward.length })}
             </p>
           </div>
           <button
@@ -131,10 +131,10 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
         {/* Search */}
         <div className="border-b border-[var(--border-default)] px-4 py-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
             <Input
               type="text"
-              placeholder="Search conversations..."
+              placeholder={t('forward.search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -150,7 +150,7 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
             </div>
           ) : filteredConversations.length === 0 ? (
             <div className="py-8 text-center text-sm text-[var(--text-muted)]">
-              No conversations found
+              {t('forward.none')}
             </div>
           ) : (
             <div className="py-2">
@@ -173,22 +173,16 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
                         : 'border-[var(--border-default)]'
                     )}
                   >
-                    {selectedConversations.has(conv.id) && (
-                      <span className="text-white">✓</span>
-                    )}
+                    {selectedConversations.has(conv.id) && <span className="text-white">✓</span>}
                   </div>
 
                   {/* Avatar */}
-                  <Avatar
-                    user={conv.participant}
-                    size="md"
-                    showStatus
-                  />
+                  <Avatar user={conv.participant} size="md" showStatus />
 
                   {/* Name */}
                   <div className="flex-1 text-left">
                     <p className="font-medium text-[var(--text-primary)]">
-                      {conv.participant?.display_name || 'Unknown'}
+                      {conv.participant?.display_name || t('calls.unknownUser')}
                     </p>
                   </div>
                 </button>
@@ -209,9 +203,7 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
             ) : (
               <>
                 <Send className="h-4 w-4" />
-                <span>
-                  Send to {selectedConversations.size} conversation{selectedConversations.size > 1 ? 's' : ''}
-                </span>
+                <span>{t('forward.send', { count: selectedConversations.size })}</span>
               </>
             )}
           </Button>

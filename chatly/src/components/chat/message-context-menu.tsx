@@ -1,17 +1,11 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import {
-  Reply,
-  Pencil,
-  Trash2,
-  Share2,
-  Copy,
-  Ban,
-} from 'lucide-react'
+import { Reply, Pencil, Trash2, Share2, Copy, Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import type { Tables } from '@/types'
+import { useI18n } from '@/lib/i18n'
 
 type Message = Tables<'messages'>
 
@@ -34,6 +28,7 @@ export function MessageContextMenu({
   onDelete,
   onBlockUser,
 }: MessageContextMenuProps) {
+  const { t } = useI18n()
   const menuRef = useRef<HTMLDivElement>(null)
   const {
     contextMenuOpen,
@@ -74,6 +69,8 @@ export function MessageContextMenu({
 
   // Check if message is within edit window (15 minutes)
   const createdAt = new Date(contextMenuTarget.created_at || '')
+  // The edit action is time-sensitive, so it must be evaluated when the menu renders.
+  // eslint-disable-next-line react-hooks/purity
   const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
   const withinEditWindow = createdAt > fifteenMinutesAgo
 
@@ -114,35 +111,34 @@ export function MessageContextMenu({
   return (
     <>
       {/* Backdrop for mobile */}
-      <div
-        className="fixed inset-0 z-40 md:hidden"
-        onClick={closeContextMenu}
-      />
+      <div className="fixed inset-0 z-40 md:hidden" onClick={closeContextMenu} />
 
       {/* Menu */}
       <div
         ref={menuRef}
         className={cn(
           'fixed z-50 w-56 overflow-hidden rounded-xl border border-[var(--border-default)]',
-          'bg-[var(--bg-panel)] shadow-xl animate-fade-in'
+          'animate-fade-in bg-[var(--bg-panel)] shadow-xl'
         )}
         style={{
-          left: Math.min(contextMenuPosition.x, typeof window !== 'undefined' ? window.innerWidth - 240 : contextMenuPosition.x),
-          top: Math.min(contextMenuPosition.y, typeof window !== 'undefined' ? window.innerHeight - 320 : contextMenuPosition.y),
+          left: Math.min(
+            contextMenuPosition.x,
+            typeof window !== 'undefined' ? window.innerWidth - 240 : contextMenuPosition.x
+          ),
+          top: Math.min(
+            contextMenuPosition.y,
+            typeof window !== 'undefined' ? window.innerHeight - 320 : contextMenuPosition.y
+          ),
         }}
       >
         <div className="py-1">
           {/* Reply */}
-          <MenuItem
-            icon={Reply}
-            label="Reply"
-            onClick={handleReply}
-          />
+          <MenuItem icon={Reply} label={t('message.reply')} onClick={handleReply} />
 
           {/* Copy */}
           <MenuItem
             icon={Copy}
-            label="Copy"
+            label={t('message.copy')}
             onClick={handleCopy}
             disabled={isDeleted}
           />
@@ -150,29 +146,21 @@ export function MessageContextMenu({
           {/* Forward */}
           <MenuItem
             icon={Share2}
-            label="Forward"
+            label={t('message.forward')}
             onClick={handleForward}
             disabled={isDeleted}
           />
 
           {/* Block user (only for others' messages) */}
           {!isOwnMessage && !isDeleted && (
-            <MenuItem
-              icon={Ban}
-              label="Block user"
-              onClick={handleBlockUser}
-            />
+            <MenuItem icon={Ban} label={t('message.block')} onClick={handleBlockUser} />
           )}
 
           <div className="my-1 h-px bg-[var(--border-default)]" />
 
           {/* Edit (own messages only, within 15 min) */}
           {isOwnMessage && !isDeleted && withinEditWindow && (
-            <MenuItem
-              icon={Pencil}
-              label="Edit"
-              onClick={handleEdit}
-            />
+            <MenuItem icon={Pencil} label={t('message.edit')} onClick={handleEdit} />
           )}
 
           {/* Delete (own messages only) */}
@@ -181,7 +169,7 @@ export function MessageContextMenu({
               <div className="my-1 h-px bg-[var(--border-default)]" />
               <MenuItem
                 icon={Trash2}
-                label="Delete"
+                label={t('message.delete')}
                 onClick={handleDelete}
                 className="text-red-500 hover:bg-red-500/10"
               />
@@ -201,21 +189,15 @@ interface MenuItemProps {
   className?: string
 }
 
-function MenuItem({
-  icon: Icon,
-  label,
-  onClick,
-  disabled,
-  className,
-}: MenuItemProps) {
+function MenuItem({ icon: Icon, label, onClick, disabled, className }: MenuItemProps) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex w-full items-center gap-3 px-3 py-2 text-sm text-left',
-        'hover:bg-[var(--bg-hover)] transition-colors',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'flex w-full items-center gap-3 px-3 py-2 text-left text-sm',
+        'transition-colors hover:bg-[var(--bg-hover)]',
+        'disabled:cursor-not-allowed disabled:opacity-50',
         className
       )}
     >

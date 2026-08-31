@@ -37,10 +37,6 @@ export function useScheduledMessages(userId: string | null): UseScheduledMessage
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Ref for stable callback reference
-  const setScheduledMessagesRef = useRef(setScheduledMessages)
-  setScheduledMessagesRef.current = setScheduledMessages
-
   const fetchScheduledMessages = useCallback(async () => {
     if (!userId) {
       setScheduledMessages([])
@@ -68,9 +64,9 @@ export function useScheduledMessages(userId: string | null): UseScheduledMessage
 
   // Initial fetch
   useEffect(() => {
-    if (userId) {
-      fetchScheduledMessages()
-    }
+    if (!userId) return
+    const timeoutId = window.setTimeout(() => void fetchScheduledMessages(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [userId, fetchScheduledMessages])
 
   // Subscribe to scheduled message changes - only once
@@ -79,19 +75,17 @@ export function useScheduledMessages(userId: string | null): UseScheduledMessage
   useEffect(() => {
     if (!userId || channelSubscribed.current) return
 
-    const channel = supabase
-      .channel(`scheduled-messages-global-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'scheduled_messages',
-        },
-        () => {
-          fetchScheduledMessages()
-        }
-      )
+    const channel = supabase.channel(`scheduled-messages-global-${userId}`).on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'scheduled_messages',
+      },
+      () => {
+        fetchScheduledMessages()
+      }
+    )
 
     channel.subscribe()
     channelSubscribed.current = true
@@ -100,46 +94,49 @@ export function useScheduledMessages(userId: string | null): UseScheduledMessage
       channelSubscribed.current = false
       supabase.removeChannel(channel)
     }
-  }, [userId])
+  }, [userId, fetchScheduledMessages])
 
-  const createSchedule = useCallback(async (
-    conversationId: string,
-    content: string,
-    scheduledAt: Date,
-    options?: {
-      contentType?: string
-      mediaUrl?: string | null
-      replyTo?: string | null
-    }
-  ) => {
-    try {
-      const result = await createScheduledMessage({
-        conversationId,
-        content,
-        scheduledAt,
-        contentType: options?.contentType,
-        mediaUrl: options?.mediaUrl,
-        replyTo: options?.replyTo,
-      })
-
-      if (result.success) {
-        fetchScheduledMessages()
-        return { success: true }
-      } else {
-        return { success: false, error: result.error }
+  const createSchedule = useCallback(
+    async (
+      conversationId: string,
+      content: string,
+      scheduledAt: Date,
+      options?: {
+        contentType?: string
+        mediaUrl?: string | null
+        replyTo?: string | null
       }
-    } catch (err) {
-      console.error('Failed to create scheduled message:', err)
-      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
-    }
-  }, [fetchScheduledMessages])
+    ) => {
+      try {
+        const result = await createScheduledMessage({
+          conversationId,
+          content,
+          scheduledAt,
+          contentType: options?.contentType,
+          mediaUrl: options?.mediaUrl,
+          replyTo: options?.replyTo,
+        })
+
+        if (result.success) {
+          fetchScheduledMessages()
+          return { success: true }
+        } else {
+          return { success: false, error: result.error }
+        }
+      } catch (err) {
+        console.error('Failed to create scheduled message:', err)
+        return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+      }
+    },
+    [fetchScheduledMessages]
+  )
 
   const cancelSchedule = useCallback(async (messageId: string) => {
     try {
       const result = await cancelScheduledMessage(messageId)
 
       if (result.success) {
-        setScheduledMessages(prev => prev.filter(m => m.id !== messageId))
+        setScheduledMessages((prev) => prev.filter((m) => m.id !== messageId))
         return { success: true }
       } else {
         return { success: false, error: result.error }
@@ -155,7 +152,7 @@ export function useScheduledMessages(userId: string | null): UseScheduledMessage
       const result = await sendScheduledMessageNow(messageId)
 
       if (result.success) {
-        setScheduledMessages(prev => prev.filter(m => m.id !== messageId))
+        setScheduledMessages((prev) => prev.filter((m) => m.id !== messageId))
         return { success: true }
       } else {
         return { success: false, error: result.error }

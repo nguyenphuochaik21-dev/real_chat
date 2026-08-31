@@ -1,11 +1,11 @@
 'use client'
 
-import { X, Bell, Trash2, CheckCheck } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { X, Bell, Trash2 } from 'lucide-react'
 import { useNotificationStore } from '@/stores/notification-store'
 import { NotificationItem } from './notification-item'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { useI18n } from '@/lib/i18n'
 
 interface NotificationCenterProps {
   isOpen: boolean
@@ -13,6 +13,7 @@ interface NotificationCenterProps {
 }
 
 export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps) {
+  const { t } = useI18n()
   const router = useRouter()
   const notifications = useNotificationStore((state) => state.notifications)
   const markAsRead = useNotificationStore((state) => state.markAsRead)
@@ -30,7 +31,7 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [isOpen, onClose])
 
-  const handleNotificationClick = (notification: typeof notifications[0]) => {
+  const handleNotificationClick = (notification: (typeof notifications)[0]) => {
     if (notification.conversationId) {
       router.push(`/chats/${notification.conversationId}`)
       onClose()
@@ -42,18 +43,17 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm" onClick={onClose} />
 
       {/* Panel */}
-      <div className="bg-primary fixed top-0 right-0 z-50 flex h-full w-96 flex-col shadow-xl">
+      <div className="bg-primary fixed top-0 right-0 z-50 flex h-full w-full flex-col shadow-xl sm:w-96">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] px-4 py-4">
           <div className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-primary-500" />
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Notifications</h2>
+            <Bell className="text-primary-500 h-5 w-5" />
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+              {t('notifications.title')}
+            </h2>
           </div>
           <div className="flex items-center gap-2">
             {notifications.length > 0 && (
@@ -61,10 +61,10 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
                 <button
                   onClick={clearAll}
                   className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                  title="Clear all"
+                  title={t('notifications.clearAll')}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Clear
+                  {t('notifications.clear')}
                 </button>
                 <div className="h-4 w-px bg-[var(--border-default)]" />
               </>
@@ -86,10 +86,10 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
                 <Bell className="h-8 w-8 text-[var(--text-muted)]" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[var(--text-secondary)]">No notifications yet</p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  You'll see notifications when someone messages you
+                <p className="text-sm font-medium text-[var(--text-secondary)]">
+                  {t('notifications.none')}
                 </p>
+                <p className="text-xs text-[var(--text-muted)]">{t('notifications.noneHint')}</p>
               </div>
             </div>
           ) : (

@@ -1,6 +1,14 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  ReactNode,
+} from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   createLabel,
@@ -9,7 +17,6 @@ import {
   getLabels,
   assignLabelToConversation,
   removeLabelFromConversation,
-  getConversationLabels,
   getLabelsForConversations,
 } from '@/lib/actions/labels'
 import type { Tables } from '@/types'
@@ -21,11 +28,24 @@ interface ConversationLabelsContextValue {
   conversationLabels: Map<string, Label[]>
   loading: boolean
   error: string | null
-  createLabel: (name: string, color: string) => Promise<{ success: boolean; label?: Label; error?: string }>
-  updateLabel: (id: string, name?: string, color?: string) => Promise<{ success: boolean; error?: string }>
+  createLabel: (
+    name: string,
+    color: string
+  ) => Promise<{ success: boolean; label?: Label; error?: string }>
+  updateLabel: (
+    id: string,
+    name?: string,
+    color?: string
+  ) => Promise<{ success: boolean; error?: string }>
   deleteLabel: (id: string) => Promise<{ success: boolean; error?: string }>
-  assignLabel: (conversationId: string, labelId: string) => Promise<{ success: boolean; error?: string }>
-  removeLabel: (conversationId: string, labelId: string) => Promise<{ success: boolean; error?: string }>
+  assignLabel: (
+    conversationId: string,
+    labelId: string
+  ) => Promise<{ success: boolean; error?: string }>
+  removeLabel: (
+    conversationId: string,
+    labelId: string
+  ) => Promise<{ success: boolean; error?: string }>
   getConversationLabelList: (conversationId: string) => Label[]
   loadLabelsForConversations: (conversationIds: string[]) => Promise<void>
   refetch: () => void
@@ -45,12 +65,15 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
   // Refs to avoid stale closures
   const labelsRef = useRef(labels)
   const conversationLabelsRef = useRef(conversationLabels)
-  const setConversationLabelsRef = useRef(setConversationLabels)
   const channelSubscribed = useRef(false)
 
-  labelsRef.current = labels
-  conversationLabelsRef.current = conversationLabels
-  setConversationLabelsRef.current = setConversationLabels
+  useEffect(() => {
+    labelsRef.current = labels
+  }, [labels])
+
+  useEffect(() => {
+    conversationLabelsRef.current = conversationLabels
+  }, [conversationLabels])
 
   const fetchLabels = useCallback(async () => {
     if (!userId) {
@@ -79,7 +102,8 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
 
   // Initial fetch
   useEffect(() => {
-    fetchLabels()
+    const timeoutId = window.setTimeout(() => void fetchLabels(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [fetchLabels])
 
   // Subscribe to label changes - ONLY ONCE when userId is available
@@ -114,7 +138,7 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
           if (conversationIds.length > 0) {
             const result = await getLabelsForConversations(conversationIds)
             if (result.success && result.labelsByConversation) {
-              setConversationLabelsRef.current(result.labelsByConversation)
+              setConversationLabels(result.labelsByConversation)
             }
           }
         }
@@ -146,7 +170,7 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     try {
       const result = await createLabel({ name, color })
       if (result.success && result.label) {
-        setLabels(prev => [...prev, result.label!])
+        setLabels((prev) => [...prev, result.label!])
         return { success: true, label: result.label }
       } else {
         return { success: false, error: result.error }
@@ -161,7 +185,11 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     try {
       const result = await updateLabel({ id, name, color })
       if (result.success) {
-        setLabels(prev => prev.map(l => l.id === id ? { ...l, name: name ?? l.name, color: color ?? l.color } : l))
+        setLabels((prev) =>
+          prev.map((l) =>
+            l.id === id ? { ...l, name: name ?? l.name, color: color ?? l.color } : l
+          )
+        )
         return { success: true }
       } else {
         return { success: false, error: result.error }
@@ -176,11 +204,11 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     try {
       const result = await deleteLabel(id)
       if (result.success) {
-        setLabels(prev => prev.filter(l => l.id !== id))
-        setConversationLabels(prev => {
+        setLabels((prev) => prev.filter((l) => l.id !== id))
+        setConversationLabels((prev) => {
           const next = new Map(prev)
           next.forEach((convLabels, convId) => {
-            const filtered = convLabels.filter(l => l.id !== id)
+            const filtered = convLabels.filter((l) => l.id !== id)
             next.set(convId, filtered)
           })
           return next
@@ -199,12 +227,12 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     try {
       const result = await assignLabelToConversation(conversationId, labelId)
       if (result.success) {
-        const label = labelsRef.current.find(l => l.id === labelId)
+        const label = labelsRef.current.find((l) => l.id === labelId)
         if (label) {
-          setConversationLabels(prev => {
+          setConversationLabels((prev) => {
             const next = new Map(prev)
             const existing = next.get(conversationId) || []
-            if (!existing.some(l => l.id === labelId)) {
+            if (!existing.some((l) => l.id === labelId)) {
               next.set(conversationId, [...existing, label])
             }
             return next
@@ -224,10 +252,13 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     try {
       const result = await removeLabelFromConversation(conversationId, labelId)
       if (result.success) {
-        setConversationLabels(prev => {
+        setConversationLabels((prev) => {
           const next = new Map(prev)
           const existing = next.get(conversationId) || []
-          next.set(conversationId, existing.filter(l => l.id !== labelId))
+          next.set(
+            conversationId,
+            existing.filter((l) => l.id !== labelId)
+          )
           return next
         })
         return { success: true }
@@ -240,9 +271,12 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     }
   }, [])
 
-  const getConversationLabelList = useCallback((conversationId: string): Label[] => {
-    return conversationLabels.get(conversationId) || []
-  }, [conversationLabels])
+  const getConversationLabelList = useCallback(
+    (conversationId: string): Label[] => {
+      return conversationLabels.get(conversationId) || []
+    },
+    [conversationLabels]
+  )
 
   const value: ConversationLabelsContextValue = {
     labels,
@@ -266,7 +300,7 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
   )
 }
 
-export function useConversationLabels(userId?: string | null): ConversationLabelsContextValue {
+export function useConversationLabels(): ConversationLabelsContextValue {
   const context = useContext(ConversationLabelsContext)
 
   if (!context) {

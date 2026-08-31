@@ -45,9 +45,7 @@ export function MessageReactions({
             <span
               className={cn(
                 'text-xs',
-                reaction.userReacted
-                  ? 'text-primary-500'
-                  : 'text-[var(--text-muted)]'
+                reaction.userReacted ? 'text-primary-500' : 'text-[var(--text-muted)]'
               )}
             >
               {reaction.count}
@@ -80,6 +78,10 @@ export function MessageReactions({
             <EmojiPicker
               onSelect={(emoji) => {
                 onToggleReaction(emoji)
+                setShowPicker(false)
+              }}
+              onSelectSticker={(sticker) => {
+                onToggleReaction(sticker)
                 setShowPicker(false)
               }}
               onClose={() => setShowPicker(false)}

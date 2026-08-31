@@ -1,39 +1,53 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 interface EmojiPickerProps {
   onSelect: (emoji: string) => void
+  onSelectSticker: (sticker: string) => void
   onClose: () => void
 }
 
-// Common emojis for quick selection
 const QUICK_EMOJIS = [
-  '👍', '👎', '❤️', '🧡', '💛', '💚', '💙', '💜',
-  '😂', '😢', '😮', '😡', '😱', '🤔', '🙄', '😴',
-  '🎉', '🔥', '✨', '💯', '✅', '❌', '⭐', '💫',
+  '👍',
+  '👎',
+  '❤️',
+  '🥰',
+  '😂',
+  '😊',
+  '😢',
+  '😮',
+  '😡',
+  '🤔',
+  '🙄',
+  '🎉',
+  '🔥',
+  '✨',
+  '💯',
+  '✅',
 ]
 
-export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
+const QUICK_STICKERS = ['🥳', '🤩', '😂', '😍', '😎', '😭', '😤', '🤗', '👏', '🙏', '💪', '🎊']
+
+export function EmojiPicker({ onSelect, onSelectSticker, onClose }: EmojiPickerProps) {
+  const [activeTab, setActiveTab] = useState<'emoji' | 'sticker'>('emoji')
   const pickerRef = useRef<HTMLDivElement>(null)
+  const { t } = useI18n()
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) onClose()
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
     }
 
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('pointerdown', handlePointerDown)
     document.addEventListener('keydown', handleEscape)
-
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleEscape)
     }
   }, [onClose])
@@ -41,25 +55,43 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
   return (
     <div
       ref={pickerRef}
-      className={cn(
-        'absolute bottom-full left-0 mb-2 z-50',
-        'w-72 rounded-xl border border-[var(--border-default)]',
-        'bg-[var(--bg-panel)] shadow-xl animate-fade-in'
-      )}
+      className="animate-fade-in absolute bottom-full left-0 z-50 mb-2 w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--bg-panel)] shadow-xl"
     >
-      {/* Quick emojis grid */}
-      <div className="grid grid-cols-8 gap-1 p-2">
-        {QUICK_EMOJIS.map((emoji) => (
+      <div className="grid grid-cols-2 border-b border-[var(--border-default)] p-1">
+        {(['emoji', 'sticker'] as const).map((tab) => (
           <button
-            key={emoji}
-            onClick={() => onSelect(emoji)}
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
             className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-lg',
-              'text-lg hover:bg-[var(--bg-hover)] transition-colors',
-              'focus:outline-none focus:ring-2 focus:ring-primary-500'
+              'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              activeTab === tab
+                ? 'text-primary-500 bg-[var(--bg-active)]'
+                : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]'
             )}
           >
-            {emoji}
+            {t(`picker.${tab}`)}
+          </button>
+        ))}
+      </div>
+
+      <div className={cn('grid gap-1 p-2', activeTab === 'emoji' ? 'grid-cols-8' : 'grid-cols-6')}>
+        {(activeTab === 'emoji' ? QUICK_EMOJIS : QUICK_STICKERS).map((item, index) => (
+          <button
+            key={`${item}-${index}`}
+            type="button"
+            onClick={() => {
+              if (activeTab === 'emoji') onSelect(item)
+              else onSelectSticker(item)
+            }}
+            className={cn(
+              'flex items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-hover)]',
+              'focus:ring-primary-500 focus:ring-2 focus:outline-none',
+              activeTab === 'emoji' ? 'h-8 w-8 text-lg' : 'h-10 w-10 text-3xl'
+            )}
+            aria-label={activeTab === 'emoji' ? item : t('picker.sendSticker', { sticker: item })}
+          >
+            {item}
           </button>
         ))}
       </div>

@@ -80,7 +80,8 @@ export function useConversationMedia({ conversationId, limit = 6 }: UseConversat
   }, [conversationId, limit, supabase])
 
   useEffect(() => {
-    fetchMedia()
+    const timeoutId = window.setTimeout(() => void fetchMedia(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [fetchMedia])
 
   return {

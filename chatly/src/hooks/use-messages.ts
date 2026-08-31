@@ -38,71 +38,81 @@ export function useMessages(conversationId: string | null, userId: string | null
     }
   }, [conversationId, supabase])
 
-  const sendMessage = useCallback(async (content: string): Promise<Message | null> => {
-    if (!conversationId || !userId || !content.trim()) return null
+  const sendMessage = useCallback(
+    async (content: string): Promise<Message | null> => {
+      if (!conversationId || !userId || !content.trim()) return null
 
-    try {
-      const { data, error: sendError } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: userId,
-          content: content.trim(),
-          status: 'sent',
-        })
-        .select()
-        .single()
+      try {
+        const { data, error: sendError } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            sender_id: userId,
+            content: content.trim(),
+            status: 'sent',
+          })
+          .select()
+          .single()
 
-      if (sendError) throw sendError
+        if (sendError) throw sendError
 
-      // Update conversation's last_message_at
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', conversationId)
+        // Update conversation's last_message_at
+        await supabase
+          .from('conversations')
+          .update({ last_message_at: new Date().toISOString() })
+          .eq('id', conversationId)
 
-      return data
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message')
-      return null
-    }
-  }, [conversationId, userId, supabase])
+        return data
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to send message')
+        return null
+      }
+    },
+    [conversationId, userId, supabase]
+  )
 
   useEffect(() => {
-    fetchMessages()
+    const timeoutId = window.setTimeout(() => void fetchMessages(), 0)
 
     // Subscribe to real-time messages
-    if (!conversationId) return
+    if (!conversationId) return () => window.clearTimeout(timeoutId)
 
     const channel = supabase
       .channel(`messages-${conversationId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`,
-      }, (payload) => {
-        const newMessage = payload.new as Message
-        setMessages(prev => {
-          // Avoid duplicates
-          if (prev.some(m => m.id === newMessage.id)) return prev
-          return [...prev, newMessage]
-        })
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`,
-      }, (payload) => {
-        const updatedMessage = payload.new as Message
-        setMessages(prev =>
-          prev.map(m => m.id === updatedMessage.id ? updatedMessage : m)
-        )
-      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const newMessage = payload.new as Message
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.some((m) => m.id === newMessage.id)) return prev
+            return [...prev, newMessage]
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const updatedMessage = payload.new as Message
+          setMessages((prev) => prev.map((m) => (m.id === updatedMessage.id ? updatedMessage : m)))
+        }
+      )
       .subscribe()
 
     return () => {
+      window.clearTimeout(timeoutId)
       supabase.removeChannel(channel)
     }
   }, [conversationId, fetchMessages, supabase])

@@ -10,10 +10,7 @@ interface UsePushNotificationsOptions {
   enabled?: boolean
 }
 
-export function usePushNotifications({
-  userId,
-  enabled = true,
-}: UsePushNotificationsOptions) {
+export function usePushNotifications({ userId, enabled = true }: UsePushNotificationsOptions) {
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -22,9 +19,10 @@ export function usePushNotifications({
 
   // Check current permission status
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPermission(Notification.permission)
-    }
+    const timeoutId = window.setTimeout(() => {
+      if ('Notification' in window) setPermission(Notification.permission)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [])
 
   // Register service worker
@@ -91,15 +89,19 @@ export function usePushNotifications({
 
       // Send subscription to server
       const subscriptionData = subscription.toJSON()
-      const { error } = await supabase
-        .from('push_subscriptions')
-        .upsert({
-          user_id: userId,
-          endpoint: subscriptionData.endpoint!,
-          p256dh: subscriptionData.keys?.p256dh!,
-          auth: subscriptionData.keys?.auth!,
-          updated_at: new Date().toISOString(),
-        })
+      const endpoint = subscriptionData.endpoint
+      const p256dh = subscriptionData.keys?.p256dh
+      const auth = subscriptionData.keys?.auth
+      if (!endpoint || !p256dh || !auth) {
+        throw new Error('Push subscription is missing required keys')
+      }
+      const { error } = await supabase.from('push_subscriptions').upsert({
+        user_id: userId,
+        endpoint,
+        p256dh,
+        auth,
+        updated_at: new Date().toISOString(),
+      })
 
       if (error) {
         console.error('[Push] Failed to save subscription:', error)
@@ -130,10 +132,7 @@ export function usePushNotifications({
       }
 
       // Remove from server
-      const { error } = await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', userId)
+      const { error } = await supabase.from('push_subscriptions').delete().eq('user_id', userId)
 
       if (error) {
         console.error('[Push] Failed to remove subscription:', error)

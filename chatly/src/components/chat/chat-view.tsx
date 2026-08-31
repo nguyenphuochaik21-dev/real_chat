@@ -1,29 +1,22 @@
 'use client'
 
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Phone,
   Video,
-  Search,
   MoreVertical,
   ArrowLeft,
   Send,
   Smile,
   Check,
   CheckCheck,
-  Image,
   Pencil,
   Clock,
 } from 'lucide-react'
-import {
-  archiveConversation,
-  deleteConversation,
-  clearConversationHistory,
-} from '@/lib/actions/conversations'
-import { cn } from '@/lib/utils'
+import { cn, getCompactDisplayName } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { createClient } from '@/lib/supabase/client'
 import { useTyping } from '@/hooks/use-typing'
@@ -39,42 +32,38 @@ import { ForwardModal } from './forward-modal'
 import { BlockUserModal } from './block-user-modal'
 import { ConversationActions } from './conversation-actions'
 import { SchedulePicker } from './schedule-picker'
+import { EmojiPicker } from './emoji-picker'
+import { SearchModal } from './search-modal'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useDraftStore } from '@/stores/draft-store'
 import { useScheduledMessagesProcessor } from '@/hooks/use-scheduled-messages-processor'
 import { createScheduledMessage } from '@/lib/actions/scheduled-messages'
-import {
-  editMessage,
-  deleteMessage,
-  type Message as MessageType,
-} from '@/lib/actions/messages'
-import { useReactions } from '@/hooks/use-reactions'
-import { useStarredMessages } from '@/hooks/use-starred-messages'
-import { useCallStore } from '@/stores/call-store'
+import { editMessage, deleteMessage } from '@/lib/actions/messages'
 import { useChatCacheStore } from '@/stores/chat-cache-store'
 import { resolvePresence, type PresenceStatus } from '@/lib/presence'
+import { useI18n } from '@/lib/i18n'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
 type Profile = Tables<'profiles'>
 type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
 
-function formatMessageDate(dateStr: string): string {
+function formatMessageDate(dateStr: string, dateLocale: string): string {
   const date = new Date(dateStr)
-  return date.toLocaleDateString([], {
+  return date.toLocaleDateString(dateLocale, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   })
 }
 
-function formatMessageTime(dateStr: string): string {
+function formatMessageTime(dateStr: string, dateLocale: string): string {
   const date = new Date(dateStr)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
 }
 
-function getDateSeparator(messages: Message[], index: number): string | null {
+function getDateSeparator(messages: Message[], index: number, dateLocale: string): string | null {
   const currentDate = messages[index].created_at
   const prevDate = index > 0 ? messages[index - 1].created_at : null
 
@@ -84,7 +73,7 @@ function getDateSeparator(messages: Message[], index: number): string | null {
   const prev = prevDate ? new Date(prevDate) : null
 
   if (!prev || current.toDateString() !== prev.toDateString()) {
-    return formatMessageDate(currentDate)
+    return formatMessageDate(currentDate, dateLocale)
   }
   return null
 }
@@ -114,11 +103,17 @@ function MessageBubble({
   replyToMessage,
   onReplyClick,
 }: MessageBubbleProps) {
+  const { t, dateLocale } = useI18n()
   const [isHovered, setIsHovered] = useState(false)
   const { openContextMenu } = useMessageActionsStore()
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
   const isDeleted = !!message.deleted_at
+  const isSticker =
+    contentType === 'text' &&
+    !!message.content?.trim() &&
+    message.content.trim().length <= 12 &&
+    !/[\p{L}\p{N}]/u.test(message.content)
 
   const handleReplyClick = () => {
     if (replyToMessage?.id && onReplyClick) {
@@ -130,12 +125,13 @@ function MessageBubble({
     if (!message.reply_to || !replyToMessage) return null
 
     const replyContent = replyToMessage.deleted_at
-      ? '[Message deleted]'
-      : replyToMessage.content || '[Media]'
+      ? t('chat.deletedQuote')
+      : replyToMessage.content || t('chat.mediaQuote')
 
-    const replySender = replyToMessage.sender_id === currentUserId
-      ? 'You'
-      : participant?.display_name || 'User'
+    const replySender =
+      replyToMessage.sender_id === currentUserId
+        ? t('common.you')
+        : participant?.display_name || t('common.user')
 
     return (
       <div
@@ -147,16 +143,15 @@ function MessageBubble({
             : 'border-primary-500/60 hover:border-primary-500'
         )}
       >
-        <p className={cn(
-          'text-xs font-medium',
-          isFromMe ? 'text-white/80' : 'text-primary-500'
-        )}>
+        <p className={cn('text-xs font-medium', isFromMe ? 'text-white/80' : 'text-primary-500')}>
           {replySender}
         </p>
-        <p className={cn(
-          'line-clamp-1 text-xs',
-          isFromMe ? 'text-white/70' : 'text-[var(--text-muted)]'
-        )}>
+        <p
+          className={cn(
+            'line-clamp-1 text-xs',
+            isFromMe ? 'text-white/70' : 'text-[var(--text-muted)]'
+          )}
+        >
           {replyContent}
         </p>
       </div>
@@ -175,10 +170,8 @@ function MessageBubble({
         isFromMe && 'justify-end'
       )}
     >
-      {message.edited_at && (
-        <span className="italic">(edited)</span>
-      )}
-      <span>{message.created_at ? formatMessageTime(message.created_at) : ''}</span>
+      {message.edited_at && <span className="italic">({t('chat.edited')})</span>}
+      <span>{message.created_at ? formatMessageTime(message.created_at, dateLocale) : ''}</span>
       {isFromMe && (
         <span className="flex">
           {messageStatus === 'read' ? (
@@ -215,7 +208,7 @@ function MessageBubble({
                   : 'rounded-bl-md bg-[var(--bg-message-in)] text-[var(--text-muted)]'
               )}
             >
-              <p className="text-sm">This message was deleted</p>
+              <p className="text-sm">{t('chat.messageDeleted')}</p>
             </div>
             {renderTimeAndStatus()}
           </div>
@@ -233,8 +226,10 @@ function MessageBubble({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <div className={cn('flex max-w-[75%] flex-col gap-1', isFromMe && 'items-end')}>
-          <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
+        <div
+          className={cn('flex max-w-[85%] flex-col gap-1 md:max-w-[75%]', isFromMe && 'items-end')}
+        >
+          <div className={cn('flex max-w-full gap-2', isFromMe && 'flex-row-reverse')}>
             {/* Avatar */}
             <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
               {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
@@ -266,8 +261,10 @@ function MessageBubble({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className={cn('flex max-w-[75%] flex-col gap-1', isFromMe && 'items-end')}>
-        <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
+      <div
+        className={cn('flex max-w-[85%] flex-col gap-1 md:max-w-[75%]', isFromMe && 'items-end')}
+      >
+        <div className={cn('flex max-w-full gap-2', isFromMe && 'flex-row-reverse')}>
           {/* Avatar */}
           <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
             {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
@@ -277,14 +274,22 @@ function MessageBubble({
           <div>
             <div
               className={cn(
-                'rounded-2xl px-4 py-2',
+                'max-w-full rounded-2xl px-4 py-2',
+                isSticker && 'bg-transparent p-1',
                 isFromMe
-                  ? 'bg-primary-500 rounded-br-md text-white'
-                  : 'rounded-bl-md bg-[var(--bg-message-in)]'
+                  ? !isSticker && 'bg-primary-500 rounded-br-md text-white'
+                  : !isSticker && 'rounded-bl-md bg-[var(--bg-message-in)]'
               )}
             >
               {renderReplyQuote()}
-              <p className="text-sm">{message.content}</p>
+              <p
+                className={cn(
+                  '[overflow-wrap:anywhere] break-words whitespace-pre-wrap',
+                  isSticker ? 'text-5xl leading-none' : 'text-sm'
+                )}
+              >
+                {message.content}
+              </p>
             </div>
             {renderTimeAndStatus()}
           </div>
@@ -309,7 +314,15 @@ interface ChatViewProps {
   scrollToMessageId?: string
 }
 
-export function ChatView({ conversationId, currentUserId, onBack, showBackButton = false, scrollToMessageId }: ChatViewProps) {
+export function ChatView({
+  conversationId,
+  currentUserId,
+  onBack,
+  showBackButton = false,
+  scrollToMessageId,
+}: ChatViewProps) {
+  const router = useRouter()
+  const { t, dateLocale } = useI18n()
   // Use cache store so navigating between chats is instant (no loading flash).
   // Select only the methods we need to avoid re-rendering on every cache mutation.
   const getCached = useChatCacheStore((s) => s.getCached)
@@ -337,16 +350,20 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   })
   const participantStatus = resolvePresence(participantStatusRaw)
   const [showMediaGallery, setShowMediaGallery] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   // Track realtime status for messages
-  const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(cached?.messageStatuses || new Map())
+  const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(
+    cached?.messageStatuses || new Map()
+  )
   // Edit state
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   // Reactions per message
-  const [messageReactions, setMessageReactions] = useState<Map<string, { emoji: string; count: number; userReacted: boolean }[]>>(
-    cached?.messageReactions || new Map()
-  )
+  const [messageReactions, setMessageReactions] = useState<
+    Map<string, { emoji: string; count: number; userReacted: boolean }[]>
+  >(cached?.messageReactions || new Map())
   // Store hooks
-  const { isReplying, replyToMessage, clearReply, setReplyTo } = useMessageActionsStore()
+  const { replyToMessage, clearReply } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
 
   // Draft messages
@@ -356,33 +373,40 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   useScheduledMessagesProcessor()
 
   // Create schedule function (no hook needed)
-  const createSchedule = useCallback(async (
-    conversationId: string,
-    content: string,
-    scheduledAt: Date,
-    options?: {
-      contentType?: string
-      mediaUrl?: string | null
-      replyTo?: string | null
-    }
-  ) => {
-    const result = await createScheduledMessage({
-      conversationId,
-      content,
-      scheduledAt,
-      contentType: options?.contentType,
-      mediaUrl: options?.mediaUrl,
-      replyTo: options?.replyTo,
-    })
-    return result
-  }, [])
+  const createSchedule = useCallback(
+    async (
+      conversationId: string,
+      content: string,
+      scheduledAt: Date,
+      options?: {
+        contentType?: string
+        mediaUrl?: string | null
+        replyTo?: string | null
+      }
+    ) => {
+      const result = await createScheduledMessage({
+        conversationId,
+        content,
+        scheduledAt,
+        contentType: options?.contentType,
+        mediaUrl: options?.mediaUrl,
+        replyTo: options?.replyTo,
+      })
+      return result
+    },
+    []
+  )
 
   // Schedule picker
   const [showSchedulePicker, setShowSchedulePicker] = useState(false)
 
   // Block user modal
   const [blockModalOpen, setBlockModalOpen] = useState(false)
-  const [userToBlock, setUserToBlock] = useState<{ id: string; display_name: string; avatar_url: string | null } | null>(null)
+  const [userToBlock, setUserToBlock] = useState<{
+    id: string
+    display_name: string
+    avatar_url: string | null
+  } | null>(null)
 
   // Conversation actions menu
   const [showConversationActions, setShowConversationActions] = useState(false)
@@ -404,7 +428,15 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       messageStatuses,
       messageReactions,
     })
-  }, [conversationId, messages, participant, participantStatus, messageStatuses, messageReactions, setCached])
+  }, [
+    conversationId,
+    messages,
+    participant,
+    participantStatus,
+    messageStatuses,
+    messageReactions,
+    setCached,
+  ])
 
   // Persist input value per conversation (so draft survives navigation)
   useEffect(() => {
@@ -415,7 +447,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const supabase = createClient()
 
   // Typing indicators
@@ -425,7 +457,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   const { markAsRead } = useReadReceipts(conversationId, currentUserId)
 
   // Media gallery
-  const { mediaItems, totalCount } = useConversationMedia({ conversationId })
+  const { mediaItems } = useConversationMedia({ conversationId })
 
   // Fetch participant info and their status
   useEffect(() => {
@@ -508,7 +540,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
 
           // When participant comes online, refresh message statuses
           // This ensures messages that were "sent" (recipient offline) become "delivered"
-          const newEffective = resolvePresence({ status: newStatus, lastSeen: updated.last_seen ?? null })
+          const newEffective = resolvePresence({
+            status: newStatus,
+            lastSeen: updated.last_seen ?? null,
+          })
           if (oldEffective !== 'online' && newEffective === 'online' && conversationId) {
             try {
               const { data } = await supabase
@@ -595,8 +630,8 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
         },
         async (payload) => {
           const newMessage = payload.new as Message
-          setMessages(prev => {
-            if (prev.some(m => m.id === newMessage.id)) return prev
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMessage.id)) return prev
             return [...prev, newMessage]
           })
 
@@ -619,13 +654,11 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           const old = payload.old as Message | undefined
 
           // Update message in list - sync ALL changes (content, edited_at, status, deleted_at)
-          setMessages(prev =>
-            prev.map(m => m.id === updated.id ? updated : m)
-          )
+          setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))
 
           // Also update status tracking for display
           if (updated.status !== old?.status) {
-            setMessageStatuses(prev => {
+            setMessageStatuses((prev) => {
               const next = new Map(prev)
               next.set(updated.id, updated.status || 'sent')
               return next
@@ -646,8 +679,8 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
 
     // Get message IDs for this conversation
     const messageIds = messages
-      .filter(msg => msg.id && !msg.id.startsWith('temp-'))
-      .map(msg => msg.id)
+      .filter((msg) => msg.id && !msg.id.startsWith('temp-'))
+      .map((msg) => msg.id)
 
     if (messageIds.length === 0) return
 
@@ -690,7 +723,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     if (!scrollToMessageId || !messages.length) return
 
     // Find the message in the list
-    const messageIndex = messages.findIndex(m => m.id === scrollToMessageId)
+    const messageIndex = messages.findIndex((m) => m.id === scrollToMessageId)
     if (messageIndex === -1) return
 
     // Wait for render then scroll
@@ -714,53 +747,65 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     inputRef.current?.focus()
   }, [conversationId])
 
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, 128)}px`
+  }, [inputValue])
+
   // When conversationId changes, restore cached state immediately
   const prevConversationIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (prevConversationIdRef.current === conversationId) return
     prevConversationIdRef.current = conversationId
 
-    if (!conversationId) {
-      setMessages([])
-      setParticipant(null)
-      setParticipantStatusRaw({ status: 'offline', lastSeen: null })
-      setMessageStatuses(new Map())
-      setMessageReactions(new Map())
-      setInputValue('')
-      setEditingMessage(null)
-      setLoading(false)
-      return
-    }
+    const frameId = window.requestAnimationFrame(() => {
+      if (!conversationId) {
+        setMessages([])
+        setParticipant(null)
+        setParticipantStatusRaw({ status: 'offline', lastSeen: null })
+        setMessageStatuses(new Map())
+        setMessageReactions(new Map())
+        setInputValue('')
+        setEditingMessage(null)
+        setLoading(false)
+        return
+      }
 
-    // Restore from cache if available
-    const cached = getCached(conversationId)
-    if (cached) {
-      setMessages(cached.messages)
-      setParticipant(cached.participant)
-      setParticipantStatusRaw({
-        status: cached.participantStatus,
-        lastSeen: cached.participant?.last_seen ?? null,
-      })
-      setMessageStatuses(cached.messageStatuses)
-      setMessageReactions(cached.messageReactions)
-      setInputValue(getInput(conversationId))
-      // No loading — we have data; background refetch will refresh
-    } else {
-      // No cache — start fresh
-      setMessages([])
-      setParticipant(null)
-      setParticipantStatusRaw({ status: 'offline', lastSeen: null })
-      setMessageStatuses(new Map())
-      setMessageReactions(new Map())
-      setInputValue(getInput(conversationId))
-      setEditingMessage(null)
-      setLoading(true)
-    }
+      // Restore from cache if available
+      const cached = getCached(conversationId)
+      if (cached) {
+        setMessages(cached.messages)
+        setParticipant(cached.participant)
+        setParticipantStatusRaw({
+          status: cached.participantStatus,
+          lastSeen: cached.participant?.last_seen ?? null,
+        })
+        setMessageStatuses(cached.messageStatuses)
+        setMessageReactions(cached.messageReactions)
+        setInputValue(getInput(conversationId))
+        // No loading — we have data; background refetch will refresh
+      } else {
+        // No cache — start fresh
+        setMessages([])
+        setParticipant(null)
+        setParticipantStatusRaw({ status: 'offline', lastSeen: null })
+        setMessageStatuses(new Map())
+        setMessageReactions(new Map())
+        setInputValue(getInput(conversationId))
+        setEditingMessage(null)
+        setLoading(true)
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
   }, [conversationId, getCached, getInput])
 
   // Restore draft when conversation changes (fallback to draft store)
   useEffect(() => {
-    if (conversationId) {
+    if (!conversationId) return
+    const timeoutId = window.setTimeout(() => {
       const draft = getDraft(conversationId)
       const cachedInput = getInput(conversationId)
       // Prefer cache (more recent), fall back to draft store
@@ -768,7 +813,8 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       if (finalValue) {
         setInputValue(finalValue)
       }
-    }
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [conversationId, getDraft, getInput])
 
   // Cleanup typing on unmount
@@ -781,161 +827,174 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // ============================================================================
   // Edit Message Handler
   // ============================================================================
-  const handleEdit = useCallback(async (message: Message) => {
-    if (!message.content || !inputValue.trim()) return
+  const handleEdit = useCallback(
+    async (message: Message) => {
+      if (!message.content || !inputValue.trim()) return
 
-    setSending(true)
-    const newContent = inputValue.trim()
+      setSending(true)
+      const newContent = inputValue.trim()
 
-    try {
-      const result = await editMessage(message.id, newContent)
+      try {
+        const result = await editMessage(message.id, newContent)
 
-      if (result.success && result.message) {
-        // Update local message list
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === message.id ? { ...m, ...result.message } : m
+        if (result.success && result.message) {
+          // Update local message list
+          setMessages((prev) =>
+            prev.map((m) => (m.id === message.id ? { ...m, ...result.message } : m))
           )
-        )
-        setEditingMessage(null)
-        setInputValue('')
-        addToast({ type: 'system', title: 'Message edited', body: '' })
-      } else {
+          setEditingMessage(null)
+          setInputValue('')
+          addToast({ type: 'system', title: t('chat.messageEdited'), body: '' })
+        } else {
+          addToast({
+            type: 'system',
+            title: t('chat.editFailed'),
+            body: result.error || t('common.unknownError'),
+          })
+        }
+      } catch (err) {
+        console.error('Failed to edit message:', err)
         addToast({
           type: 'system',
-          title: 'Edit failed',
-          body: result.error || 'Unknown error',
+          title: t('chat.editFailed'),
+          body: err instanceof Error ? err.message : t('common.unknownError'),
         })
+      } finally {
+        setSending(false)
       }
-    } catch (err) {
-      console.error('Failed to edit message:', err)
-      addToast({
-        type: 'system',
-        title: 'Edit failed',
-        body: err instanceof Error ? err.message : 'Unknown error',
-      })
-    } finally {
-      setSending(false)
-    }
-  }, [inputValue, addToast])
+    },
+    [inputValue, addToast, t]
+  )
 
   // ============================================================================
   // Delete Message Handler
   // ============================================================================
-  const handleDelete = useCallback(async (message: Message) => {
-    // Show confirmation dialog
-    if (!confirm('Delete this message?')) return
+  const handleDelete = useCallback(
+    async (message: Message) => {
+      // Show confirmation dialog
+      if (!confirm(t('chat.deleteMessageConfirm'))) return
 
-    try {
-      const result = await deleteMessage(message.id)
+      try {
+        const result = await deleteMessage(message.id)
 
-      if (result.success) {
-        // Update local message list (mark as deleted)
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === message.id
-              ? { ...m, deleted_at: new Date().toISOString() }
-              : m
+        if (result.success) {
+          // Update local message list (mark as deleted)
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === message.id ? { ...m, deleted_at: new Date().toISOString() } : m
+            )
           )
-        )
-        addToast({ type: 'system', title: 'Message deleted', body: '' })
-      } else {
+          addToast({ type: 'system', title: t('chat.messageDeletedToast'), body: '' })
+        } else {
+          addToast({
+            type: 'system',
+            title: t('chat.deleteFailed'),
+            body: result.error || t('common.unknownError'),
+          })
+        }
+      } catch (err) {
+        console.error('Failed to delete message:', err)
         addToast({
           type: 'system',
-          title: 'Delete failed',
-          body: result.error || 'Unknown error',
+          title: t('chat.deleteFailed'),
+          body: err instanceof Error ? err.message : t('common.unknownError'),
         })
       }
-    } catch (err) {
-      console.error('Failed to delete message:', err)
-      addToast({
-        type: 'system',
-        title: 'Delete failed',
-        body: err instanceof Error ? err.message : 'Unknown error',
-      })
-    }
-  }, [addToast])
+    },
+    [addToast, t]
+  )
 
   // ============================================================================
   // Send Message Handler (supports reply)
   // ============================================================================
-  const handleSend = useCallback(async () => {
-    // If editing, handle edit instead
-    if (editingMessage) {
-      handleEdit(editingMessage)
-      return
-    }
+  const handleSend = useCallback(
+    async (contentOverride?: string) => {
+      // If editing, handle edit instead
+      if (editingMessage && contentOverride === undefined) {
+        handleEdit(editingMessage)
+        return
+      }
 
-    if (!inputValue.trim() || !conversationId || sending) return
+      const pendingContent = contentOverride ?? inputValue
+      if (!pendingContent.trim() || !conversationId || sending) return
 
-    stopTyping()
-    setSending(true)
-    const content = inputValue.trim()
-    setInputValue('')
+      stopTyping()
+      setSending(true)
+      const content = pendingContent.trim()
+      if (contentOverride === undefined) setInputValue('')
 
-    // Debug: Log reply state
-    console.log('[DEBUG] handleSend - replyToMessage:', replyToMessage?.id, replyToMessage)
-
-    // Optimistic update
-    const optimisticMessage: Message = {
-      id: `temp-${Date.now()}`,
-      conversation_id: conversationId,
-      sender_id: currentUserId,
-      content,
-      content_type: 'text',
-      status: 'sent',
-      created_at: new Date().toISOString(),
-      edited_at: null,
-      deleted_at: null,
-      reply_to: replyToMessage?.id || null,
-      media_url: null,
-      media_thumbnail_url: null,
-      media_name: null,
-      media_size: null,
-      media_mime_type: null,
-    }
-    setMessages(prev => [...prev, optimisticMessage])
-
-    try {
-      const insertPayload = {
+      // Optimistic update
+      const optimisticMessage: Message = {
+        id: `temp-${Date.now()}`,
         conversation_id: conversationId,
         sender_id: currentUserId,
         content,
+        content_type: 'text',
         status: 'sent',
+        created_at: new Date().toISOString(),
+        edited_at: null,
+        deleted_at: null,
         reply_to: replyToMessage?.id || null,
+        media_url: null,
+        media_thumbnail_url: null,
+        media_name: null,
+        media_size: null,
+        media_mime_type: null,
       }
-      console.log('[DEBUG] Insert payload:', insertPayload)
+      setMessages((prev) => [...prev, optimisticMessage])
 
-      const { data, error } = await supabase
-        .from('messages')
-        .insert(insertPayload)
-        .select()
-        .single()
+      try {
+        const insertPayload = {
+          conversation_id: conversationId,
+          sender_id: currentUserId,
+          content,
+          status: 'sent',
+          reply_to: replyToMessage?.id || null,
+        }
+        const { data, error } = await supabase
+          .from('messages')
+          .insert(insertPayload)
+          .select()
+          .single()
 
-      if (error) throw error
+        if (error) throw error
 
-      // Replace optimistic message with real one
-      setMessages(prev => prev.map(m => m.id === optimisticMessage.id ? data : m))
+        // Replace optimistic message with real one
+        setMessages((prev) => prev.map((m) => (m.id === optimisticMessage.id ? data : m)))
 
-      // Clear reply state and draft
-      clearReply()
-      clearDraft(conversationId)
+        // Clear reply state and draft
+        clearReply()
+        clearDraft(conversationId)
 
-      // Update conversation's last_message_at
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', conversationId)
-    } catch (err) {
-      console.error('Failed to send message:', err)
-      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
-      setInputValue(content)
-    } finally {
-      setSending(false)
-    }
-  }, [inputValue, conversationId, currentUserId, sending, supabase, stopTyping, editingMessage, handleEdit, replyToMessage, clearReply, clearDraft])
+        // Update conversation's last_message_at
+        await supabase
+          .from('conversations')
+          .update({ last_message_at: new Date().toISOString() })
+          .eq('id', conversationId)
+      } catch (err) {
+        console.error('Failed to send message:', err)
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id))
+        if (contentOverride === undefined) setInputValue(content)
+      } finally {
+        setSending(false)
+      }
+    },
+    [
+      inputValue,
+      conversationId,
+      currentUserId,
+      sending,
+      supabase,
+      stopTyping,
+      editingMessage,
+      handleEdit,
+      replyToMessage,
+      clearReply,
+      clearDraft,
+    ]
+  )
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value)
     if (e.target.value.trim()) {
       onType()
@@ -943,7 +1002,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       handleSend()
     }
@@ -956,10 +1015,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     const { toggleReaction } = await import('@/lib/actions/messages')
 
     // Optimistic update
-    setMessageReactions(prev => {
+    setMessageReactions((prev) => {
       const next = new Map(prev)
       const existing = next.get(messageId) || []
-      const emojiIndex = existing.findIndex(r => r.emoji === emoji)
+      const emojiIndex = existing.findIndex((r) => r.emoji === emoji)
 
       if (emojiIndex >= 0) {
         const updated = [...existing]
@@ -993,8 +1052,8 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
 
       // Get non-temp message IDs
       const messageIds = messages
-        .filter(msg => msg.id && !msg.id.startsWith('temp-'))
-        .map(msg => msg.id)
+        .filter((msg) => msg.id && !msg.id.startsWith('temp-'))
+        .map((msg) => msg.id)
 
       if (messageIds.length === 0) return
 
@@ -1014,8 +1073,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Get typing text
   const getTypingText = (): string => {
     if (typingUserIds.length === 0) return ''
-    if (typingUserIds.length === 1) return 'typing...'
-    return `${typingUserIds.length} people are typing...`
+    return t('chat.typing')
   }
 
   // Status text for header
@@ -1025,13 +1083,13 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     }
     switch (participantStatus) {
       case 'online':
-        return 'Online'
+        return t('chat.online')
       case 'away':
-        return 'Away'
+        return t('chat.away')
       case 'busy':
-        return 'Busy'
+        return t('chat.busy')
       default:
-        return 'Offline'
+        return t('chat.offline')
     }
   }
 
@@ -1053,8 +1111,8 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)] text-[var(--text-muted)]">
         <div className="text-center">
-          <p className="text-lg">Select a conversation</p>
-          <p className="mt-2 text-sm">Choose a chat from the list</p>
+          <p className="text-lg">{t('chat.selectConversation')}</p>
+          <p className="mt-2 text-sm">{t('chat.chooseConversation')}</p>
         </div>
       </div>
     )
@@ -1063,74 +1121,82 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   if (loading) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)]">
-        <div className="h-8 w-8 animate-spin rounded-full border-3 border-primary-500 border-t-transparent" />
+        <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-3 border-t-transparent" />
       </div>
     )
   }
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col bg-[var(--bg-app)]">
+    <div className="relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--bg-app)]">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-3 md:px-4">
+      <div className="flex min-w-0 items-center gap-1 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-2 py-2.5 sm:gap-3 md:px-4 md:py-3">
         {showBackButton && (
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={onBack}
-            className="mr-1 shrink-0"
-            aria-label="Back to chats"
+            className="shrink-0 sm:mr-1"
+            aria-label={t('common.back')}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
         )}
 
         {participant && (
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             {/* Avatar with dynamic status */}
             <div className="relative shrink-0">
               <Avatar user={participant} size="md" showStatus={false} />
               <span
                 className={cn(
-                  'absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
+                  'absolute right-0 bottom-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
                   getStatusColor()
                 )}
               />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="truncate font-semibold text-[var(--text-primary)]">{participant.display_name}</h2>
-              <p className={cn(
-                'truncate text-xs',
-                typingUserIds.length > 0 ? 'text-primary-500 animate-pulse' : 'text-[var(--text-secondary)]'
-              )}>
+              <h2 className="truncate font-semibold text-[var(--text-primary)]">
+                {getCompactDisplayName(participant.display_name)}
+              </h2>
+              <p
+                className={cn(
+                  'truncate text-xs',
+                  typingUserIds.length > 0
+                    ? 'text-primary-500 animate-pulse'
+                    : 'text-[var(--text-secondary)]'
+                )}
+              >
                 {getStatusText()}
               </p>
             </div>
           </div>
         )}
 
-        {!participant && showBackButton && (
-          <div className="flex-1" />
-        )}
+        {!participant && showBackButton && <div className="flex-1" />}
 
         {/* Actions */}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           <Button
             variant="ghost"
             size="icon"
+            className="h-9 w-9 sm:h-10 sm:w-10"
+            aria-label={t('chat.voiceCall')}
             onClick={() => {
               if (conversationId && participant) {
                 // Dispatch event for CallProvider to handle
-                window.dispatchEvent(new CustomEvent('call:initiate', {
-                  detail: {
-                    conversationId,
-                    remoteUser: {
-                      id: participant.id,
-                      displayName: participant.display_name,
-                      avatarUrl: participant.avatar_url || undefined,
+                window.dispatchEvent(
+                  new CustomEvent('call:initiate', {
+                    detail: {
+                      conversationId,
+                      remoteUser: {
+                        id: participant.id,
+                        displayName: participant.display_name,
+                        avatarUrl: participant.avatar_url || undefined,
+                      },
+                      type: 'voice',
                     },
-                    type: 'voice',
-                  },
-                }));
+                  })
+                )
               }
             }}
           >
@@ -1139,42 +1205,46 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           <Button
             variant="ghost"
             size="icon"
+            className="h-9 w-9 sm:h-10 sm:w-10"
+            aria-label={t('chat.videoCall')}
             onClick={() => {
               if (conversationId && participant) {
                 // Dispatch event for CallProvider to handle
-                window.dispatchEvent(new CustomEvent('call:initiate', {
-                  detail: {
-                    conversationId,
-                    remoteUser: {
-                      id: participant.id,
-                      displayName: participant.display_name,
-                      avatarUrl: participant.avatar_url || undefined,
+                window.dispatchEvent(
+                  new CustomEvent('call:initiate', {
+                    detail: {
+                      conversationId,
+                      remoteUser: {
+                        id: participant.id,
+                        displayName: participant.display_name,
+                        avatarUrl: participant.avatar_url || undefined,
+                      },
+                      type: 'video',
                     },
-                    type: 'video',
-                  },
-                }));
+                  })
+                )
               }
             }}
           >
             <Video className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon">
-            <Search className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setShowMediaGallery(true)}>
-            <Image className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setShowConversationActions(true)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowConversationActions(true)}
+            className="h-9 w-9 sm:h-10 sm:w-10"
+            aria-label={t('chat.options')}
+          >
             <MoreVertical className="h-5 w-5" />
           </Button>
         </div>
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="min-w-0 flex-1 p-2 sm:p-4">
         <div className="space-y-4">
           {messages.map((message, index) => {
-            const showDateSeparator = getDateSeparator(messages, index)
+            const showDateSeparator = getDateSeparator(messages, index, dateLocale)
             const showAvatar = index === 0 || messages[index - 1].sender_id !== message.sender_id
             const isFromMe = message.sender_id === currentUserId
             // Get realtime status for this message
@@ -1205,7 +1275,9 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
                   realtimeStatus={realtimeStatus}
                   reactions={messageReactions.get(message.id) || []}
                   onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
-                  replyToMessage={message.reply_to ? messages.find(m => m.id === message.reply_to) : null}
+                  replyToMessage={
+                    message.reply_to ? messages.find((m) => m.id === message.reply_to) : null
+                  }
                   onReplyClick={(msgId) => {
                     // Scroll to replied message
                     const el = messageRefs.current.get(msgId)
@@ -1220,29 +1292,50 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       </ScrollArea>
 
       {/* Input */}
-      <div className="border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-3">
-        <div className="flex items-end gap-2">
-          <Button variant="ghost" size="icon">
-            <Smile className="h-5 w-5 text-[var(--text-muted)]" />
-          </Button>
+      <div className="border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-2 sm:p-3">
+        <div className="flex min-w-0 items-end gap-0.5 sm:gap-2">
+          <div className="relative shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowEmojiPicker((open) => !open)}
+              className="h-9 w-9 sm:h-10 sm:w-10"
+              aria-label={t('chat.emojiSticker')}
+            >
+              <Smile className="h-5 w-5 text-[var(--text-muted)]" />
+            </Button>
+            {showEmojiPicker && (
+              <EmojiPicker
+                onSelect={(emoji) => {
+                  setInputValue((current) => `${current}${emoji}`)
+                  inputRef.current?.focus()
+                }}
+                onSelectSticker={(sticker) => {
+                  setShowEmojiPicker(false)
+                  void handleSend(sticker)
+                }}
+                onClose={() => setShowEmojiPicker(false)}
+              />
+            )}
+          </div>
 
           <MediaAttachmentButton
             conversationId={conversationId}
             userId={currentUserId}
             onUploadComplete={(msg) => {
               // Add new message to list
-              setMessages(prev => {
-                if (prev.some(m => m.id === msg.id)) return prev
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === msg.id)) return prev
                 return [...prev, msg]
               })
             }}
           />
 
-          <div className="flex-1">
-            <Input
+          <div className="min-w-0 flex-1">
+            <textarea
               ref={inputRef}
-              type="text"
-              placeholder={editingMessage ? 'Edit message...' : 'Type a message...'}
+              rows={1}
+              placeholder={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
               value={inputValue}
               onChange={(e) => {
                 handleInputChange(e)
@@ -1252,7 +1345,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
                 }
               }}
               onKeyDown={handleKeyDown}
-              className="w-full"
+              className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               disabled={sending}
             />
           </div>
@@ -1263,7 +1356,9 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
               variant="ghost"
               size="icon"
               onClick={() => setShowSchedulePicker(true)}
-              title="Schedule message"
+              title={t('chat.schedule')}
+              aria-label={t('chat.schedule')}
+              className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
             >
               <Clock className="h-5 w-5 text-[var(--text-muted)]" />
             </Button>
@@ -1272,18 +1367,15 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={!inputValue.trim() || sending}
             className={cn(
-              'transition-all',
+              'h-9 w-9 shrink-0 transition-all sm:h-10 sm:w-10',
               inputValue.trim() && !sending && 'bg-primary-500 hover:bg-primary-600 text-white'
             )}
+            aria-label={t('chat.send')}
           >
-            {editingMessage ? (
-              <Pencil className="h-5 w-5" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
+            {editingMessage ? <Pencil className="h-5 w-5" /> : <Send className="h-5 w-5" />}
           </Button>
         </div>
       </div>
@@ -1294,7 +1386,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       {/* Media Gallery Modal */}
       {showMediaGallery && (
         <MediaGalleryViewer
-          items={mediaItems.map(item => ({
+          items={mediaItems.map((item) => ({
             id: item.id,
             url: item.url,
             type: item.type,
@@ -1342,7 +1434,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       {showConversationActions && participant && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowConversationActions(false)} />
-          <div ref={conversationActionsRef} className="absolute right-4 top-16">
+          <div
+            ref={conversationActionsRef}
+            className="absolute top-14 right-2 z-50 sm:top-16 sm:right-4"
+          >
             <ConversationActions
               conversationId={conversationId}
               conversationTitle={participant.display_name}
@@ -1351,8 +1446,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
               isMuted={conversationFlags.is_muted}
               isArchived={conversationFlags.is_archived}
               onClose={() => setShowConversationActions(false)}
+              onSearch={() => setShowSearch(true)}
+              onOpenMedia={() => setShowMediaGallery(true)}
               onAction={(updates) => {
-                setConversationFlags(prev => ({
+                setConversationFlags((prev) => ({
                   ...prev,
                   ...updates,
                 }))
@@ -1362,32 +1459,51 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
         </>
       )}
 
+      <SearchModal
+        isOpen={showSearch}
+        onClose={() => setShowSearch(false)}
+        conversationId={conversationId}
+        currentUserId={currentUserId}
+        onSelectMessage={(result) => {
+          const messageElement = messageRefs.current.get(result.id)
+          if (!messageElement) {
+            router.replace(`/chats/${conversationId}?scrollTo=${result.id}`)
+            return
+          }
+
+          messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          messageElement.classList.add('ring-2', 'ring-primary-500', 'ring-offset-2')
+          window.setTimeout(() => {
+            messageElement.classList.remove('ring-2', 'ring-primary-500', 'ring-offset-2')
+          }, 2000)
+        }}
+      />
+
       {/* Schedule Picker Modal */}
       <SchedulePicker
         isOpen={showSchedulePicker}
         onClose={() => setShowSchedulePicker(false)}
         onSchedule={async (scheduledAt) => {
           if (conversationId && inputValue.trim()) {
-            const result = await createSchedule(
-              conversationId,
-              inputValue.trim(),
-              scheduledAt,
-              { replyTo: replyToMessage?.id }
-            )
+            const result = await createSchedule(conversationId, inputValue.trim(), scheduledAt, {
+              replyTo: replyToMessage?.id,
+            })
             if (result.success) {
               setInputValue('')
               clearReply()
               clearDraft(conversationId)
               addToast({
                 type: 'system',
-                title: 'Message scheduled',
-                body: `Will be sent at ${scheduledAt.toLocaleString()}`,
+                title: t('chat.scheduled'),
+                body: t('chat.scheduledAt', {
+                  time: scheduledAt.toLocaleString(dateLocale),
+                }),
               })
             } else {
               addToast({
                 type: 'system',
-                title: 'Failed to schedule',
-                body: result.error || 'Unknown error',
+                title: t('chat.scheduleFailed'),
+                body: result.error || t('common.unknownError'),
               })
             }
           }

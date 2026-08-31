@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Image as ImageIcon, Film, Music, FileText, Download, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSignedUrl } from '@/hooks/use-signed-url'
+import { useI18n } from '@/lib/i18n'
 
 interface MediaItem {
   id: string
@@ -28,11 +29,11 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function getFileIcon(type: string) {
-  if (type === 'image') return ImageIcon
-  if (type === 'video') return Film
-  if (type === 'audio') return Music
-  return FileText
+function FileTypeIcon({ type, className }: { type: string; className?: string }) {
+  if (type === 'image') return <ImageIcon className={className} />
+  if (type === 'video') return <Film className={className} />
+  if (type === 'audio') return <Music className={className} />
+  return <FileText className={className} />
 }
 
 function getFileColor(type: string): string {
@@ -43,15 +44,12 @@ function getFileColor(type: string): string {
 }
 
 export function MediaGallery({ mediaItems, totalCount, onShowAll, className }: MediaGalleryProps) {
+  const { t } = useI18n()
   if (mediaItems.length === 0) {
     return (
       <div className={cn('py-4', className)}>
-        <h3 className="mb-3 text-sm font-medium text-[var(--text-muted)]">
-          Media, Links and Docs
-        </h3>
-        <p className="text-sm text-[var(--text-secondary)]">
-          No media shared yet
-        </p>
+        <h3 className="mb-3 text-sm font-medium text-[var(--text-muted)]">{t('gallery.title')}</h3>
+        <p className="text-sm text-[var(--text-secondary)]">{t('gallery.none')}</p>
       </div>
     )
   }
@@ -59,14 +57,9 @@ export function MediaGallery({ mediaItems, totalCount, onShowAll, className }: M
   return (
     <div className={cn('py-4', className)}>
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-[var(--text-muted)]">
-          Media, Links and Docs
-        </h3>
+        <h3 className="text-sm font-medium text-[var(--text-muted)]">{t('gallery.title')}</h3>
         {totalCount > 0 && (
-          <button
-            onClick={onShowAll}
-            className="text-primary-500 text-xs hover:underline"
-          >
+          <button onClick={onShowAll} className="text-primary-500 text-xs hover:underline">
             {totalCount}
           </button>
         )}
@@ -83,18 +76,19 @@ export function MediaGallery({ mediaItems, totalCount, onShowAll, className }: M
 
 // Individual gallery item that resolves signed URL
 function MediaGalleryItem({ item }: { item: MediaItem }) {
+  const { t } = useI18n()
   const { signedUrl } = useSignedUrl(item.url)
 
   if (item.type === 'image' && signedUrl) {
     return (
       <button
         onClick={() => signedUrl && window.open(signedUrl, '_blank')}
-        className="aspect-square overflow-hidden rounded-lg hover:opacity-80 transition-opacity"
-        title={item.name || 'Image'}
+        className="aspect-square overflow-hidden rounded-lg transition-opacity hover:opacity-80"
+        title={item.name || t('gallery.images')}
       >
         <img
           src={signedUrl}
-          alt={item.name || 'Image'}
+          alt={item.name || t('gallery.images')}
           className="h-full w-full object-cover"
         />
       </button>
@@ -102,18 +96,17 @@ function MediaGalleryItem({ item }: { item: MediaItem }) {
   }
 
   // Render file icon for non-image types
-  const Icon = getFileIcon(item.type)
   const color = getFileColor(item.type)
   return (
     <button
       onClick={() => signedUrl && window.open(signedUrl, '_blank')}
       className={cn(
-        'flex aspect-square items-center justify-center rounded-lg text-white hover:opacity-80 transition-opacity',
+        'flex aspect-square items-center justify-center rounded-lg text-white transition-opacity hover:opacity-80',
         color
       )}
-      title={item.name || 'File'}
+      title={item.name || t('gallery.files')}
     >
-      <Icon className="h-6 w-6" />
+      <FileTypeIcon type={item.type} className="h-6 w-6" />
     </button>
   )
 }
@@ -127,41 +120,40 @@ interface MediaGalleryViewerProps {
 type FilterType = 'all' | 'image' | 'video' | 'audio' | 'file'
 
 export function MediaGalleryViewer({ items, onClose }: MediaGalleryViewerProps) {
+  const { t } = useI18n()
   const [filter, setFilter] = useState<FilterType>('all')
 
   if (items.length === 0) return null
 
-  const filteredItems = filter === 'all'
-    ? items
-    : items.filter(item => item.type === filter)
+  const filteredItems = filter === 'all' ? items : items.filter((item) => item.type === filter)
 
   const counts = {
     all: items.length,
-    image: items.filter(i => i.type === 'image').length,
-    video: items.filter(i => i.type === 'video').length,
-    audio: items.filter(i => i.type === 'audio').length,
-    file: items.filter(i => i.type === 'file').length,
+    image: items.filter((i) => i.type === 'image').length,
+    video: items.filter((i) => i.type === 'video').length,
+    audio: items.filter((i) => i.type === 'audio').length,
+    file: items.filter((i) => i.type === 'file').length,
   }
 
   const tabs: { key: FilterType; label: string; count: number }[] = [
-    { key: 'all' as FilterType, label: 'All', count: counts.all },
-    { key: 'image' as FilterType, label: 'Images', count: counts.image },
-    { key: 'video' as FilterType, label: 'Videos', count: counts.video },
-    { key: 'audio' as FilterType, label: 'Audio', count: counts.audio },
-    { key: 'file' as FilterType, label: 'Files', count: counts.file },
-  ].filter(tab => tab.count > 0)
+    { key: 'all' as FilterType, label: t('gallery.all'), count: counts.all },
+    { key: 'image' as FilterType, label: t('gallery.images'), count: counts.image },
+    { key: 'video' as FilterType, label: t('gallery.videos'), count: counts.video },
+    { key: 'audio' as FilterType, label: t('gallery.audio'), count: counts.audio },
+    { key: 'file' as FilterType, label: t('gallery.files'), count: counts.file },
+  ].filter((tab) => tab.count > 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4">
       <div className="flex h-full max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl bg-[var(--bg-panel)] shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] p-4">
           <div>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-              Media, Links and Docs
+              {t('gallery.title')}
             </h2>
             <p className="text-xs text-[var(--text-muted)]">
-              {items.length} files shared
+              {t('gallery.shared', { count: items.length })}
             </p>
           </div>
           <button
@@ -173,13 +165,13 @@ export function MediaGalleryViewer({ items, onClose }: MediaGalleryViewerProps) 
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 border-b border-[var(--border-default)] px-4 py-2">
-          {tabs.map(tab => (
+        <div className="flex gap-2 overflow-x-auto border-b border-[var(--border-default)] px-4 py-2">
+          {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setFilter(tab.key)}
               className={cn(
-                'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                 filter === tab.key
                   ? 'bg-primary-500 text-white'
                   : 'bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:bg-[var(--bg-active)]'
@@ -194,19 +186,19 @@ export function MediaGalleryViewer({ items, onClose }: MediaGalleryViewerProps) 
         <div className="flex-1 overflow-y-auto p-4">
           {filteredItems.length === 0 ? (
             <div className="flex h-full items-center justify-center text-[var(--text-muted)]">
-              No items in this category
+              {t('gallery.emptyCategory')}
             </div>
           ) : filter === 'image' ? (
             // Image grid view
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {filteredItems.map(item => (
+              {filteredItems.map((item) => (
                 <GalleryImageItem key={item.id} item={item} />
               ))}
             </div>
           ) : (
             // File list view for videos/audio/files
             <div className="space-y-2">
-              {filteredItems.map(item => (
+              {filteredItems.map((item) => (
                 <GalleryFileItem key={item.id} item={item} />
               ))}
             </div>
@@ -218,6 +210,7 @@ export function MediaGalleryViewer({ items, onClose }: MediaGalleryViewerProps) 
 }
 
 function GalleryImageItem({ item }: { item: MediaItem }) {
+  const { t } = useI18n()
   const { signedUrl } = useSignedUrl(item.url)
 
   return (
@@ -225,8 +218,8 @@ function GalleryImageItem({ item }: { item: MediaItem }) {
       {signedUrl ? (
         <img
           src={signedUrl}
-          alt={item.name || 'Image'}
-          className="h-full w-full object-cover cursor-pointer hover:scale-105 transition-transform"
+          alt={item.name || t('gallery.images')}
+          className="h-full w-full cursor-pointer object-cover transition-transform hover:scale-105"
           onClick={() => signedUrl && window.open(signedUrl, '_blank')}
         />
       ) : (
@@ -237,21 +230,18 @@ function GalleryImageItem({ item }: { item: MediaItem }) {
 }
 
 function GalleryFileItem({ item }: { item: MediaItem }) {
+  const { t } = useI18n()
   const { signedUrl } = useSignedUrl(item.url)
-  const Icon = getFileIcon(item.type)
   const color = getFileColor(item.type)
 
   return (
     <div className="flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-[var(--bg-hover)]">
-      <div className={cn(
-        'flex h-12 w-12 items-center justify-center rounded-lg shrink-0',
-        color
-      )}>
-        <Icon className="h-6 w-6 text-white" />
+      <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-lg', color)}>
+        <FileTypeIcon type={item.type} className="h-6 w-6 text-white" />
       </div>
       <div className="flex-1 overflow-hidden">
         <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-          {item.name || 'Untitled'}
+          {item.name || t('gallery.untitled')}
         </p>
         <p className="text-xs text-[var(--text-muted)]">
           {formatFileSize(item.size)}

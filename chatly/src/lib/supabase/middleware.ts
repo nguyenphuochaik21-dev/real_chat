@@ -33,14 +33,15 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Protected routes
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
-                      request.nextUrl.pathname.startsWith('/register')
-  const isProtectedRoute = request.nextUrl.pathname.startsWith('/chats') ||
-                           request.nextUrl.pathname.startsWith('/contacts') ||
-                           request.nextUrl.pathname.startsWith('/calls') ||
-                           request.nextUrl.pathname.startsWith('/favorites') ||
-                           request.nextUrl.pathname.startsWith('/status') ||
-                           request.nextUrl.pathname.startsWith('/settings')
+  const isAuthRoute =
+    request.nextUrl.pathname.startsWith('/login') ||
+    request.nextUrl.pathname.startsWith('/register')
+  const isProtectedRoute =
+    request.nextUrl.pathname.startsWith('/chats') ||
+    request.nextUrl.pathname.startsWith('/contacts') ||
+    request.nextUrl.pathname.startsWith('/calls') ||
+    request.nextUrl.pathname.startsWith('/status') ||
+    request.nextUrl.pathname.startsWith('/settings')
 
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone()

@@ -12,6 +12,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 **Trạng thái**: ✅ Hoàn thành (2026-08-22)
 
 ### Tasks
+
 - [x] Nghiên cứu stack (Next.js 16 + Supabase)
 - [x] Viết CLAUDE.md và docs/
 - [x] Tạo agents và skills tùy chỉnh
@@ -22,6 +23,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Tạo repo git và push initial commit
 
 ### Deliverable
+
 - Project skeleton chạy được `npm run dev`
 - Tất cả docs files được viết xong
 - Git history sạch
@@ -36,6 +38,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ### Tasks
 
 #### 1.1. Setup UI foundation ✅
+
 - [x] Setup Tailwind v4 với design tokens
 - [x] Setup next-themes cho dark/light mode
 - [x] Cài shadcn/ui: button, input, dropdown-menu, dialog, avatar, badge, tooltip, scroll-area, separator, switch, tabs
@@ -43,6 +46,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Tạo layout root với theme provider
 
 #### 1.2. Mock data layer ✅
+
 - [x] Tạo `lib/mock/users.ts` — 10 user mẫu với avatar, online status, etc.
 - [x] Tạo `lib/mock/conversations.ts` — 8 conversations
 - [x] Tạo `lib/mock/messages.ts` — 50+ messages với timestamps
@@ -51,13 +55,15 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Helper hook `useCurrentUser()` trả về user giả lập
 
 #### 1.3. Sidebar (left navigation) ✅
+
 - [x] Component `Sidebar` với logo + nav items
-- [x] Icons: chat, contacts, calls, favorites, status, settings
+- [x] Icons: chat, contacts, calls, status, settings
 - [x] Active state highlight
 - [x] User avatar ở dưới cùng với menu
 - [x] Mobile: collapse thành bottom nav (optional cho Phase 1)
 
 #### 1.4. Chats list (panel thứ 2) ✅
+
 - [x] Component `ChatsListPanel`
 - [x] Search input ở top
 - [x] Tabs: All / Unread / Groups / Personal
@@ -66,8 +72,9 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Empty state khi không có chat
 
 #### 1.5. Chat view (panel thứ 3) ✅
+
 - [x] Component `ChatView`
-- [x] Header: avatar + tên + online status + actions (call, video, search, menu)
+- [x] Header: avatar + tên + online status + actions (call, video, menu)
 - [x] Date separator ("Saturday, Aug 22")
 - [x] Message bubble: incoming (trái, trắng) vs outgoing (phải, indigo)
 - [x] Message status: sent (✓) / delivered (✓✓) / read (✓✓ xanh)
@@ -76,6 +83,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Auto-scroll to bottom
 
 #### 1.6. Info panel (panel thứ 4 - mở rộng) ✅
+
 - [x] Component `InfoPanel` với gradient header
 - [x] Avatar lớn + tên + status
 - [x] Action buttons: Call, Video, Mute, Search
@@ -87,42 +95,50 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Close button (X)
 
 #### 1.7. Contacts page ✅
+
 - [x] List contacts theo alphabet với letter headers (A, D, E, L, M, S)
 - [x] Search bar
 - [x] Action icons (call, message)
 - [x] Online indicator
 
 #### 1.8. Calls page ✅
+
 - [x] Tabs: All / Missed / Incoming / Outgoing
 - [x] Call item: avatar + tên + time + duration + call type icon (video/voice)
 - [x] Filter
 
-#### 1.9. Favorites page ✅
-- [x] List starred contacts với star icon bên phải
+#### 1.9. Navigation cleanup ✅
+
+- [x] Removed the Favorites page and navigation entry
 
 #### 1.10. Status page ✅
+
 - [x] "My Status" ở trên với "+" add button
 - [x] Recent updates list (status mới nhất)
 - [x] Seen status
 
 #### 1.11. Settings page ✅
+
 - [x] Profile card ở trên (avatar, tên, bio, QR)
 - [x] Sections: Account, Notifications, Appearance, Chats, Storage & Data, Help, Invite Friends
 - [x] Mỗi section: icon + title + description + arrow
 - [x] Sub-pages với nội dung chi tiết (ít nhất Account và Appearance phải có nội dung thật)
 
 #### 1.12. Routing & navigation ✅
+
 - [x] Setup route groups `(chat)` với layout chung (sidebar + panels)
 - [x] URL state cho panel nào đang mở (`?panel=info`)
 - [x] Active conversation trong URL `/chats/[id]`
 
 #### 1.13. Polish ✅
+
 - [x] Animations (panel slide, message fade in)
 - [x] Loading states
 - [x] Empty states
 - [x] Error boundaries
 
 ### Deliverable ✅
+
 - Toàn bộ UI giống template, navigation hoạt động, dark/light mode mượt
 - Mock data hiển thị đúng
 - Responsive cơ bản
@@ -137,6 +153,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ### Tasks
 
 #### 2.1. Supabase setup ✅
+
 - [x] Tạo project Supabase
 - [x] Setup `.env.local` với keys
 - [x] `supabase init` và `supabase start` local
@@ -144,6 +161,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Tạo `lib/supabase/{client,server,middleware}.ts`
 
 #### 2.2. Auth flow ✅
+
 - [x] Middleware refresh session
 - [x] Login page (email + OAuth buttons)
 - [x] Register page
@@ -153,21 +171,25 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Protected routes (redirect to login)
 
 #### 2.3. Database migrations ✅
+
 - [x] Chạy các migrations từ docs/02-database.md
 - [x] Generate TypeScript types từ Supabase
 - [x] Seed data cho dev environment
 
 #### 2.4. Thay mock bằng real data ✅
+
 - [x] Hook `useCurrentUser()` đổi sang `supabase.auth.getUser()`
 - [x] Conversations list từ `conversations` table
 - [x] Messages từ `messages` table
 - [x] Server Actions cho mutations
 
 #### 2.5. Profile setup ✅
+
 - [x] Onboarding sau khi đăng ký (tên, avatar)
 - [x] User settings persist vào `profiles`
 
 ### Deliverable ✅
+
 - User đăng ký/đăng nhập được
 - Conversations và messages lưu vào Postgres
 - Còn chưa realtime (Phase 3)
@@ -181,6 +203,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ### Tasks
 
 #### 3.1. Realtime messages ✅
+
 - [x] Hook `useRealtimeMessages(conversationId)`
 - [x] Subscribe broadcast channel `room:${conversationId}`
 - [x] Optimistic update khi gửi
@@ -188,26 +211,31 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Hiển thị tin nhắn mới cuối list + auto-scroll
 
 #### 3.2. Online status ✅
+
 - [x] Presence channel `user:${userId}`
 - [x] Hiển thị online/offline real-time
 - [x] Last seen
 
 #### 3.3. Typing indicator ✅
+
 - [x] Broadcast `typing:{start,stop}` event
 - [x] Debounce input
 - [x] Hiển thị "Sarah is typing..." ở header chat
 
 #### 3.4. Read receipts ✅
+
 - [x] Update `last_read_at` khi mở conversation
 - [x] Broadcast `read:${messageId}` event
 - [x] Đổi ✓✓ → ✓✓ xanh khi người nhận đọc
 
 #### 3.5. Unread counts ✅
+
 - [x] Badge trên sidebar item
 - [x] Badge tổng trên sidebar icon Chats
 - [x] Cập nhật realtime
 
 ### Deliverable ✅
+
 - Chat realtime hoàn chỉnh như WhatsApp/Telegram
 - 2 user test thử trên 2 browser khác nhau
 
@@ -221,22 +249,26 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ### Tasks
 
 #### 4.1. Media & Files ✅
+
 - [x] Upload ảnh/file qua Supabase Storage
 - [x] Preview trong chat
 - [x] Media gallery trong Info Panel
 - [x] File size limit, validation
 
 #### 4.2. Search ✅
+
 - [x] Global search (tên, nội dung message)
 - [x] Full-text search với Postgres `tsvector`
 - [x] Filter by sender, date
 
 #### 4.3. Notifications ✅
+
 - [x] Push notifications (Web Push API)
 - [x] In-app notification center
 - [x] Notification preferences trong Settings
 
 #### 4.4. Message features ✅
+
 - [x] Reply to message
 - [x] Edit message
 - [x] Delete message (soft delete)
@@ -245,6 +277,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Star/Pin message
 
 #### 4.5. Conversation management ✅
+
 - [x] Archive conversations (with Archived tab)
 - [x] Pin/Unpin conversation
 - [x] Mute/Unmute conversation
@@ -255,6 +288,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Filter blocked users from conversations list
 
 #### 4.6. Scheduled Messages, Drafts & Labels ✅ (2026-08-27)
+
 - [x] **Scheduled Messages**: Schedule picker với tùy chọn thời gian (30m, 1h, Tomorrow, Custom)
 - [x] **Auto-send**: Client polling (30s) + pg_cron (1 phút) cho scheduled messages
 - [x] **Draft Messages**: Auto-save/restore với Zustand store
@@ -263,6 +297,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] **Realtime sync**: Labels sync khi thay đổi
 
 #### 4.7. Voice & Video call (UI only) ✅ (2026-08-27)
+
 - [x] **Call Store**: Zustand store với state management (calling, ringing, connected, ended)
 - [x] **Incoming Call Modal**: Ringing UI với Accept/Decline buttons
 - [x] **Call Screen**: Full-screen call UI với avatar, duration timer
@@ -272,6 +307,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] **Duration Timer**: Format MM:SS khi call connected
 
 ### Deliverable
+
 - App feature-rich như các messenger phổ biến
 
 ---
@@ -284,6 +320,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ### Tasks
 
 #### 5.1. Database Schema ✅
+
 - [x] Migration `20250105000000_webrtc_calls.sql`
 - [x] Bảng `call_sessions` với WebRTC signaling data (offer_sdp, answer_sdp, ice_candidates)
 - [x] Bảng `call_history` cho lịch sử cuộc gọi
@@ -293,6 +330,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Auto-end missed calls sau 60 giây
 
 #### 5.2. WebRTC Service ✅
+
 - [x] `lib/webrtc.ts` - WebRTCService class quản lý RTCPeerConnection
 - [x] Signaling qua Supabase Realtime broadcast channels
 - [x] STUN servers: Google public STUN servers
@@ -301,12 +339,14 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Helper functions: `isWebRTCSupported()`, `requestMediaPermissions()`
 
 #### 5.3. Call Provider & Hooks ✅
+
 - [x] `hooks/use-webrtc-call.ts` - Hook quản lý WebRTC lifecycle
 - [x] `hooks/use-call-history.ts` - Hook fetch và subscribe call history
 - [x] `components/calls/call-provider.tsx` - Provider wrap app để quản lý calls
 - [x] Event-based communication: `call:initiate`, `call:accept`, `call:decline`, `call:end`
 
 #### 5.4. UI Integration ✅
+
 - [x] Cập nhật `call-screen.tsx` với remote stream video display
 - [x] Cập nhật `incoming-call-modal.tsx` với real accept/decline
 - [x] Cập nhật `chat-view.tsx` dispatch events thay vì gọi store trực tiếp
@@ -314,11 +354,13 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Cập nhật `calls/page.tsx` sử dụng `useCallHistory` thay vì mock data
 
 #### 5.5. Call History ✅
+
 - [x] Group calls by date
 - [x] Filter: All, Missed, Incoming, Outgoing
 - [x] Realtime updates khi có cuộc gọi mới
 
 ### Deliverable ✅
+
 - ✅ Gọi được giữa 2 user
 - ✅ Cuộc gọi voice/video hoạt động qua WebRTC
 - ✅ Lịch sử cuộc gọi được lưu
@@ -330,6 +372,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 **Mục tiêu**: Mở rộng cho nhóm và status, polish cuối cùng.
 
 ### Tasks
+
 - [ ] Group chat (tạo, mời, rời nhóm)
 - [ ] Group admin permissions
 - [ ] Status/Story (24h tự xóa)
@@ -340,6 +383,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [ ] Accessibility audit
 
 ### Deliverable
+
 - App hoàn chỉnh production-ready
 
 ---
@@ -347,6 +391,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ## Tiêu chí "Done" cho mỗi phase
 
 Phase X được tính là xong khi:
+
 1. ✅ Tất cả tasks trong phase đó ✅
 2. ✅ Có demo được (screenshot/video)
 3. ✅ Code đã review và merge vào main branch

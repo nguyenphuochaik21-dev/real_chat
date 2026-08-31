@@ -13,12 +13,13 @@ export function useSignedUrl(urlOrPath: string | null | undefined, expiresIn = 3
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
     if (!urlOrPath) {
-      setSignedUrl(null)
-      return
+      const timeoutId = window.setTimeout(() => setSignedUrl(null), 0)
+      return () => window.clearTimeout(timeoutId)
     }
 
-    let cancelled = false
     const fetchUrl = async () => {
       setLoading(true)
       setError(null)
@@ -38,10 +39,11 @@ export function useSignedUrl(urlOrPath: string | null | undefined, expiresIn = 3
       }
     }
 
-    fetchUrl()
+    const timeoutId = window.setTimeout(() => void fetchUrl(), 0)
 
     return () => {
       cancelled = true
+      window.clearTimeout(timeoutId)
     }
   }, [urlOrPath, expiresIn])
 

@@ -7,8 +7,10 @@ import { ChatsList } from '@/components/chat/chats-list'
 import { ChatView } from '@/components/chat/chat-view'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/lib/i18n'
 
 export default function ChatsLayout() {
+  const { t } = useI18n()
   const [currentUserId, setCurrentUserId] = useState('')
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
@@ -24,7 +26,9 @@ export default function ChatsLayout() {
   useEffect(() => {
     const supabase = createClient()
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setCurrentUserId(user?.id || '')
     }
     getUser()
@@ -35,11 +39,11 @@ export default function ChatsLayout() {
   }
 
   return (
-    <div className="flex h-full flex-1">
+    <div className="flex h-full min-w-0 flex-1 overflow-hidden">
       {/* Chats list — mobile (only when no conversation open) + desktop always */}
       <div
         className={cn(
-          'md:w-80 md:shrink-0 md:block',
+          'min-w-0 md:block md:w-80 md:shrink-0',
           conversationId ? 'hidden' : 'block w-full'
         )}
       >
@@ -49,7 +53,7 @@ export default function ChatsLayout() {
       {/* Chat view — full width on mobile (Messenger style), beside list on desktop */}
       <div
         className={cn(
-          'flex min-w-0 md:flex-1',
+          'flex min-w-0 overflow-hidden md:flex-1',
           conversationId ? 'flex-1' : 'hidden md:flex'
         )}
       >
@@ -64,8 +68,8 @@ export default function ChatsLayout() {
         ) : (
           <div className="flex h-full flex-1 flex-col items-center justify-center bg-[var(--bg-app)] text-[var(--text-muted)]">
             <div className="text-center">
-              <p className="text-lg">Select a conversation</p>
-              <p className="mt-2 text-sm">Choose a chat from the list</p>
+              <p className="text-lg">{t('chat.selectConversation')}</p>
+              <p className="mt-2 text-sm">{t('chat.chooseConversation')}</p>
             </div>
           </div>
         )}

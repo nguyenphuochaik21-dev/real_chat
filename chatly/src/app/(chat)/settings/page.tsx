@@ -17,6 +17,7 @@ import {
   Lock,
   QrCode,
   LogOut,
+  Languages,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -26,6 +27,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
 import type { Tables } from '@/types'
+import { useI18n, type Locale } from '@/lib/i18n'
 
 type Profile = Tables<'profiles'>
 
@@ -75,6 +77,7 @@ function SettingsSection({ title, items }: SettingsSectionProps) {
 }
 
 export default function SettingsPage() {
+  const { locale, setLocale, t } = useI18n()
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const [notifications, setNotifications] = useState(true)
@@ -84,13 +87,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const fetchProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
+        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
         setProfile(data)
       }
       setLoading(false)
@@ -106,14 +107,14 @@ export default function SettingsPage() {
   const userForAvatar = profile || {
     id: 'unknown',
     username: 'user',
-    display_name: 'User',
+    display_name: t('common.user'),
     avatar_url: null,
   }
 
   if (loading) {
     return (
       <div className="flex h-full flex-1 items-center justify-center bg-[var(--bg-app)]">
-        <div className="h-8 w-8 animate-spin rounded-full border-3 border-primary-500 border-t-transparent" />
+        <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-3 border-t-transparent" />
       </div>
     )
   }
@@ -122,7 +123,7 @@ export default function SettingsPage() {
     <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
-        <h1 className="text-xl font-semibold text-[var(--text-primary)]">Settings</h1>
+        <h1 className="text-xl font-semibold text-[var(--text-primary)]">{t('settings.title')}</h1>
       </div>
 
       {/* Content */}
@@ -134,11 +135,18 @@ export default function SettingsPage() {
               <Avatar user={userForAvatar} size="xl" showStatus />
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                  {profile?.display_name || 'User'}
+                  {profile?.display_name || t('common.user')}
                 </h2>
-                <p className="text-sm text-[var(--text-muted)]">{profile?.bio || 'No bio yet'}</p>
-                <Button variant="ghost" size="sm" className="mt-2" onClick={() => router.push('/settings/profile')}>
-                  Edit Profile
+                <p className="text-sm text-[var(--text-muted)]">
+                  {profile?.bio || t('settings.noBio')}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => router.push('/settings/profile')}
+                >
+                  {t('settings.editProfile')}
                 </Button>
               </div>
               <Button variant="ghost" size="icon">
@@ -149,36 +157,36 @@ export default function SettingsPage() {
 
           {/* Settings Sections */}
           <SettingsSection
-            title="Account"
+            title={t('settings.account')}
             items={[
               {
                 icon: User,
-                title: 'Profile',
-                description: 'Change name, photo, about',
+                title: t('settings.profile'),
+                description: t('settings.profileHint'),
                 href: '/settings/profile',
               },
               {
                 icon: Shield,
-                title: 'Privacy',
-                description: 'Block contacts, disappearing messages',
+                title: t('settings.privacy'),
+                description: t('settings.privacyHint'),
                 href: '/settings/privacy',
               },
               {
                 icon: Lock,
-                title: 'Security',
-                description: 'Two-step verification, password',
+                title: t('settings.security'),
+                description: t('settings.securityHint'),
                 href: '/settings/security',
               },
             ]}
           />
 
           <SettingsSection
-            title="Notifications"
+            title={t('settings.notifications')}
             items={[
               {
                 icon: Bell,
-                title: 'Notifications',
-                description: 'Message, group, call tones',
+                title: t('settings.notifications'),
+                description: t('settings.notificationsHint'),
                 rightElement: (
                   <button
                     onClick={() => setNotifications(!notifications)}
@@ -200,60 +208,78 @@ export default function SettingsPage() {
           />
 
           <SettingsSection
-            title="Appearance"
+            title={t('settings.appearance')}
             items={[
               {
                 icon: theme === 'dark' ? Sun : Moon,
-                title: theme === 'dark' ? 'Light Mode' : 'Dark Mode',
-                description: theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
+                title: theme === 'dark' ? t('settings.lightMode') : t('settings.darkMode'),
+                description:
+                  theme === 'dark' ? t('settings.switchLight') : t('settings.switchDark'),
                 onClick: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
               },
               {
                 icon: Palette,
-                title: 'Theme',
-                description: 'Blue, Green, Pink, Purple',
+                title: t('settings.theme'),
+                description: t('settings.themeHint'),
                 href: '/settings/theme',
+              },
+              {
+                icon: Languages,
+                title: t('settings.language'),
+                description: t('settings.languageHint'),
+                rightElement: (
+                  <select
+                    value={locale}
+                    onChange={(event) => setLocale(event.target.value as Locale)}
+                    onClick={(event) => event.stopPropagation()}
+                    className="focus:ring-primary-500 rounded-lg border border-[var(--border-default)] bg-[var(--bg-app)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:ring-2 focus:outline-none"
+                    aria-label={t('settings.language')}
+                  >
+                    <option value="vi">{t('settings.vietnamese')}</option>
+                    <option value="en">{t('settings.english')}</option>
+                  </select>
+                ),
               },
             ]}
           />
 
           <SettingsSection
-            title="Chats"
+            title={t('nav.chats')}
             items={[
               {
                 icon: MessageSquare,
-                title: 'Chat History',
-                description: 'Export, delete chat history',
+                title: t('settings.chatHistory'),
+                description: t('settings.chatHistoryHint'),
                 href: '/settings/chats',
               },
             ]}
           />
 
           <SettingsSection
-            title="Storage & Data"
+            title={t('settings.storageData')}
             items={[
               {
                 icon: Database,
-                title: 'Storage',
-                description: '2.3 GB used',
+                title: t('settings.storage'),
+                description: t('settings.storageHint'),
                 href: '/settings/storage',
               },
             ]}
           />
 
           <SettingsSection
-            title="Help"
+            title={t('settings.help')}
             items={[
               {
                 icon: HelpCircle,
-                title: 'Help Center',
-                description: 'FAQ, contact us',
+                title: t('settings.helpCenter'),
+                description: t('settings.helpHint'),
                 href: '/settings/help',
               },
               {
                 icon: Share2,
-                title: 'Invite Friends',
-                description: 'Share with friends',
+                title: t('settings.invite'),
+                description: t('settings.inviteHint'),
                 href: '/settings/invite',
               },
             ]}
@@ -265,8 +291,8 @@ export default function SettingsPage() {
             items={[
               {
                 icon: LogOut,
-                title: 'Sign Out',
-                description: 'Sign out of your account',
+                title: t('settings.signOut'),
+                description: t('settings.signOutHint'),
                 onClick: handleSignOut,
                 rightElement: null,
               },

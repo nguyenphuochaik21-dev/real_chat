@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import type { Tables } from '@/types'
+import { useI18n } from '@/lib/i18n'
 
 type Message = Tables<'messages'>
 
@@ -21,11 +22,12 @@ interface ReplyPreviewProps {
 }
 
 export function ReplyPreview({ replyingTo, replyingToProfile }: ReplyPreviewProps) {
+  const { t } = useI18n()
   const { clearReply } = useMessageActionsStore()
 
   if (!replyingTo) return null
 
-  const displayName = replyingToProfile?.display_name || 'User'
+  const displayName = replyingToProfile?.display_name || t('common.user')
   const avatarUrl = replyingToProfile?.avatar_url || null
 
   return (
@@ -37,7 +39,7 @@ export function ReplyPreview({ replyingTo, replyingToProfile }: ReplyPreviewProp
       )}
     >
       {/* Reply indicator bar */}
-      <div className="flex h-8 w-1 rounded-full bg-primary-500" />
+      <div className="bg-primary-500 flex h-8 w-1 rounded-full" />
 
       {/* Avatar */}
       <Avatar
@@ -51,11 +53,9 @@ export function ReplyPreview({ replyingTo, replyingToProfile }: ReplyPreviewProp
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        <p className="text-xs font-medium text-primary-500">
-          {displayName}
-        </p>
+        <p className="text-primary-500 text-xs font-medium">{displayName}</p>
         <p className="truncate text-sm text-[var(--text-muted)]">
-          {replyingTo.content || '[Media]'}
+          {replyingTo.content || t('chat.mediaQuote')}
         </p>
       </div>
 
@@ -65,7 +65,7 @@ export function ReplyPreview({ replyingTo, replyingToProfile }: ReplyPreviewProp
         className={cn(
           'flex h-7 w-7 items-center justify-center rounded-lg',
           'text-[var(--text-muted)] hover:bg-[var(--bg-hover)]',
-          'hover:text-[var(--text-primary)] transition-colors'
+          'transition-colors hover:text-[var(--text-primary)]'
         )}
       >
         <X className="h-4 w-4" />

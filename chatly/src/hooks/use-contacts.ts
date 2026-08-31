@@ -40,7 +40,8 @@ export function useContacts(userId: string | null) {
   }, [userId, supabase])
 
   useEffect(() => {
-    fetchContacts()
+    const timeoutId = window.setTimeout(() => void fetchContacts(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [fetchContacts])
 
   return { contacts, loading, error, refetch: fetchContacts }
@@ -79,7 +80,8 @@ export function useProfile(profileId: string | null) {
       }
     }
 
-    fetchProfile()
+    const timeoutId = window.setTimeout(() => void fetchProfile(), 0)
+    return () => window.clearTimeout(timeoutId)
   }, [profileId, supabase])
 
   return { profile, loading, error }
