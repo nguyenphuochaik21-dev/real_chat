@@ -30,7 +30,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const isInChat = /^\/chats\/[^/]+/.test(pathname)
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-app)]">
+    <div className="flex h-[100dvh] w-screen overflow-hidden bg-[var(--bg-app)]">
       <div className="hidden md:block">
         <Sidebar />
       </div>

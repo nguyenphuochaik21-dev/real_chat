@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { resolvePresence, type PresenceStatus as ResolvedStatus } from '@/lib/presence'
 
 type UserStatus = 'online' | 'offline' | 'away' | 'busy' | null
 
@@ -14,6 +15,7 @@ interface UserWithStatus extends BaseUser {
 
 interface UserWithoutStatus extends BaseUser {
   status?: never
+  last_seen?: string | null
 }
 
 type AvatarUser = UserWithStatus | UserWithoutStatus
@@ -24,6 +26,8 @@ interface AvatarProps {
   showStatus?: boolean
   /** Override the user's status - useful for realtime presence */
   statusOverride?: UserStatus
+  /** When statusOverride is used, supply the last_seen so we can still detect stale "online" */
+  lastSeen?: string | null
   className?: string
 }
 
@@ -76,7 +80,7 @@ function getColorFromName(name: string): string {
   return colors[index % colors.length]
 }
 
-export function Avatar({ user, size = 'md', showStatus = false, statusOverride, className }: AvatarProps) {
+export function Avatar({ user, size = 'md', showStatus = false, statusOverride, lastSeen, className }: AvatarProps) {
   // Safety check - if user is null/undefined, render a placeholder
   if (!user) {
     return (
@@ -94,9 +98,18 @@ export function Avatar({ user, size = 'md', showStatus = false, statusOverride, 
   }
 
   const hasStatus = 'status' in user && user.status !== undefined
+  const userLastSeen = 'last_seen' in user ? (user as { last_seen?: string | null }).last_seen ?? null : null
   // Use override if provided, otherwise use user's own status, default to 'offline'
-  const status = statusOverride ?? (hasStatus ? user.status : 'offline') ?? 'offline'
-  const resolvedStatus = status === null ? 'offline' : status
+  const rawStatus = statusOverride ?? (hasStatus ? user.status : 'offline') ?? 'offline'
+  const resolvedStatus = (rawStatus === null
+    ? 'offline'
+    : rawStatus) as Exclude<ResolvedStatus, null>
+
+  // If status was "online" but last_seen is missing or stale, demote to offline.
+  const finalStatus: Exclude<ResolvedStatus, null> =
+    resolvedStatus === 'online' && !statusOverride
+      ? resolvePresence({ status: resolvedStatus, lastSeen: userLastSeen })
+      : resolvedStatus
 
   return (
     <div className={cn('relative inline-block', className)}>
@@ -122,7 +135,7 @@ export function Avatar({ user, size = 'md', showStatus = false, statusOverride, 
           className={cn(
             'absolute right-0 bottom-0 rounded-full border-[var(--bg-panel)]',
             statusSizeClasses[size],
-            statusColors[resolvedStatus]
+            statusColors[finalStatus]
           )}
         />
       )}

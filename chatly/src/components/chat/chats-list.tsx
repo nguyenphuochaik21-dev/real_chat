@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Search, Pin, BellOff, MessageSquare, Archive, Tag, ChevronDown, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
+import { resolvePresence, type PresenceStatus } from '@/lib/presence'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,7 +44,7 @@ interface ConversationItemProps {
   conversation: ConversationWithDetails
   isActive: boolean
   currentUserId: string
-  participantStatus: 'online' | 'offline' | 'away' | 'busy'
+  participantStatus: PresenceStatus
   labels?: Tables<'conversation_labels'>[]
   draft?: string
 }
@@ -332,16 +333,19 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
       loadLabelsForConversations(ids)
 
-      let newStatuses = new Map<string, 'online' | 'offline' | 'away' | 'busy'>()
+      let newStatuses = new Map<string, { status: 'online' | 'offline' | 'away' | 'busy'; lastSeen: string | null }>()
       if (participantIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, status')
+          .select('id, status, last_seen')
           .in('id', participantIds)
 
         if (profiles) {
           profiles.forEach((p) => {
-            newStatuses.set(p.id, (p.status as 'online' | 'offline' | 'away' | 'busy') || 'offline')
+            newStatuses.set(p.id, {
+              status: (p.status as 'online' | 'offline' | 'away' | 'busy') || 'offline',
+              lastSeen: p.last_seen ?? null,
+            })
           })
         }
       }
@@ -470,7 +474,8 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           if (participantIds.includes(updated.id)) {
             setParticipantStatus(
               updated.id,
-              updated.status as 'online' | 'offline' | 'away' | 'busy'
+              updated.status as 'online' | 'offline' | 'away' | 'busy',
+              updated.last_seen ?? null
             )
           }
         }
@@ -773,19 +778,22 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                     {filteredArchived.length} archived {filteredArchived.length === 1 ? 'conversation' : 'conversations'}
                   </p>
                 </div>
-                {filteredArchived.map((conversation, index) => (
+                {filteredArchived.map((conversation, index) => {
+                  const ps = participantStatuses.get(conversation.participant.id)
+                  return (
                   <div key={conversation.id}>
                     <ConversationItem
                       conversation={conversation}
                       isActive={selectedConversationId === conversation.id}
                       currentUserId={currentUserId}
-                      participantStatus={participantStatuses.get(conversation.participant.id) || 'offline'}
+                      participantStatus={resolvePresence(ps)}
                       labels={conversationLabels.get(conversation.id) || []}
                       draft={drafts.get(conversation.id)}
                     />
                     {index < filteredArchived.length - 1 && <Separator />}
                   </div>
-                ))}
+                  )
+                })}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
@@ -794,19 +802,22 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
               </div>
             )
           ) : sortedConversations.length > 0 ? (
-            sortedConversations.map((conversation, index) => (
+            sortedConversations.map((conversation, index) => {
+              const ps = participantStatuses.get(conversation.participant.id)
+              return (
               <div key={conversation.id}>
                 <ConversationItem
                   conversation={conversation}
                   isActive={selectedConversationId === conversation.id}
                   currentUserId={currentUserId}
-                  participantStatus={participantStatuses.get(conversation.participant.id) || 'offline'}
+                  participantStatus={resolvePresence(ps)}
                   labels={conversationLabels.get(conversation.id) || []}
                   draft={drafts.get(conversation.id)}
                 />
                 {index < sortedConversations.length - 1 && <Separator />}
               </div>
-            ))
+              )
+            })
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <MessageSquare className="mb-3 h-12 w-12 opacity-50" />

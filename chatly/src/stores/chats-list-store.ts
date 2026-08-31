@@ -2,9 +2,15 @@
 
 import { create } from 'zustand'
 import type { Tables } from '@/types'
+import type { PresenceStatus } from '@/lib/presence'
 
 type Message = Tables<'messages'>
 type Profile = Tables<'profiles'>
+
+export interface ParticipantStatus {
+  status: PresenceStatus
+  lastSeen: string | null
+}
 
 export interface ConversationWithDetails {
   id: string
@@ -26,7 +32,7 @@ export interface ConversationWithDetails {
 interface ChatsListStore {
   conversations: ConversationWithDetails[]
   archivedConversations: ConversationWithDetails[]
-  participantStatuses: Map<string, 'online' | 'offline' | 'away' | 'busy'>
+  participantStatuses: Map<string, ParticipantStatus>
   blockedUserIds: Set<string>
   loading: boolean
   lastFetchedAt: number
@@ -34,7 +40,7 @@ interface ChatsListStore {
   setAll: (data: {
     conversations: ConversationWithDetails[]
     archivedConversations: ConversationWithDetails[]
-    participantStatuses: Map<string, 'online' | 'offline' | 'away' | 'busy'>
+    participantStatuses: Map<string, ParticipantStatus>
     blockedUserIds: Set<string>
   }) => void
   setLoading: (loading: boolean) => void
@@ -47,7 +53,7 @@ interface ChatsListStore {
   updateConversation: (id: string, patch: Partial<ConversationWithDetails>) => void
   incrementUnread: (id: string, lastMessage: Message | null, fromOther: boolean) => void
   updateLastMessage: (id: string, lastMessage: Message | null) => void
-  setParticipantStatus: (userId: string, status: 'online' | 'offline' | 'away' | 'busy') => void
+  setParticipantStatus: (userId: string, status: PresenceStatus, lastSeen?: string | null) => void
 }
 
 export const useChatsListStore = create<ChatsListStore>((set) => ({
@@ -153,10 +159,14 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
       ),
     })),
 
-  setParticipantStatus: (userId, status) =>
+  setParticipantStatus: (userId, status, lastSeen) =>
     set((state) => {
       const next = new Map(state.participantStatuses)
-      next.set(userId, status)
+      const prev = next.get(userId)
+      next.set(userId, {
+        status,
+        lastSeen: lastSeen ?? prev?.lastSeen ?? null,
+      })
       return { participantStatuses: next }
     }),
 }))

@@ -53,6 +53,7 @@ import { useReactions } from '@/hooks/use-reactions'
 import { useStarredMessages } from '@/hooks/use-starred-messages'
 import { useCallStore } from '@/stores/call-store'
 import { useChatCacheStore } from '@/stores/chat-cache-store'
+import { resolvePresence, type PresenceStatus } from '@/lib/presence'
 import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
@@ -325,9 +326,16 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
   // Show loading only if we don't have cached data
   const [loading, setLoading] = useState(!cached)
   const [sending, setSending] = useState(false)
-  const [participantStatus, setParticipantStatus] = useState<'online' | 'offline' | 'away' | 'busy'>(
-    cached?.participantStatus || 'offline'
-  )
+  // Track the raw status + last_seen from realtime so we can recompute the
+  // *effective* status (a stale "online" should show as offline).
+  const [participantStatusRaw, setParticipantStatusRaw] = useState<{
+    status: PresenceStatus
+    lastSeen: string | null
+  }>(() => {
+    const cachedStatus = cached?.participantStatus || 'offline'
+    return { status: cachedStatus, lastSeen: null }
+  })
+  const participantStatus = resolvePresence(participantStatusRaw)
   const [showMediaGallery, setShowMediaGallery] = useState(false)
   // Track realtime status for messages
   const [messageStatuses, setMessageStatuses] = useState<Map<string, string>>(cached?.messageStatuses || new Map())
@@ -460,8 +468,11 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
           setParticipant(data)
 
           // Set initial status from profile
-          if (data?.status) {
-            setParticipantStatus(data.status as 'online' | 'offline' | 'away' | 'busy')
+          if (data) {
+            setParticipantStatusRaw({
+              status: (data.status as PresenceStatus) || 'offline',
+              lastSeen: data.last_seen ?? null,
+            })
           }
         }
       } catch (err) {
@@ -488,12 +499,17 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
         },
         async (payload) => {
           const updated = payload.new as Profile
-          const oldStatus = participantStatus
-          setParticipantStatus(updated.status as 'online' | 'offline' | 'away' | 'busy')
+          const oldEffective = participantStatus
+          const newStatus = (updated.status as PresenceStatus) || 'offline'
+          setParticipantStatusRaw({
+            status: newStatus,
+            lastSeen: updated.last_seen ?? null,
+          })
 
           // When participant comes online, refresh message statuses
           // This ensures messages that were "sent" (recipient offline) become "delivered"
-          if (oldStatus !== 'online' && updated.status === 'online' && conversationId) {
+          const newEffective = resolvePresence({ status: newStatus, lastSeen: updated.last_seen ?? null })
+          if (oldEffective !== 'online' && newEffective === 'online' && conversationId) {
             try {
               const { data } = await supabase
                 .from('messages')
@@ -707,7 +723,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     if (!conversationId) {
       setMessages([])
       setParticipant(null)
-      setParticipantStatus('offline')
+      setParticipantStatusRaw({ status: 'offline', lastSeen: null })
       setMessageStatuses(new Map())
       setMessageReactions(new Map())
       setInputValue('')
@@ -721,7 +737,10 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
     if (cached) {
       setMessages(cached.messages)
       setParticipant(cached.participant)
-      setParticipantStatus(cached.participantStatus)
+      setParticipantStatusRaw({
+        status: cached.participantStatus,
+        lastSeen: cached.participant?.last_seen ?? null,
+      })
       setMessageStatuses(cached.messageStatuses)
       setMessageReactions(cached.messageReactions)
       setInputValue(getInput(conversationId))
@@ -730,7 +749,7 @@ export function ChatView({ conversationId, currentUserId, onBack, showBackButton
       // No cache — start fresh
       setMessages([])
       setParticipant(null)
-      setParticipantStatus('offline')
+      setParticipantStatusRaw({ status: 'offline', lastSeen: null })
       setMessageStatuses(new Map())
       setMessageReactions(new Map())
       setInputValue(getInput(conversationId))
