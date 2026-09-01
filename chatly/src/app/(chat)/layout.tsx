@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Sidebar } from '@/components/layout/sidebar'
 import { MobileNav } from '@/components/layout/mobile-nav'
 import { ConversationLabelsProvider } from '@/hooks/use-conversation-labels'
+import { useFriendshipsRealtime } from '@/hooks/use-friendships-realtime'
 import { CallProvider } from '@/components/calls'
 import type { User } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
@@ -14,6 +15,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const pathname = usePathname()
+  useFriendshipsRealtime(user?.id ?? null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -37,7 +39,10 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
         <Sidebar />
       </div>
       <div
-        className={cn('flex min-w-0 flex-1 overflow-hidden md:pb-0', isInChat ? 'pb-0' : 'pb-14')}
+        className={cn(
+          'flex min-w-0 flex-1 overflow-hidden md:pb-0',
+          isInChat ? 'pb-0' : 'pb-[calc(3.5rem+env(safe-area-inset-bottom))]'
+        )}
       >
         {loading ? (
           <div className="flex flex-1 items-center justify-center">

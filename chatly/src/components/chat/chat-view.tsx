@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import {
   Phone,
@@ -14,6 +15,7 @@ import {
   CheckCheck,
   Pencil,
   Clock,
+  UsersRound,
 } from 'lucide-react'
 import { cn, getCompactDisplayName } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -25,16 +27,11 @@ import { useReadReceipts } from '@/hooks/use-read-receipts'
 import { useConversationMedia } from '@/hooks/use-conversation-media'
 import { MediaMessageBubble } from './media-message-bubble'
 import { MediaAttachmentButton } from './media-attachment-button'
-import { MediaGalleryViewer } from './media-gallery'
 import { MessageContextMenu } from './message-context-menu'
 import { ReplyPreview } from './reply-preview'
 import { MessageReactions } from './message-reactions'
-import { ForwardModal } from './forward-modal'
-import { BlockUserModal } from './block-user-modal'
 import { ConversationActions } from './conversation-actions'
-import { SchedulePicker } from './schedule-picker'
 import { EmojiPicker } from './emoji-picker'
-import { SearchModal } from './search-modal'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useDraftStore } from '@/stores/draft-store'
@@ -49,7 +46,26 @@ import type { Tables } from '@/types'
 
 type Message = Tables<'messages'>
 type Profile = Tables<'profiles'>
+type Conversation = Tables<'conversations'>
+type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
 type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
+
+const GroupDetailsPanel = dynamic(
+  () =>
+    import('@/components/groups/group-details-panel').then((module) => module.GroupDetailsPanel),
+  { ssr: false }
+)
+const MediaGalleryViewer = dynamic(() =>
+  import('./media-gallery').then((module) => module.MediaGalleryViewer)
+)
+const ForwardModal = dynamic(() => import('./forward-modal').then((module) => module.ForwardModal))
+const BlockUserModal = dynamic(() =>
+  import('./block-user-modal').then((module) => module.BlockUserModal)
+)
+const SchedulePicker = dynamic(() =>
+  import('./schedule-picker').then((module) => module.SchedulePicker)
+)
+const SearchModal = dynamic(() => import('./search-modal').then((module) => module.SearchModal))
 
 function formatMessageDate(dateStr: string, dateLocale: string): string {
   const date = new Date(dateStr)
@@ -83,14 +99,16 @@ function getDateSeparator(messages: Message[], index: number, dateLocale: string
 interface MessageBubbleProps {
   message: Message
   showAvatar: boolean
-  participant: Profile
+  participant: MessageAuthor
   isFromMe: boolean
   currentUserId: string
   realtimeStatus?: string
   reactions?: { emoji: string; count: number; userReacted: boolean }[]
   onToggleReaction?: (emoji: string) => void
   replyToMessage?: Message | null
+  replyToAuthor?: MessageAuthor | null
   onReplyClick?: (messageId: string) => void
+  showSenderName?: boolean
 }
 
 function MessageBubble({
@@ -103,10 +121,13 @@ function MessageBubble({
   reactions = [],
   onToggleReaction,
   replyToMessage,
+  replyToAuthor,
   onReplyClick,
+  showSenderName = false,
 }: MessageBubbleProps) {
   const { t, dateLocale } = useI18n()
   const [isHovered, setIsHovered] = useState(false)
+  const lastBubbleTapRef = useRef(0)
   const { openContextMenu } = useMessageActionsStore()
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
@@ -133,7 +154,7 @@ function MessageBubble({
     const replySender =
       replyToMessage.sender_id === currentUserId
         ? t('common.you')
-        : participant?.display_name || t('common.user')
+        : replyToAuthor?.display_name || participant.display_name || t('common.user')
 
     return (
       <div
@@ -163,6 +184,16 @@ function MessageBubble({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     openContextMenu(message, { x: e.clientX, y: e.clientY })
+  }
+
+  const handleTouchTap = () => {
+    const now = Date.now()
+    if (now - lastBubbleTapRef.current <= 320) {
+      lastBubbleTapRef.current = 0
+      onToggleReaction?.('❤️')
+      return
+    }
+    lastBubbleTapRef.current = now
   }
 
   const renderTimeAndStatus = () => (
@@ -202,6 +233,11 @@ function MessageBubble({
             {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
           </div>
           <div>
+            {showSenderName && !isFromMe && (
+              <p className="mb-1 ml-1 text-xs font-medium text-[var(--text-secondary)]">
+                {participant.display_name}
+              </p>
+            )}
             <div
               className={cn(
                 'rounded-2xl px-4 py-2 italic',
@@ -239,17 +275,29 @@ function MessageBubble({
 
             {/* Media Bubble */}
             <div>
-              <MediaMessageBubble message={message} isFromMe={isFromMe} />
+              {showSenderName && !isFromMe && (
+                <p className="mb-1 ml-1 text-xs font-medium text-[var(--text-secondary)]">
+                  {participant.display_name}
+                </p>
+              )}
+              <div
+                className="relative pb-2"
+                data-message-bubble
+                onDoubleClick={() => onToggleReaction?.('❤️')}
+                onPointerUp={(event) => {
+                  if (event.pointerType === 'touch') handleTouchTap()
+                }}
+              >
+                <MediaMessageBubble message={message} isFromMe={isFromMe} />
+                <MessageReactions
+                  reactions={reactions}
+                  onToggleReaction={onToggleReaction || (() => {})}
+                  showAddButton={isHovered}
+                />
+              </div>
               {renderTimeAndStatus()}
             </div>
           </div>
-          {/* Always show reactions row - emoji picker button appears on hover */}
-          <MessageReactions
-            messageId={message.id}
-            reactions={reactions}
-            onToggleReaction={onToggleReaction || (() => {})}
-            showAddButton={isHovered}
-          />
         </div>
       </div>
     )
@@ -274,35 +322,45 @@ function MessageBubble({
 
           {/* Bubble */}
           <div>
-            <div
-              className={cn(
-                'max-w-full rounded-2xl px-4 py-2',
-                isSticker && 'bg-transparent p-1',
-                isFromMe
-                  ? !isSticker && 'bg-primary-500 rounded-br-md text-white'
-                  : !isSticker && 'rounded-bl-md bg-[var(--bg-message-in)]'
-              )}
-            >
-              {renderReplyQuote()}
-              <p
-                className={cn(
-                  '[overflow-wrap:anywhere] break-words whitespace-pre-wrap',
-                  isSticker ? 'text-5xl leading-none' : 'text-sm'
-                )}
-              >
-                {message.content}
+            {showSenderName && !isFromMe && (
+              <p className="mb-1 ml-1 text-xs font-medium text-[var(--text-secondary)]">
+                {participant.display_name}
               </p>
+            )}
+            <div className="relative pb-2">
+              <div
+                className={cn(
+                  'max-w-full rounded-2xl px-4 py-2',
+                  isSticker && 'bg-transparent p-1',
+                  isFromMe
+                    ? !isSticker && 'bg-primary-500 rounded-br-md text-white'
+                    : !isSticker && 'rounded-bl-md bg-[var(--bg-message-in)]'
+                )}
+                data-message-bubble
+                onDoubleClick={() => onToggleReaction?.('❤️')}
+                onPointerUp={(event) => {
+                  if (event.pointerType === 'touch') handleTouchTap()
+                }}
+              >
+                {renderReplyQuote()}
+                <p
+                  className={cn(
+                    '[overflow-wrap:anywhere] break-words whitespace-pre-wrap',
+                    isSticker ? 'text-5xl leading-none' : 'text-sm'
+                  )}
+                >
+                  {message.content}
+                </p>
+              </div>
+              <MessageReactions
+                reactions={reactions}
+                onToggleReaction={onToggleReaction || (() => {})}
+                showAddButton={isHovered}
+              />
             </div>
             {renderTimeAndStatus()}
           </div>
         </div>
-        {/* Always show reactions row - emoji picker button appears on hover */}
-        <MessageReactions
-          messageId={message.id}
-          reactions={reactions}
-          onToggleReaction={onToggleReaction || (() => {})}
-          showAddButton={isHovered}
-        />
       </div>
     </div>
   )
@@ -335,6 +393,10 @@ export function ChatView({
 
   const [messages, setMessages] = useState<Message[]>(cached?.messages || [])
   const [participant, setParticipant] = useState<Profile | null>(cached?.participant || null)
+  const [conversation, setConversation] = useState<Conversation | null>(null)
+  const [memberProfiles, setMemberProfiles] = useState<Map<string, Profile>>(new Map())
+  const [memberCount, setMemberCount] = useState(0)
+  const [showGroupDetails, setShowGroupDetails] = useState(false)
   const [inputValue, setInputValue] = useState(() =>
     conversationId ? getInput(conversationId) : ''
   )
@@ -351,6 +413,7 @@ export function ChatView({
     return { status: cachedStatus, lastSeen: null }
   })
   const participantStatus = resolvePresence(participantStatusRaw)
+  const isGroup = conversation?.type === 'group'
   const [showMediaGallery, setShowMediaGallery] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
@@ -364,6 +427,7 @@ export function ChatView({
   const [messageReactions, setMessageReactions] = useState<
     Map<string, { emoji: string; count: number; userReacted: boolean }[]>
   >(cached?.messageReactions || new Map())
+  const reactionMutationVersionRef = useRef(0)
   // Store hooks
   const { replyToMessage, clearReply } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
@@ -469,13 +533,21 @@ export function ChatView({
       }
 
       try {
-        // Fetch flags in parallel with participants
-        const { data: myParticipation } = await supabase
-          .from('conversation_participants')
-          .select('is_pinned, is_muted, is_archived')
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .single()
+        const [participationResult, conversationResult, membersResult] = await Promise.all([
+          supabase
+            .from('conversation_participants')
+            .select('is_pinned, is_muted, is_archived, role')
+            .eq('conversation_id', conversationId)
+            .eq('user_id', currentUserId)
+            .single(),
+          supabase.from('conversations').select('*').eq('id', conversationId).single(),
+          supabase
+            .from('conversation_participants')
+            .select('user_id, profile:profiles(*)')
+            .eq('conversation_id', conversationId),
+        ])
+
+        const myParticipation = participationResult.data
 
         if (myParticipation) {
           setConversationFlags({
@@ -485,27 +557,28 @@ export function ChatView({
           })
         }
 
-        const { data: otherParticipants } = await supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', conversationId)
-          .neq('user_id', currentUserId)
+        const nextConversation = conversationResult.data
+        setConversation(nextConversation)
 
-        const otherUserId = otherParticipants?.[0]?.user_id
-        if (otherUserId) {
-          // Get profile with status
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', otherUserId)
-            .single()
-          setParticipant(data)
+        const profiles = (membersResult.data ?? []).flatMap((member) => {
+          const profile = (
+            Array.isArray(member.profile) ? member.profile[0] : member.profile
+          ) as Profile | null
+          return profile ? [profile] : []
+        })
+        setMemberProfiles(new Map(profiles.map((profile) => [profile.id, profile])))
+        setMemberCount(profiles.length)
 
-          // Set initial status from profile
-          if (data) {
+        if (nextConversation?.type === 'group') {
+          setParticipant(null)
+        } else {
+          const otherProfile = profiles.find((profile) => profile.id !== currentUserId) ?? null
+          setParticipant(otherProfile)
+
+          if (otherProfile) {
             setParticipantStatusRaw({
-              status: (data.status as PresenceStatus) || 'offline',
-              lastSeen: data.last_seen ?? null,
+              status: (otherProfile.status as PresenceStatus) || 'offline',
+              lastSeen: otherProfile.last_seen ?? null,
             })
           }
         }
@@ -579,6 +652,64 @@ export function ChatView({
     }
   }, [participant?.id, supabase, participantStatus, conversationId, currentUserId])
 
+  useEffect(() => {
+    if (!conversationId || !isGroup) return
+
+    const refreshGroup = async () => {
+      const [conversationResult, membersResult] = await Promise.all([
+        supabase.from('conversations').select('*').eq('id', conversationId).single(),
+        supabase
+          .from('conversation_participants')
+          .select('user_id, profile:profiles(*)')
+          .eq('conversation_id', conversationId),
+      ])
+
+      if (conversationResult.data) setConversation(conversationResult.data)
+      if (membersResult.data) {
+        const profiles = membersResult.data.flatMap((member) => {
+          const profile = (
+            Array.isArray(member.profile) ? member.profile[0] : member.profile
+          ) as Profile | null
+          return profile ? [profile] : []
+        })
+        setMemberProfiles((current) => {
+          const next = new Map(current)
+          profiles.forEach((profile) => next.set(profile.id, profile))
+          return next
+        })
+        setMemberCount(profiles.length)
+      }
+    }
+
+    const channel = supabase
+      .channel(`group-chat-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversation_participants',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => void refreshGroup()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+          filter: `id=eq.${conversationId}`,
+        },
+        () => void refreshGroup()
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [conversationId, isGroup, supabase])
+
   // Fetch messages
   useEffect(() => {
     const fetchMessages = async () => {
@@ -615,6 +746,36 @@ export function ChatView({
 
     fetchMessages()
   }, [conversationId, currentUserId, supabase, markAsRead, getCached])
+
+  useEffect(() => {
+    if (!isGroup || messages.length === 0) return
+    const missingSenderIds = Array.from(
+      new Set(
+        messages.flatMap((message) =>
+          message.sender_id && !memberProfiles.has(message.sender_id) ? [message.sender_id] : []
+        )
+      )
+    )
+    if (missingSenderIds.length === 0) return
+
+    let cancelled = false
+    void supabase
+      .from('profiles')
+      .select('*')
+      .in('id', missingSenderIds)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setMemberProfiles((current) => {
+          const next = new Map(current)
+          data.forEach((profile) => next.set(profile.id, profile))
+          return next
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isGroup, memberProfiles, messages, supabase])
 
   // Subscribe to real-time messages and status updates
   useEffect(() => {
@@ -696,11 +857,14 @@ export function ChatView({
           table: 'message_reactions',
         },
         async () => {
+          const fetchVersion = reactionMutationVersionRef.current
           // Refetch all reactions for this conversation
           const { getReactionsForMessages } = await import('@/lib/actions/messages')
           try {
             const newReactions = await getReactionsForMessages(messageIds)
-            setMessageReactions(newReactions)
+            if (fetchVersion === reactionMutationVersionRef.current) {
+              setMessageReactions(newReactions)
+            }
           } catch (err) {
             console.error('Failed to refetch reactions:', err)
           }
@@ -1014,7 +1178,8 @@ export function ChatView({
   // Reaction Handler
   // ============================================================================
   const handleToggleReaction = useCallback(async (messageId: string, emoji: string) => {
-    const { toggleReaction } = await import('@/lib/actions/messages')
+    const mutationVersion = ++reactionMutationVersionRef.current
+    const { getMessageReactions, toggleReaction } = await import('@/lib/actions/messages')
 
     // Optimistic update
     setMessageReactions((prev) => {
@@ -1024,13 +1189,22 @@ export function ChatView({
 
       if (emojiIndex >= 0) {
         const updated = [...existing]
-        if (updated[emojiIndex].count <= 1) {
-          updated.splice(emojiIndex, 1)
+        const currentReaction = updated[emojiIndex]
+        if (currentReaction.userReacted) {
+          if (currentReaction.count <= 1) {
+            updated.splice(emojiIndex, 1)
+          } else {
+            updated[emojiIndex] = {
+              ...currentReaction,
+              count: currentReaction.count - 1,
+              userReacted: false,
+            }
+          }
         } else {
           updated[emojiIndex] = {
-            ...updated[emojiIndex],
-            count: updated[emojiIndex].count - 1,
-            userReacted: false,
+            ...currentReaction,
+            count: currentReaction.count + 1,
+            userReacted: true,
           }
         }
         next.set(messageId, updated)
@@ -1041,14 +1215,46 @@ export function ChatView({
     })
 
     try {
-      await toggleReaction(messageId, emoji)
+      const result = await toggleReaction(messageId, emoji)
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to toggle reaction')
+      }
+
+      const confirmedReactions = await getMessageReactions(messageId)
+      if (mutationVersion === reactionMutationVersionRef.current) {
+        setMessageReactions((prev) => {
+          const next = new Map(prev)
+          if (confirmedReactions.length > 0) {
+            next.set(messageId, confirmedReactions)
+          } else {
+            next.delete(messageId)
+          }
+          return next
+        })
+      }
     } catch (err) {
       console.error('Failed to toggle reaction:', err)
+
+      const confirmedReactions = await getMessageReactions(messageId)
+      if (mutationVersion === reactionMutationVersionRef.current) {
+        setMessageReactions((prev) => {
+          const next = new Map(prev)
+          if (confirmedReactions.length > 0) {
+            next.set(messageId, confirmedReactions)
+          } else {
+            next.delete(messageId)
+          }
+          return next
+        })
+      }
     }
   }, [])
 
   // Fetch reactions when messages change (optimized batch query)
   useEffect(() => {
+    let cancelled = false
+    const fetchVersion = reactionMutationVersionRef.current
+
     const fetchReactions = async () => {
       const { getReactionsForMessages } = await import('@/lib/actions/messages')
 
@@ -1061,7 +1267,9 @@ export function ChatView({
 
       try {
         const newReactions = await getReactionsForMessages(messageIds)
-        setMessageReactions(newReactions)
+        if (!cancelled && fetchVersion === reactionMutationVersionRef.current) {
+          setMessageReactions(newReactions)
+        }
       } catch (err) {
         console.error('Failed to fetch reactions:', err)
       }
@@ -1069,6 +1277,10 @@ export function ChatView({
 
     if (messages.length > 0) {
       fetchReactions()
+    }
+
+    return () => {
+      cancelled = true
     }
   }, [messages])
 
@@ -1082,6 +1294,9 @@ export function ChatView({
   const getStatusText = (): string => {
     if (typingUserIds.length > 0) {
       return getTypingText()
+    }
+    if (isGroup) {
+      return t('group.membersCount', { count: memberCount })
     }
     switch (participantStatus) {
       case 'online':
@@ -1108,6 +1323,28 @@ export function ChatView({
         return 'bg-gray-400'
     }
   }
+
+  const handleGroupLeft = useCallback(() => {
+    if (!conversationId) return
+    setShowGroupDetails(false)
+    useChatsListStore.getState().removeConversation(conversationId)
+    useChatCacheStore.getState().clearCache(conversationId)
+    router.replace('/chats')
+    router.refresh()
+  }, [conversationId, router])
+
+  const handleGroupUpdated = useCallback(
+    (title: string, nextMemberCount: number) => {
+      if (!conversationId) return
+      setConversation((current) => (current ? { ...current, title } : current))
+      setMemberCount(nextMemberCount)
+      useChatsListStore.getState().updateConversation(conversationId, {
+        title,
+        member_count: nextMemberCount,
+      })
+    },
+    [conversationId]
+  )
 
   if (!conversationId) {
     return (
@@ -1144,7 +1381,39 @@ export function ChatView({
           </Button>
         )}
 
-        {participant && (
+        {isGroup && conversation && (
+          <button
+            type="button"
+            onClick={() => setShowGroupDetails(true)}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left sm:gap-3"
+          >
+            <Avatar
+              user={{
+                id: conversation.id,
+                display_name: conversation.title || t('group.tab'),
+                avatar_url: conversation.avatar_url,
+              }}
+              size="md"
+            />
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate font-semibold text-[var(--text-primary)]">
+                {conversation.title || t('group.tab')}
+              </h2>
+              <p
+                className={cn(
+                  'truncate text-xs',
+                  typingUserIds.length > 0
+                    ? 'text-primary-500 animate-pulse'
+                    : 'text-[var(--text-secondary)]'
+                )}
+              >
+                {getStatusText()}
+              </p>
+            </div>
+          </button>
+        )}
+
+        {!isGroup && participant && (
           <Link
             href={`/profile/${participant.id}`}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg sm:gap-3"
@@ -1177,87 +1446,98 @@ export function ChatView({
           </Link>
         )}
 
-        {!participant && showBackButton && <div className="flex-1" />}
+        {!participant && !isGroup && showBackButton && <div className="flex-1" />}
 
         {/* Actions */}
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+          {!isGroup && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 sm:h-10 sm:w-10"
+                aria-label={t('chat.voiceCall')}
+                onClick={() => {
+                  if (conversationId && participant) {
+                    window.dispatchEvent(
+                      new CustomEvent('call:initiate', {
+                        detail: {
+                          conversationId,
+                          remoteUser: {
+                            id: participant.id,
+                            displayName: participant.display_name,
+                            avatarUrl: participant.avatar_url || undefined,
+                          },
+                          type: 'voice',
+                        },
+                      })
+                    )
+                  }
+                }}
+              >
+                <Phone className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 sm:h-10 sm:w-10"
+                aria-label={t('chat.videoCall')}
+                onClick={() => {
+                  if (conversationId && participant) {
+                    window.dispatchEvent(
+                      new CustomEvent('call:initiate', {
+                        detail: {
+                          conversationId,
+                          remoteUser: {
+                            id: participant.id,
+                            displayName: participant.display_name,
+                            avatarUrl: participant.avatar_url || undefined,
+                          },
+                          type: 'video',
+                        },
+                      })
+                    )
+                  }
+                }}
+              >
+                <Video className="h-5 w-5" />
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 sm:h-10 sm:w-10"
-            aria-label={t('chat.voiceCall')}
-            onClick={() => {
-              if (conversationId && participant) {
-                // Dispatch event for CallProvider to handle
-                window.dispatchEvent(
-                  new CustomEvent('call:initiate', {
-                    detail: {
-                      conversationId,
-                      remoteUser: {
-                        id: participant.id,
-                        displayName: participant.display_name,
-                        avatarUrl: participant.avatar_url || undefined,
-                      },
-                      type: 'voice',
-                    },
-                  })
-                )
-              }
-            }}
-          >
-            <Phone className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 sm:h-10 sm:w-10"
-            aria-label={t('chat.videoCall')}
-            onClick={() => {
-              if (conversationId && participant) {
-                // Dispatch event for CallProvider to handle
-                window.dispatchEvent(
-                  new CustomEvent('call:initiate', {
-                    detail: {
-                      conversationId,
-                      remoteUser: {
-                        id: participant.id,
-                        displayName: participant.display_name,
-                        avatarUrl: participant.avatar_url || undefined,
-                      },
-                      type: 'video',
-                    },
-                  })
-                )
-              }
-            }}
-          >
-            <Video className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowConversationActions(true)}
+            onClick={() => (isGroup ? setShowGroupDetails(true) : setShowConversationActions(true))}
             className="h-9 w-9 sm:h-10 sm:w-10"
             aria-label={t('chat.options')}
           >
-            <MoreVertical className="h-5 w-5" />
+            {isGroup ? <UsersRound className="h-5 w-5" /> : <MoreVertical className="h-5 w-5" />}
           </Button>
         </div>
       </div>
 
       {/* Messages */}
       <ScrollArea className="min-w-0 flex-1 p-2 sm:p-4">
-        <div className="space-y-4">
+        <div className="space-y-4" role="log" aria-live="polite" aria-relevant="additions">
           {messages.map((message, index) => {
             const showDateSeparator = getDateSeparator(messages, index, dateLocale)
             const showAvatar = index === 0 || messages[index - 1].sender_id !== message.sender_id
             const isFromMe = message.sender_id === currentUserId
+            const messageAuthor = (message.sender_id
+              ? memberProfiles.get(message.sender_id)
+              : null) ||
+              participant || {
+                id: message.sender_id || 'unknown',
+                display_name: t('common.user'),
+                avatar_url: null,
+              }
             // Get realtime status for this message
             const realtimeStatus = messageStatuses.get(message.id)
 
             return (
               <div
                 key={message.id}
+                data-message-id={message.id}
                 ref={(el) => {
                   if (el) messageRefs.current.set(message.id, el)
                 }}
@@ -1274,7 +1554,7 @@ export function ChatView({
                 <MessageBubble
                   message={message}
                   showAvatar={showAvatar}
-                  participant={participant!}
+                  participant={messageAuthor}
                   isFromMe={isFromMe}
                   currentUserId={currentUserId}
                   realtimeStatus={realtimeStatus}
@@ -1283,11 +1563,20 @@ export function ChatView({
                   replyToMessage={
                     message.reply_to ? messages.find((m) => m.id === message.reply_to) : null
                   }
+                  replyToAuthor={(() => {
+                    const repliedMessage = message.reply_to
+                      ? messages.find((item) => item.id === message.reply_to)
+                      : null
+                    return repliedMessage?.sender_id
+                      ? memberProfiles.get(repliedMessage.sender_id) || participant
+                      : participant
+                  })()}
                   onReplyClick={(msgId) => {
                     // Scroll to replied message
                     const el = messageRefs.current.get(msgId)
                     el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                   }}
+                  showSenderName={isGroup && showAvatar}
                 />
               </div>
             )
@@ -1304,6 +1593,7 @@ export function ChatView({
               variant="ghost"
               size="icon"
               onClick={() => setShowEmojiPicker((open) => !open)}
+              data-emoji-trigger
               className="h-9 w-9 sm:h-10 sm:w-10"
               aria-label={t('chat.emojiSticker')}
             >
@@ -1352,6 +1642,7 @@ export function ChatView({
               onKeyDown={handleKeyDown}
               className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               disabled={sending}
+              aria-label={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
             />
           </div>
 
@@ -1386,7 +1677,13 @@ export function ChatView({
       </div>
 
       {/* Reply Preview */}
-      <ReplyPreview replyingTo={replyToMessage} replyingToProfile={participant} />
+      <ReplyPreview
+        replyingTo={replyToMessage}
+        replyingToProfile={
+          (replyToMessage?.sender_id ? memberProfiles.get(replyToMessage.sender_id) : null) ||
+          participant
+        }
+      />
 
       {/* Media Gallery Modal */}
       {showMediaGallery && (
@@ -1468,6 +1765,16 @@ export function ChatView({
             />
           </div>
         </>
+      )}
+
+      {showGroupDetails && isGroup && (
+        <GroupDetailsPanel
+          conversationId={conversationId}
+          currentUserId={currentUserId}
+          onClose={() => setShowGroupDetails(false)}
+          onLeft={handleGroupLeft}
+          onUpdated={handleGroupUpdated}
+        />
       )}
 
       <SearchModal

@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types'
+import { parseConversationSummaries } from '@/lib/conversation-summary'
 
 export type Message = Tables<'messages'>
 
@@ -44,7 +45,9 @@ export async function searchMessages(
   const supabase = await createClient()
 
   // Get current user
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     throw new Error('Not authenticated')
   }
@@ -94,32 +97,21 @@ async function fallbackSearch(
     .select('conversation_id')
     .eq('user_id', userId)
 
-  const conversationIds = participations?.map(p => p.conversation_id) || []
+  const conversationIds = participations?.map((p) => p.conversation_id) || []
 
   if (conversationIds.length === 0) {
     return { results: [], total: 0, query }
   }
 
-  // Get other participant's display name for each conversation
-  const conversationsMap = new Map<string, string>()
-  for (const convId of conversationIds) {
-    const { data: otherParticipant } = await supabase
-      .from('conversation_participants')
-      .select('user_id')
-      .eq('conversation_id', convId)
-      .neq('user_id', userId)
-      .limit(1)
-
-    if (otherParticipant?.[0]?.user_id) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('display_name')
-        .eq('id', otherParticipant[0].user_id)
-        .single()
-
-      conversationsMap.set(convId, profile?.display_name || 'Unknown')
-    }
-  }
+  const { data: summaries } = await supabase.rpc('get_conversation_summaries')
+  const conversationsMap = new Map(
+    parseConversationSummaries(summaries).map((conversation) => [
+      conversation.id,
+      conversation.type === 'group'
+        ? conversation.title || 'Group'
+        : conversation.participant?.display_name || 'Unknown',
+    ])
+  )
 
   // Build query for messages
   let dbQuery = supabase
@@ -152,7 +144,7 @@ async function fallbackSearch(
   if (error) throw error
 
   // Transform results with conversation titles
-  const results: SearchResult[] = (data || []).map(msg => ({
+  const results: SearchResult[] = (data || []).map((msg) => ({
     id: msg.id,
     content: msg.content,
     conversation_id: msg.conversation_id,
@@ -162,7 +154,9 @@ async function fallbackSearch(
     media_url: msg.media_url,
     media_name: msg.media_name,
     relevance: 1,
-    conversation_title: msg.conversation_id ? conversationsMap.get(msg.conversation_id) || null : null,
+    conversation_title: msg.conversation_id
+      ? conversationsMap.get(msg.conversation_id) || null
+      : null,
   }))
 
   return {
@@ -177,7 +171,9 @@ export async function searchConversations(query: string): Promise<Tables<'profil
 
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) return []
 
   // Search profiles (contacts)

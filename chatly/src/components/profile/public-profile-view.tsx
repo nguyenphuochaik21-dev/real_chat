@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -26,6 +26,7 @@ import {
   type FriendProfile,
 } from '@/lib/actions/friendships'
 import { useI18n } from '@/lib/i18n'
+import { useFriendshipStore } from '@/stores/friendship-store'
 import type { Tables } from '@/types'
 
 interface PublicProfileViewProps {
@@ -43,8 +44,13 @@ export function PublicProfileView({
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const friendshipRevision = useFriendshipStore((state) => state.revision)
   const isSelf = currentUserId === profile.id
   const isIncoming = initialFriendship?.addressee_id === currentUserId
+
+  useEffect(() => {
+    if (friendshipRevision > 0) router.refresh()
+  }, [friendshipRevision, router])
 
   const runAction = async (action: () => Promise<void>) => {
     setBusy(true)

@@ -3,31 +3,16 @@
 import { create } from 'zustand'
 import type { Tables } from '@/types'
 import type { PresenceStatus } from '@/lib/presence'
+import type { ConversationSummary } from '@/lib/conversation-summary'
 
 type Message = Tables<'messages'>
-type Profile = Tables<'profiles'>
 
 export interface ParticipantStatus {
   status: PresenceStatus
   lastSeen: string | null
 }
 
-export interface ConversationWithDetails {
-  id: string
-  type: 'direct' | 'group'
-  title: string | null
-  avatar_url: string | null
-  created_by: string | null
-  last_message_at: string
-  created_at: string
-  updated_at: string
-  participant: Profile
-  last_message: Message | null
-  unread_count: number
-  is_pinned: boolean
-  is_muted: boolean
-  is_archived: boolean
-}
+export type ConversationWithDetails = ConversationSummary
 
 interface ChatsListStore {
   conversations: ConversationWithDetails[]

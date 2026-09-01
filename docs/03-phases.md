@@ -51,13 +51,13 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Tạo `lib/mock/conversations.ts` — 8 conversations
 - [x] Tạo `lib/mock/messages.ts` — 50+ messages với timestamps
 - [x] Tạo `lib/mock/calls.ts` — call history
-- [x] Tạo `lib/mock/status.ts` — status updates
+- [x] Tạo `lib/mock/status.ts` cho prototype ban đầu; đã xóa khi bỏ tính năng Status
 - [x] Helper hook `useCurrentUser()` trả về user giả lập
 
 #### 1.3. Sidebar (left navigation) ✅
 
 - [x] Component `Sidebar` với logo + nav items
-- [x] Icons: chat, contacts, calls, status, settings
+- [x] Icons: chat, contacts, calls, status, settings (Status đã được gỡ theo quyết định sản phẩm)
 - [x] Active state highlight
 - [x] User avatar ở dưới cùng với menu
 - [x] Mobile: collapse thành bottom nav (optional cho Phase 1)
@@ -111,11 +111,9 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 
 - [x] Removed the Favorites page and navigation entry
 
-#### 1.10. Status page ✅
+#### 1.10. Status page — Removed ✅
 
-- [x] "My Status" ở trên với "+" add button
-- [x] Recent updates list (status mới nhất)
-- [x] Seen status
+- [x] Xóa route, mục điều hướng và mock data vì Status không còn trong phạm vi sản phẩm
 
 #### 1.11. Settings page ✅
 
@@ -273,7 +271,8 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Edit message
 - [x] Delete message (soft delete)
 - [x] Forward message
-- [x] Reactions (emoji)
+- [x] Reactions gắn ở góc dưới-phải; nhấp đúp/chạm đúp để thả tim
+- [x] Bộ chọn emoji và sticker mở rộng
 - [x] Star/Pin message
 
 #### 4.5. Conversation management ✅
@@ -372,6 +371,7 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Sửa enum `call_direction` để kết thúc cuộc gọi ghi lịch sử nguyên tử
 - [x] Cô lập timer của từng session để cuộc gọi cũ không ghi đè cuộc gọi kế tiếp
 - [x] Giữ listener provider ổn định qua các lần thay đổi local/remote stream
+- [x] Không phục hồi phiên gọi quá 60 giây; tự chuyển phiên treo sang `missed` trên client và cron
 
 ### Deliverable ✅
 
@@ -391,6 +391,8 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 
 - [x] Gửi, nhận, chấp nhận, từ chối và hủy lời mời kết bạn
 - [x] Hủy kết bạn và đồng bộ Realtime
+- [x] Badge lời mời đến trên desktop/mobile và cập nhật quan hệ hai phía không cần F5
+- [x] Private Database Broadcast theo từng user, có tải lại khi focus để tự phục hồi
 - [x] Trang hồ sơ công khai `/profile/[id]`
 - [x] Chỉ hiển thị hành động phù hợp với trạng thái quan hệ
 - [x] Trang `/admin` với thống kê, tìm kiếm và quản lý user
@@ -404,24 +406,27 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 
 ---
 
-## Phase 7 — Group Chat, Stories, Polish ✨
+## Phase 7 — Group Chat, PWA & Polish ✨
 
-**Mục tiêu**: Mở rộng cho nhóm và status, polish cuối cùng.
+**Mục tiêu**: Mở rộng cho nhóm và hoàn thiện chất lượng phát hành.
+**Trạng thái**: ✅ Hoàn thành implementation và automated verification (2026-09-01)
 
 ### Tasks
 
-- [ ] Group chat (tạo, mời, rời nhóm)
-- [ ] Group admin permissions
-- [ ] Status/Story (24h tự xóa)
-- [ ] PWA (install như native app)
-- [ ] Mobile responsive hoàn chỉnh
-- [ ] E2E test coverage
-- [ ] Performance optimization
-- [ ] Accessibility audit
+- [x] Group chat (tạo, mời, quản lý vai trò, xóa thành viên, rời nhóm)
+- [x] Group owner/admin permissions được thực thi bằng RLS và RPC
+- [x] PWA manifest, icon cài đặt, service worker và offline fallback
+- [x] Mobile responsive và safe-area cho màn hình hẹp
+- [x] Playwright E2E cho auth shell, PWA và workflow nhóm có xác thực
+- [x] Tối ưu conversation summary, lazy loading và ảnh qua `next/image`
+- [x] Accessibility audit WCAG A/AA bằng Axe trên desktop và mobile
 
-### Deliverable
+### Deliverable ✅
 
-- App hoàn chỉnh production-ready
+- Migration group chat đã áp dụng lên Supabase; lint không có error, TypeScript và production build đạt.
+- Playwright đạt 6 test public trên desktop/mobile; test mutation nhóm được giữ sau cờ môi trường
+  vì cần tài khoản có tối thiểu hai bạn bè đã chấp nhận.
+- Cần smoke test bổ sung trên thiết bị thật cho cài đặt PWA, offline và push trước release production.
 
 ---
 

@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { WebRTCService, type CallType, isWebRTCSupported } from '@/lib/webrtc'
 import { useCallStore } from '@/stores/call-store'
 
+const CALL_RING_TIMEOUT_MS = 60_000
+
 export interface UseWebRTCCallOptions {
   userId: string
   onCallStarted?: () => void
@@ -123,9 +125,14 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       caller_id: string
       call_type: CallType
       conversation_id: string
+      created_at: string
     }
 
     const receiveIncomingCall = async (session: IncomingSession) => {
+      const createdAt = Date.parse(session.created_at)
+      const remainingRingTime = CALL_RING_TIMEOUT_MS - (Date.now() - createdAt)
+      if (!Number.isFinite(createdAt) || remainingRingTime <= 0) return
+
       const current = useCallStore.getState()
       if (current.sessionId === session.id) return
       if (['calling', 'ringing', 'connecting', 'connected'].includes(current.status)) return
@@ -147,6 +154,20 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
           },
           session.call_type
         )
+
+        window.setTimeout(() => {
+          const latest = useCallStore.getState()
+          if (latest.sessionId !== session.id || latest.status !== 'ringing') return
+
+          void supabase
+            .rpc('end_call', { p_session_id: session.id, p_status: 'missed' })
+            .then(({ error }) => {
+              const active = useCallStore.getState()
+              if (!error && active.sessionId === session.id && active.status === 'ringing') {
+                active.markMissed()
+              }
+            })
+        }, remainingRingTime)
       }
     }
 
@@ -231,19 +252,23 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       )
       .subscribe((status) => {
         if (status !== 'SUBSCRIBED') return
-        void supabase
-          .from('call_sessions')
-          .select('id, caller_id, call_type, conversation_id')
-          .eq('callee_id', userId)
-          .in('status', ['pending', 'ringing'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-          .then(({ data }) => {
-            if (data?.call_type && data.conversation_id) {
-              void receiveIncomingCall(data as IncomingSession)
-            }
-          })
+        void (async () => {
+          await supabase.rpc('expire_stale_calls_for_current_user')
+          const cutoff = new Date(Date.now() - CALL_RING_TIMEOUT_MS).toISOString()
+          const { data } = await supabase
+            .from('call_sessions')
+            .select('id, caller_id, call_type, conversation_id, created_at')
+            .eq('callee_id', userId)
+            .in('status', ['pending', 'ringing'])
+            .gte('created_at', cutoff)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (data?.call_type && data.conversation_id && data.created_at) {
+            await receiveIncomingCall(data as IncomingSession)
+          }
+        })()
       })
 
     return () => {
@@ -298,6 +323,19 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         if (!sessionId) throw new Error('No session id returned')
 
         useCallStore.getState().initiateCall(conversationId, sessionId, remoteUser, type)
+        window.setTimeout(() => {
+          const current = useCallStore.getState()
+          if (current.sessionId !== sessionId || current.status !== 'calling') return
+
+          void supabase
+            .rpc('end_call', { p_session_id: sessionId, p_status: 'missed' })
+            .then(({ error: timeoutError }) => {
+              const active = useCallStore.getState()
+              if (!timeoutError && active.sessionId === sessionId && active.status === 'calling') {
+                active.markMissed()
+              }
+            })
+        }, CALL_RING_TIMEOUT_MS)
       } catch (error) {
         console.error('[initiateCall]', error)
         onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to initiate call'))

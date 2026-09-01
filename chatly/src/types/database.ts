@@ -16,6 +16,7 @@ export type Database = {
           is_pinned: boolean | null
           joined_at: string | null
           last_read_at: string | null
+          role: Database['public']['Enums']['group_member_role']
           user_id: string
         }
         Insert: {
@@ -25,6 +26,7 @@ export type Database = {
           is_pinned?: boolean | null
           joined_at?: string | null
           last_read_at?: string | null
+          role?: Database['public']['Enums']['group_member_role']
           user_id: string
         }
         Update: {
@@ -34,6 +36,7 @@ export type Database = {
           is_pinned?: boolean | null
           joined_at?: string | null
           last_read_at?: string | null
+          role?: Database['public']['Enums']['group_member_role']
           user_id?: string
         }
         Relationships: [
@@ -758,6 +761,10 @@ export type Database = {
         Args: { p_email: string }
         Returns: string
       }
+      create_group_conversation: {
+        Args: { p_member_ids: string[]; p_title: string }
+        Returns: string
+      }
       delete_conversation_permanently: {
         Args: { p_conversation_id: string }
         Returns: boolean
@@ -805,9 +812,49 @@ export type Database = {
         }
         Returns: unknown
       }
+      expire_stale_calls_for_current_user: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      invite_group_members: {
+        Args: { p_conversation_id: string; p_user_ids: string[] }
+        Returns: number
+      }
+      is_group_admin: {
+        Args: { p_conversation_id: string; p_user_id?: string }
+        Returns: boolean
+      }
+      is_group_owner: {
+        Args: { p_conversation_id: string; p_user_id?: string }
+        Returns: boolean
+      }
+      leave_group: {
+        Args: { p_conversation_id: string }
+        Returns: boolean
+      }
+      remove_group_member: {
+        Args: { p_conversation_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      set_group_member_role: {
+        Args: {
+          p_conversation_id: string
+          p_role: Database['public']['Enums']['group_member_role']
+          p_user_id: string
+        }
+        Returns: boolean
+      }
+      update_group_details: {
+        Args: { p_avatar_url?: string; p_conversation_id: string; p_title: string }
+        Returns: boolean
+      }
       get_call_history: {
         Args: { p_user_id?: string; p_limit?: number }
         Returns: unknown
+      }
+      get_conversation_summaries: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       get_admin_dashboard_stats: {
         Args: Record<PropertyKey, never>
@@ -820,6 +867,7 @@ export type Database = {
     }
     Enums: {
       conversation_type: 'direct' | 'group'
+      group_member_role: 'owner' | 'admin' | 'member'
       message_content_type: 'text' | 'image' | 'video' | 'audio' | 'file'
       message_status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
       scheduled_message_status: 'pending' | 'sent' | 'cancelled'
@@ -950,6 +998,7 @@ export const Constants = {
   public: {
     Enums: {
       conversation_type: ['direct', 'group'],
+      group_member_role: ['owner', 'admin', 'member'],
       message_content_type: ['text', 'image', 'video', 'audio', 'file'],
       message_status: ['sending', 'sent', 'delivered', 'read', 'failed'],
       scheduled_message_status: ['pending', 'sent', 'cancelled'],

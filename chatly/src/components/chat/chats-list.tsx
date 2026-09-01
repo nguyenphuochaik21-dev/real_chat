@@ -2,8 +2,20 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { useRouter, usePathname } from 'next/navigation'
-import { Search, Pin, BellOff, MessageSquare, Archive, Tag, ChevronDown, User } from 'lucide-react'
+import {
+  Search,
+  Pin,
+  BellOff,
+  MessageSquare,
+  Archive,
+  Tag,
+  ChevronDown,
+  User,
+  Plus,
+  UsersRound,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { resolvePresence, type PresenceStatus } from '@/lib/presence'
@@ -21,9 +33,14 @@ import { useSearch } from '@/hooks/use-search'
 import { useChatsListStore, type ConversationWithDetails } from '@/stores/chats-list-store'
 import type { Tables } from '@/types'
 import { useI18n } from '@/lib/i18n'
+import { parseConversationSummaries } from '@/lib/conversation-summary'
 
 type Profile = Tables<'profiles'>
-type Message = Tables<'messages'>
+
+const CreateGroupModal = dynamic(
+  () => import('@/components/groups/create-group-modal').then((module) => module.CreateGroupModal),
+  { ssr: false }
+)
 
 function formatMessageTime(dateStr: string | null, dateLocale: string, yesterday: string): string {
   if (!dateStr) return ''
@@ -60,6 +77,13 @@ function ConversationItem({
 }: ConversationItemProps) {
   const { t, dateLocale } = useI18n()
   const isFromMe = conversation.last_message?.sender_id === currentUserId
+  const isGroup = conversation.type === 'group'
+  const displayName = isGroup
+    ? conversation.title || t('group.tab')
+    : conversation.participant?.display_name || t('common.user')
+  const avatarUser = isGroup
+    ? { id: conversation.id, display_name: displayName, avatar_url: conversation.avatar_url }
+    : conversation.participant
 
   const getStatusColor = (): string => {
     switch (participantStatus) {
@@ -82,23 +106,28 @@ function ConversationItem({
         isActive ? 'bg-[var(--bg-active)]' : 'hover:bg-[var(--bg-hover)]',
         conversation.unread_count > 0 && !isActive && 'bg-[var(--bg-hover)]'
       )}
+      aria-current={isActive ? 'page' : undefined}
     >
       <div className="relative">
-        <Avatar user={conversation.participant} size="lg" showStatus={false} />
-        <span
-          className={cn(
-            'absolute right-0 bottom-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
-            getStatusColor()
-          )}
-        />
+        <Avatar user={avatarUser!} size="lg" showStatus={false} />
+        {isGroup ? (
+          <span className="bg-primary-500 absolute right-0 bottom-0 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--bg-panel)] px-1 text-[10px] font-semibold text-white">
+            {conversation.member_count}
+          </span>
+        ) : (
+          <span
+            className={cn(
+              'absolute right-0 bottom-0 h-3 w-3 rounded-full border-2 border-[var(--bg-panel)]',
+              getStatusColor()
+            )}
+          />
+        )}
       </div>
 
       <div className="flex-1 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate font-medium text-[var(--text-primary)]">
-              {conversation.participant.display_name}
-            </span>
+            <span className="truncate font-medium text-[var(--text-primary)]">{displayName}</span>
             {conversation.is_pinned && (
               <Pin className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
             )}
@@ -162,7 +191,7 @@ interface ChatsListProps {
   currentUserId: string
 }
 
-type TabType = 'all' | 'unread' | 'archived'
+type TabType = 'all' | 'unread' | 'groups' | 'archived'
 
 // Refresh conversations list if cache is older than 30 seconds
 const CACHE_STALE_MS = 30_000
@@ -177,6 +206,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('all')
+  const [createGroupOpen, setCreateGroupOpen] = useState(false)
 
   // Use store-backed state — persists across navigation, no remount flash
   const conversations = useChatsListStore((s) => s.conversations)
@@ -188,10 +218,8 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const setAll = useChatsListStore((s) => s.setAll)
   const setLoading = useChatsListStore((s) => s.setLoading)
   const setBlockedUserIds = useChatsListStore((s) => s.setBlockedUserIds)
-  const upsertConversation = useChatsListStore((s) => s.upsertConversation)
   const updateConversation = useChatsListStore((s) => s.updateConversation)
   const incrementUnread = useChatsListStore((s) => s.incrementUnread)
-  const updateLastMessage = useChatsListStore((s) => s.updateLastMessage)
   const setParticipantStatus = useChatsListStore((s) => s.setParticipantStatus)
   const storeConversationIdsRef = useRef<string[]>([])
   const supabase = createClient()
@@ -218,7 +246,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     const timeoutId = window.setTimeout(() => {
       try {
         const saved = localStorage.getItem('chats-list-tab')
-        if (saved === 'all' || saved === 'unread' || saved === 'archived') {
+        if (saved === 'all' || saved === 'unread' || saved === 'groups' || saved === 'archived') {
           setActiveTab(saved)
         }
       } catch {}
@@ -265,67 +293,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     setLoading(true)
 
     try {
-      const { data: participations, error: partError } = await supabase
-        .from('conversation_participants')
-        .select(`*, conversation:conversations(*)`)
-        .eq('user_id', currentUserId)
-        .order('last_read_at', { ascending: false })
+      const { data, error } = await supabase.rpc('get_conversation_summaries')
+      if (error) throw error
 
-      if (partError) throw partError
-
-      const conversationsWithParticipants: ConversationWithDetails[] = []
-      const participantIds: string[] = []
-
-      for (const part of participations || []) {
-        const conv = part.conversation
-        if (!conv) continue
-
-        const { data: otherParticipants } = await supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', conv.id)
-          .neq('user_id', currentUserId)
-
-        const otherUserId = otherParticipants?.[0]?.user_id
-        if (otherUserId) participantIds.push(otherUserId)
-
-        let participant: Profile | null = null
-        if (otherUserId) {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', otherUserId)
-            .single()
-          participant = data
-        }
-
-        const { data: lastMessage } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', conv.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        const { count: unreadCount } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('conversation_id', conv.id)
-          .neq('sender_id', currentUserId)
-          .gt('created_at', part.last_read_at || '1970-01-01')
-
-        if (participant) {
-          conversationsWithParticipants.push({
-            ...conv,
-            participant,
-            last_message: lastMessage,
-            unread_count: unreadCount || 0,
-            is_pinned: part.is_pinned,
-            is_muted: part.is_muted,
-            is_archived: part.is_archived,
-          })
-        }
-      }
+      const conversationsWithParticipants = parseConversationSummaries(data)
+      const participantIds = conversationsWithParticipants.flatMap((conversation) =>
+        conversation.type === 'direct' && conversation.participant
+          ? [conversation.participant.id]
+          : []
+      )
 
       const active: ConversationWithDetails[] = []
       const archived: ConversationWithDetails[] = []
@@ -411,12 +387,16 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'conversation_participants',
           filter: `user_id=eq.${currentUserId}`,
         },
         (payload) => {
+          if (payload.eventType !== 'UPDATE') {
+            void fetchConversations()
+            return
+          }
           const updated = payload.new as {
             conversation_id: string
             last_read_at: string
@@ -444,9 +424,21 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           table: 'conversations',
         },
         async (payload) => {
-          const updated = payload.new as { id: string; last_message_at: string }
+          const updated = payload.new as {
+            id: string
+            last_message_at: string | null
+            title: string | null
+            avatar_url: string | null
+            updated_at: string | null
+          }
 
           if (storeConversationIdsRef.current.includes(updated.id)) {
+            updateConversation(updated.id, {
+              title: updated.title,
+              avatar_url: updated.avatar_url,
+              updated_at: updated.updated_at,
+              last_message_at: updated.last_message_at,
+            })
             try {
               const { data: lastMessage } = await supabase
                 .from('messages')
@@ -479,7 +471,11 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   // Subscribe to profile status changes for all participants
   useEffect(() => {
-    const participantIds = conversations.map((c) => c.participant.id)
+    const participantIds = conversations.flatMap((conversation) =>
+      conversation.type === 'direct' && conversation.participant
+        ? [conversation.participant.id]
+        : []
+    )
     if (participantIds.length === 0) return
 
     const channel = supabase
@@ -513,11 +509,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   }, [currentUserId, supabase, conversations, setParticipantStatus])
 
   const filteredConversations = conversations.filter((conv) => {
-    if (blockedUserIds.has(conv.participant.id)) return false
-    const matchesSearch = conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
+    if (conv.participant && blockedUserIds.has(conv.participant.id)) return false
+    const displayName =
+      conv.type === 'group' ? conv.title || t('group.tab') : conv.participant?.display_name || ''
+    const matchesSearch = displayName.toLowerCase().includes(search.toLowerCase())
     let matchesTab = true
     if (activeTab === 'unread') {
       matchesTab = conv.unread_count > 0
+    } else if (activeTab === 'groups') {
+      matchesTab = conv.type === 'group'
     } else if (activeTab === 'all') {
       matchesTab = !conv.is_archived
     }
@@ -531,7 +531,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   })
 
   const filteredArchived = archivedConversations.filter((conv) =>
-    conv.participant.display_name.toLowerCase().includes(search.toLowerCase())
+    (conv.type === 'group' ? conv.title || t('group.tab') : conv.participant?.display_name || '')
+      .toLowerCase()
+      .includes(search.toLowerCase())
   )
 
   const sortedConversations = [...filteredConversations].sort((a, b) => {
@@ -545,6 +547,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const tabs: { key: TabType; label: string }[] = [
     { key: 'all', label: t('chatList.all') },
     { key: 'unread', label: t('chatList.unread') },
+    { key: 'groups', label: t('group.tab') },
     { key: 'archived', label: t('chatList.archived') },
   ]
 
@@ -568,8 +571,16 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             .eq('user_id', contactId)
 
           if (otherParts && otherParts.length > 0) {
-            conversationId = part.conversation_id
-            break
+            const { data: directConversation } = await supabase
+              .from('conversations')
+              .select('id')
+              .eq('id', part.conversation_id)
+              .eq('type', 'direct')
+              .maybeSingle()
+            if (directConversation) {
+              conversationId = directConversation.id
+              break
+            }
           }
         }
 
@@ -622,29 +633,41 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   return (
     <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)] md:w-80">
       <div className="p-4">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-2">
           <h1 className="text-xl font-semibold text-[var(--text-primary)]">
             {t('chatList.title')}
           </h1>
-          {labels.length > 0 && (
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
-              size="sm"
-              onClick={() => setLabelFilterOpen(!labelFilterOpen)}
-              className={cn(
-                'gap-1.5',
-                selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
-              )}
+              size="icon-sm"
+              onClick={() => setCreateGroupOpen(true)}
+              aria-label={t('group.new')}
+              title={t('group.new')}
             >
-              <Tag className="h-4 w-4" />
-              {selectedLabelIds.size > 0 && (
-                <span className="bg-primary-500 ml-1 rounded px-1.5 py-0.5 text-xs text-white">
-                  {selectedLabelIds.size}
-                </span>
-              )}
-              <ChevronDown className="h-3 w-3" />
+              <Plus className="h-3.5 w-3.5" />
+              <UsersRound className="h-4 w-4" />
             </Button>
-          )}
+            {labels.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setLabelFilterOpen(!labelFilterOpen)}
+                className={cn(
+                  'gap-1.5',
+                  selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
+                )}
+              >
+                <Tag className="h-4 w-4" />
+                {selectedLabelIds.size > 0 && (
+                  <span className="bg-primary-500 ml-1 rounded px-1.5 py-0.5 text-xs text-white">
+                    {selectedLabelIds.size}
+                  </span>
+                )}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {labelFilterOpen && labels.length > 0 && (
@@ -702,13 +725,13 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         </div>
       </div>
 
-      <div className="flex gap-1 px-4">
+      <div className="flex shrink-0 scrollbar-thin gap-1 overflow-x-auto px-4 pb-1">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => handleTabChange(tab.key)}
             className={cn(
-              'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+              'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
               activeTab === tab.key
                 ? 'text-primary-500 bg-[var(--bg-active)]'
                 : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
@@ -817,7 +840,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                   </p>
                 </div>
                 {filteredArchived.map((conversation, index) => {
-                  const ps = participantStatuses.get(conversation.participant.id)
+                  const ps = conversation.participant
+                    ? participantStatuses.get(conversation.participant.id)
+                    : undefined
                   return (
                     <div key={conversation.id}>
                       <ConversationItem
@@ -841,7 +866,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             )
           ) : sortedConversations.length > 0 ? (
             sortedConversations.map((conversation, index) => {
-              const ps = participantStatuses.get(conversation.participant.id)
+              const ps = conversation.participant
+                ? participantStatuses.get(conversation.participant.id)
+                : undefined
               return (
                 <div key={conversation.id}>
                   <ConversationItem
@@ -866,6 +893,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           )}
         </div>
       </ScrollArea>
+      <CreateGroupModal
+        isOpen={createGroupOpen}
+        onClose={() => setCreateGroupOpen(false)}
+        onCreated={(conversationId) => {
+          setCreateGroupOpen(false)
+          void fetchConversations()
+          router.push(`/chats/${conversationId}`)
+        }}
+      />
     </div>
   )
 }

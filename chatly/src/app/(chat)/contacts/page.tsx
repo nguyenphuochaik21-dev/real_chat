@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Check, Clock3, MessageSquare, Search, UserMinus, UserPlus, Users, X } from 'lucide-react'
@@ -20,7 +20,7 @@ import {
   type FriendshipOverview,
 } from '@/lib/actions/friendships'
 import { useI18n } from '@/lib/i18n'
-import { createClient } from '@/lib/supabase/client'
+import { useFriendshipStore } from '@/stores/friendship-store'
 
 function matchesSearch(profile: FriendProfile, search: string) {
   const query = search.trim().toLocaleLowerCase()
@@ -60,7 +60,7 @@ function ContactRow({ profile, children }: ContactRowProps) {
 export default function ContactsPage() {
   const { t } = useI18n()
   const router = useRouter()
-  const supabaseRef = useRef(createClient())
+  const friendshipRevision = useFriendshipStore((state) => state.revision)
   const [overview, setOverview] = useState<FriendshipOverview | null>(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -85,37 +85,10 @@ export default function ContactsPage() {
   }, [refresh])
 
   useEffect(() => {
-    if (!overview?.currentUserId) return
-
-    const supabase = supabaseRef.current
-    const channel = supabase
-      .channel(`friendships:${overview.currentUserId}:${crypto.randomUUID()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'friendships',
-          filter: `requester_id=eq.${overview.currentUserId}`,
-        },
-        () => void refresh()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'friendships',
-          filter: `addressee_id=eq.${overview.currentUserId}`,
-        },
-        () => void refresh()
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  }, [overview?.currentUserId, refresh])
+    if (friendshipRevision <= 0) return
+    const timeoutId = window.setTimeout(() => void refresh(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [friendshipRevision, refresh])
 
   const runAction = async (id: string, action: () => Promise<void>) => {
     setBusyId(id)

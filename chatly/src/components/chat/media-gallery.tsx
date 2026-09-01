@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState } from 'react'
 import { Image as ImageIcon, Film, Music, FileText, Download, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -83,12 +84,14 @@ function MediaGalleryItem({ item }: { item: MediaItem }) {
     return (
       <button
         onClick={() => signedUrl && window.open(signedUrl, '_blank')}
-        className="aspect-square overflow-hidden rounded-lg transition-opacity hover:opacity-80"
+        className="relative aspect-square overflow-hidden rounded-lg transition-opacity hover:opacity-80"
         title={item.name || t('gallery.images')}
       >
-        <img
+        <Image
           src={signedUrl}
           alt={item.name || t('gallery.images')}
+          fill
+          sizes="96px"
           className="h-full w-full object-cover"
         />
       </button>
@@ -214,11 +217,13 @@ function GalleryImageItem({ item }: { item: MediaItem }) {
   const { signedUrl } = useSignedUrl(item.url)
 
   return (
-    <div className="aspect-square overflow-hidden rounded-lg bg-[var(--bg-hover)]">
+    <div className="relative aspect-square overflow-hidden rounded-lg bg-[var(--bg-hover)]">
       {signedUrl ? (
-        <img
+        <Image
           src={signedUrl}
           alt={item.name || t('gallery.images')}
+          fill
+          sizes="(max-width: 640px) 50vw, 33vw"
           className="h-full w-full cursor-pointer object-cover transition-transform hover:scale-105"
           onClick={() => signedUrl && window.open(signedUrl, '_blank')}
         />

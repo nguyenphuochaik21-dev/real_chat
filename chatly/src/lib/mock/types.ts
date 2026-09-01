@@ -38,13 +38,3 @@ export interface MockCall {
   started_at: string
   duration_seconds?: number
 }
-
-export interface MockStatus {
-  id: string
-  user: MockUser
-  media_url: string
-  caption?: string
-  created_at: string
-  viewed: boolean
-  view_count: number
-}

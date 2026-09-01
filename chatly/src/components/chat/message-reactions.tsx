@@ -7,14 +7,12 @@ import { EmojiPicker } from './emoji-picker'
 import type { MessageReaction } from '@/lib/actions/messages'
 
 interface MessageReactionsProps {
-  messageId: string
   reactions: MessageReaction[]
   onToggleReaction: (emoji: string) => void
   showAddButton?: boolean
 }
 
 export function MessageReactions({
-  messageId,
   reactions,
   onToggleReaction,
   showAddButton = true,
@@ -25,34 +23,35 @@ export function MessageReactions({
   if (reactions.length === 0 && !showAddButton && !showPicker) return null
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1">
+    <div className="absolute right-1 bottom-0 z-10 flex translate-y-1/2 items-center gap-1">
       {/* Existing reactions */}
-      {reactions.map((reaction) => (
-        <button
-          key={reaction.emoji}
-          onClick={() => onToggleReaction(reaction.emoji)}
-          className={cn(
-            'flex items-center gap-1 rounded-full px-2 py-0.5 text-sm',
-            'border border-transparent transition-all',
-            'hover:scale-105 active:scale-95',
-            reaction.userReacted
-              ? 'bg-primary-500/20 border-primary-500'
-              : 'bg-[var(--bg-hover)] hover:bg-[var(--border-default)]'
-          )}
-        >
-          <span className="text-base">{reaction.emoji}</span>
-          {reaction.count > 1 && (
-            <span
+      {reactions.length > 0 && (
+        <div className="flex items-center gap-0.5 rounded-full border border-[var(--border-default)] bg-[var(--bg-panel)] p-0.5 shadow-sm">
+          {reactions.map((reaction) => (
+            <button
+              key={reaction.emoji}
+              onClick={() => onToggleReaction(reaction.emoji)}
               className={cn(
-                'text-xs',
-                reaction.userReacted ? 'text-primary-500' : 'text-[var(--text-muted)]'
+                'flex h-6 items-center gap-0.5 rounded-full px-1.5 text-sm transition-all',
+                'hover:scale-105 active:scale-95',
+                reaction.userReacted && 'bg-primary-500/15'
               )}
             >
-              {reaction.count}
-            </span>
-          )}
-        </button>
-      ))}
+              <span>{reaction.emoji}</span>
+              {reaction.count > 1 && (
+                <span
+                  className={cn(
+                    'text-[10px]',
+                    reaction.userReacted ? 'text-primary-500' : 'text-[var(--text-muted)]'
+                  )}
+                >
+                  {reaction.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Add reaction button - only show when hovered or picker is open */}
       {(showAddButton || showPicker) && (
@@ -76,6 +75,8 @@ export function MessageReactions({
 
           {showPicker && (
             <EmojiPicker
+              align="right"
+              showStickers={false}
               onSelect={(emoji) => {
                 onToggleReaction(emoji)
                 setShowPicker(false)

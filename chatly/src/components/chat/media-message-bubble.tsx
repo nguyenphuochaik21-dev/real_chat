@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState } from 'react'
 import { Play, Pause, Download, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -66,11 +67,14 @@ export function MediaMessageBubble({ message, isFromMe }: MediaMessageBubbleProp
       <div
         className={cn('overflow-hidden rounded-2xl', isFromMe ? 'rounded-br-md' : 'rounded-bl-md')}
       >
-        <img
+        <Image
           src={signedUrl}
           alt={fileName}
+          width={560}
+          height={560}
+          sizes="(max-width: 640px) 70vw, 280px"
           className={cn(
-            'max-h-[300px] max-w-[280px] cursor-pointer object-cover',
+            'h-auto max-h-[300px] w-auto max-w-[280px] cursor-pointer object-cover',
             !imageLoaded && 'blur-sm'
           )}
           onLoad={() => setImageLoaded(true)}

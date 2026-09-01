@@ -7,9 +7,9 @@
   --color-primary-200: #c7d2fe;
   --color-primary-300: #a5b4fc;
   --color-primary-400: #818cf8;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
+  --color-primary-500: #4f46e5;
+  --color-primary-600: #4338ca;
+  --color-primary-700: #3730a3;
   --color-primary-800: #3730a3;
   --color-primary-900: #312e81;
 
@@ -56,8 +56,8 @@
   --bg-message-out: #6366f1;
 
   --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-muted: #9ca3af;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
   --text-on-primary: #ffffff;
 
   --border-default: #e5e7eb;

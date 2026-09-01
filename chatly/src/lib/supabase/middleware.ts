@@ -40,7 +40,6 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/chats') ||
     request.nextUrl.pathname.startsWith('/contacts') ||
     request.nextUrl.pathname.startsWith('/calls') ||
-    request.nextUrl.pathname.startsWith('/status') ||
     request.nextUrl.pathname.startsWith('/settings') ||
     request.nextUrl.pathname.startsWith('/profile') ||
     request.nextUrl.pathname.startsWith('/admin') ||

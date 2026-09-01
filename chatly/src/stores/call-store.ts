@@ -60,6 +60,7 @@ interface CallActions {
   acceptCall: () => void
   declineCall: () => void
   endCall: () => void
+  markMissed: () => void
   setConnected: () => void
   setConnecting: () => void
 
@@ -105,18 +106,6 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
       isSpeakerOn: true,
       error: null,
     })
-
-    // Auto-end as missed if no answer after 60s
-    setTimeout(() => {
-      const current = get()
-      if (current.status === 'calling' && current.sessionId === sessionId) {
-        set({ status: 'missed', error: 'No answer' })
-        setTimeout(() => {
-          const latest = get()
-          if (latest.status === 'missed' && latest.sessionId === sessionId) set(initialState)
-        }, 2000)
-      }
-    }, 60000)
   },
 
   receiveCall: (sessionId, conversationId, remoteUser, type) => {
@@ -175,6 +164,15 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
     setTimeout(() => {
       const current = get()
       if (current.status === 'ended' && current.sessionId === sessionId) set(initialState)
+    }, 2000)
+  },
+
+  markMissed: () => {
+    const sessionId = get().sessionId
+    set({ status: 'missed', error: null })
+    setTimeout(() => {
+      const current = get()
+      if (current.status === 'missed' && current.sessionId === sessionId) set(initialState)
     }, 2000)
   },
 

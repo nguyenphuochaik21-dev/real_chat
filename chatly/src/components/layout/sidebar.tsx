@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import {
   MessageSquare,
   Users,
   Phone,
-  CircleDot,
   Settings,
   Search,
   MessageCircle,
@@ -15,10 +15,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { usePresence } from '@/hooks/use-presence'
-import { SearchModal } from '@/components/chat/search-modal'
 import {
   NotificationBell,
   NotificationToastContainer,
@@ -26,13 +24,17 @@ import {
 } from '@/components/notifications'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useI18n } from '@/lib/i18n'
+import { useFriendshipStore } from '@/stores/friendship-store'
+
+const SearchModal = dynamic(() =>
+  import('@/components/chat/search-modal').then((module) => module.SearchModal)
+)
 
 const navItems = [
   { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
   { href: '/contacts', icon: Users, labelKey: 'nav.contacts' },
   { href: '/calls', icon: Phone, labelKey: 'nav.calls' },
   { href: '/starred', icon: MessageCircle, labelKey: 'nav.starred' },
-  { href: '/status', icon: CircleDot, labelKey: 'nav.status' },
   { href: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 
@@ -69,6 +71,7 @@ export function Sidebar() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [showSearch, setShowSearch] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const friendRequestCount = useFriendshipStore((state) => state.incomingCount)
   const supabaseRef = useRef(createClient())
   const pathnameRef = useRef(pathname)
 
@@ -344,7 +347,12 @@ export function Sidebar() {
               item.href === '/chats'
                 ? pathname.startsWith('/chats') || pathname === '/'
                 : pathname.startsWith(item.href)
-            const showBadge = item.href === '/chats' && unreadCount > 0
+            const badgeCount =
+              item.href === '/chats'
+                ? unreadCount
+                : item.href === '/contacts'
+                  ? friendRequestCount
+                  : 0
 
             return (
               <Link
@@ -367,9 +375,9 @@ export function Sidebar() {
                 )}
 
                 {/* Unread badge */}
-                {showBadge && (
+                {badgeCount > 0 && (
                   <span className="bg-primary-500 absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-medium text-white">
-                    {unreadCount > 99 ? '99+' : unreadCount}
+                    {badgeCount > 99 ? '99+' : badgeCount}
                   </span>
                 )}
               </Link>

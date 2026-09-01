@@ -40,8 +40,13 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
 
   if (!forwardModalOpen) return null
 
-  const filteredConversations = conversations.filter((conv) =>
-    conv.participant?.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  const getTitle = (conversation: (typeof conversations)[number]) =>
+    conversation.type === 'group'
+      ? conversation.title || t('group.tab')
+      : conversation.participant?.display_name || t('calls.unknownUser')
+
+  const filteredConversations = conversations.filter((conversation) =>
+    getTitle(conversation).toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const toggleConversation = (conversationId: string) => {
@@ -98,6 +103,9 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
     <>
       {/* Backdrop */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="forward-modal-title"
         className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
         onClick={closeForwardModal}
       />
@@ -113,7 +121,10 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] px-4 py-3">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            <h2
+              id="forward-modal-title"
+              className="text-lg font-semibold text-[var(--text-primary)]"
+            >
               {t('forward.title')}
             </h2>
             <p className="text-xs text-[var(--text-muted)]">
@@ -122,6 +133,7 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
           </div>
           <button
             onClick={closeForwardModal}
+            aria-label={t('common.close')}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
             <X className="h-5 w-5" />
@@ -154,39 +166,45 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
             </div>
           ) : (
             <div className="py-2">
-              {filteredConversations.map((conv) => (
-                <button
-                  key={conv.id}
-                  onClick={() => toggleConversation(conv.id)}
-                  className={cn(
-                    'flex w-full items-center gap-3 px-4 py-2 transition-colors',
-                    'hover:bg-[var(--bg-hover)]',
-                    selectedConversations.has(conv.id) && 'bg-primary-500/10'
-                  )}
-                >
-                  {/* Checkbox indicator */}
-                  <div
+              {filteredConversations.map((conv) => {
+                const displayName = getTitle(conv)
+                const avatarUser =
+                  conv.type === 'group'
+                    ? { id: conv.id, display_name: displayName, avatar_url: conv.avatar_url }
+                    : conv.participant
+                return (
+                  <button
+                    key={conv.id}
+                    onClick={() => toggleConversation(conv.id)}
                     className={cn(
-                      'flex h-5 w-5 items-center justify-center rounded border',
-                      selectedConversations.has(conv.id)
-                        ? 'border-primary-500 bg-primary-500'
-                        : 'border-[var(--border-default)]'
+                      'flex w-full items-center gap-3 px-4 py-2 transition-colors',
+                      'hover:bg-[var(--bg-hover)]',
+                      selectedConversations.has(conv.id) && 'bg-primary-500/10'
                     )}
+                    aria-pressed={selectedConversations.has(conv.id)}
                   >
-                    {selectedConversations.has(conv.id) && <span className="text-white">✓</span>}
-                  </div>
+                    {/* Checkbox indicator */}
+                    <div
+                      className={cn(
+                        'flex h-5 w-5 items-center justify-center rounded border',
+                        selectedConversations.has(conv.id)
+                          ? 'border-primary-500 bg-primary-500'
+                          : 'border-[var(--border-default)]'
+                      )}
+                    >
+                      {selectedConversations.has(conv.id) && <span className="text-white">✓</span>}
+                    </div>
 
-                  {/* Avatar */}
-                  <Avatar user={conv.participant} size="md" showStatus />
+                    {/* Avatar */}
+                    <Avatar user={avatarUser!} size="md" showStatus={conv.type === 'direct'} />
 
-                  {/* Name */}
-                  <div className="flex-1 text-left">
-                    <p className="font-medium text-[var(--text-primary)]">
-                      {conv.participant?.display_name || t('calls.unknownUser')}
-                    </p>
-                  </div>
-                </button>
-              ))}
+                    {/* Name */}
+                    <div className="flex-1 text-left">
+                      <p className="font-medium text-[var(--text-primary)]">{displayName}</p>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </ScrollArea>

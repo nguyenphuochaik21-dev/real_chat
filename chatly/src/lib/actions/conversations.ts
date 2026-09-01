@@ -138,6 +138,7 @@ export async function createConversation(
         .from('conversations')
         .select('*')
         .eq('id', part.conversation_id)
+        .eq('type', 'direct')
         .single()
       if (conv) return conv
     }

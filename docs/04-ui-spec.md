@@ -175,7 +175,6 @@ Dùng **lucide-react**. Map icon → use:
 | `Users`                                           | Contacts nav                    |
 | `Phone`                                           | Calls nav, voice call           |
 | `Video`                                           | Video call                      |
-| `CircleDot`                                       | Status nav                      |
 | `Settings`                                        | Settings nav                    |
 | `Search`                                          | Search bars                     |
 | `Send`                                            | Send message                    |
@@ -248,15 +247,6 @@ export interface MockCall {
   duration_seconds?: number;
 }
 
-export interface MockStatus {
-  id: string;
-  user: MockUser;
-  media_url: string; // image/video thumbnail
-  caption?: string;
-  created_at: string;
-  viewed: boolean;
-  view_count: number;
-}
 ```
 
 ---

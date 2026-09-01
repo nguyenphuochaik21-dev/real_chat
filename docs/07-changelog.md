@@ -15,7 +15,28 @@
 
 ---
 
-## [2026-09-01] WebRTC hardening, social graph và administration
+## [2026-09-01] Phase 7 — Group Chat, PWA & Polish
+
+**Quyết định**: Hoàn thiện group chat bằng RPC có phân quyền, bổ sung PWA/offline, đồng thời
+đưa responsive, accessibility, hiệu năng và E2E vào release gate.
+
+**Lý do**: Group mutation nhiều bước ở client dễ tạo dữ liệu dở dang hoặc vượt quyền; ứng dụng
+cũng thiếu manifest/offline shell và kiểm thử tự động cho các viewport chính.
+
+**Hệ quả**:
+
+- Migrations `20260901070000`–`20260901090000` thêm vai trò `owner/admin/member`, group RPC
+  nguyên tử, owner transfer khi rời nhóm, khóa legacy mutation path và conversation summary RPC
+  để loại bỏ N+1 query.
+- Chat list, search, forwarding, header, message sender và panel quản lý thành viên hỗ trợ nhóm.
+- Thêm manifest, icon PNG sinh bằng `ImageResponse`, offline route, đăng ký service worker và install prompt.
+- Hoàn thiện safe-area mobile, reduced motion, contrast WCAG, dialog/live-region semantics và tối ưu ảnh.
+- Thêm Playwright + Axe; 6 bài public đạt trên desktop/mobile, bài mutation nhóm có guard credentials.
+- ESLint đạt 0 error, TypeScript strict đạt và Next.js production build sinh đủ 18 route.
+
+**Status**: Active
+
+## [2026-09-01] WebRTC, social graph và messaging hardening
 
 **Quyết định**: Nghiệm thu lại Phase 5 theo hành vi thực tế, đồng thời thêm friendships,
 public profiles và role-protected administration bằng migration append-only.
@@ -27,13 +48,17 @@ không khởi tạo WebRTC. Ứng dụng cũng chưa có mô hình bạn bè ho�
 
 - Signaling chỉ bắt đầu sau thao tác gọi/chấp nhận; callee subscribe trước khi caller tạo offer.
 - ICE được queue, media controls dùng đúng trạng thái, remote playback có autoplay fallback.
-- Thêm migrations `20260901000000` đến `20260901040000` cho xóa hội thoại, friendships,
-  administration, call hardening và sửa enum khi ghi call history.
+- Thêm migrations `20260901000000` đến `20260901060000` cho xóa hội thoại, friendships,
+  administration, call hardening, dọn call treo và friendship Database Broadcast.
 - Thêm `/profile/[id]`, `/admin`, trang tài khoản bị khóa và Contacts dựa trên friendships.
 - Chuyển Next.js convention từ `middleware.ts` sang `proxy.ts` theo tài liệu Next.js 16.
 - Phase 5 đã qua E2E production-build với hai tài khoản/browser: không mở media khi tải trang,
   voice có remote audio live và video có remote audio/video live ở cả hai phía.
 - Timer và listener cuộc gọi được cô lập theo session để gọi liên tiếp không làm mất incoming call.
+- Phiên `pending/ringing` quá 60 giây được chuyển sang `missed`; đăng nhập/F5 không còn hiện cuộc gọi cũ.
+- Badge lời mời kết bạn và trạng thái quan hệ của cả hai phía cập nhật Realtime không cần F5.
+- Nhấp đúp/chạm đúp tin nhắn để thả tim; reaction bám góc dưới-phải và picker có thêm emoji/sticker.
+- Xóa `/status`, mục điều hướng “Tin”, mock data và kế hoạch Stories theo quyết định sản phẩm.
 
 **Status**: Active
 

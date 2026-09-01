@@ -31,11 +31,11 @@
 - [x] `lib/mock/conversations.ts` - 8 conversations
 - [x] `lib/mock/messages.ts` - 30+ messages
 - [x] `lib/mock/calls.ts` - 8 call history
-- [x] `lib/mock/status.ts` - 5 status updates
+- [x] `lib/mock/status.ts` - prototype cũ, đã xóa khi bỏ Status
 
 ### 1.3. Sidebar ✅
 
-- [x] Logo + nav items (Chats, Contacts, Calls, Status, Settings)
+- [x] Logo + nav items (Chats, Contacts, Calls, Settings); Status đã được gỡ
 - [x] Active state highlight
 - [x] User avatar bottom
 
@@ -66,7 +66,7 @@
 
 - [x] Contacts (alphabetical with letter headers)
 - [x] Calls (filter by all/missed/incoming/outgoing)
-- [x] Status (view status updates)
+- [x] Status prototype đã được xóa theo quyết định sản phẩm
 - [x] Settings (Profile, Appearance sub-pages)
 
 ### 1.8. Polish ✅
@@ -195,7 +195,7 @@
 - [x] Edit message
 - [x] Delete message (soft delete)
 - [x] Forward message
-- [x] Reactions (emoji)
+- [x] Reactions (emoji), nhấp đúp/chạm đúp để thả tim
 - [x] Star/Pin message
 
 ### 4.5. Conversation management ✅
@@ -205,7 +205,7 @@
 - [x] Mute/Unmute conversation
 - [x] Block user (from message context menu)
 - [x] Unblock user (from Blocked Users modal)
-- [x] Delete conversation (leave conversation)
+- [x] Delete conversation (xóa vĩnh viễn bằng RPC có kiểm tra quyền)
 - [x] Clear conversation history (soft delete own messages)
 - [x] Filter blocked users from conversations list
 
@@ -278,9 +278,29 @@
 - [x] Group calls by date
 - [x] Filter: All, Missed, Incoming, Outgoing
 
-## Phase 6 — Group & Stories
+## Phase 7 — Group Chat, PWA & Polish ✅ (2026-09-01)
 
-(chưa bắt đầu)
+### 7.1. Group chat và phân quyền ✅
+
+- [x] Migration vai trò owner/admin/member và RLS/RPC bảo vệ mutation
+- [x] Tạo nhóm nguyên tử từ tối thiểu hai bạn bè đã chấp nhận
+- [x] Mời/xóa thành viên, đổi admin, đổi tên, rời và xóa nhóm
+- [x] Hiển thị sender, avatar, tiêu đề và số thành viên theo Realtime
+
+### 7.2. PWA, mobile và chất lượng ✅
+
+- [x] Manifest, icon 192/512, service-worker registration và offline fallback
+- [x] Install prompt, trạng thái online/offline và mobile safe-area
+- [x] Conversation summary RPC, lazy-loaded modal và tối ưu ảnh
+- [x] Keyboard/dialog semantics, reduced motion, contrast WCAG A/AA
+
+### 7.3. Verification ✅
+
+- [x] Playwright + Axe trên desktop và Pixel 7
+- [x] ESLint 0 error và TypeScript strict
+- [x] Next.js production build
+- [ ] Chạy group mutation E2E bằng tài khoản release có ít nhất hai bạn bè
+- [ ] Smoke test PWA/offline/push trên thiết bị vật lý
 
 ---
 
