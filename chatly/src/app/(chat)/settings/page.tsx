@@ -18,6 +18,7 @@ import {
   QrCode,
   LogOut,
   Languages,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -44,6 +45,8 @@ interface SettingsSectionProps {
 }
 
 function SettingsSection({ title, items }: SettingsSectionProps) {
+  const router = useRouter()
+
   return (
     <div className="mb-6">
       <h3 className="mb-2 px-4 text-sm font-medium text-[var(--text-muted)]">{title}</h3>
@@ -55,7 +58,7 @@ function SettingsSection({ title, items }: SettingsSectionProps) {
                 'flex items-center gap-4 px-4 py-3 transition-colors hover:bg-[var(--bg-hover)]',
                 item.href && 'cursor-pointer'
               )}
-              onClick={item.onClick}
+              onClick={item.onClick ?? (item.href ? () => router.push(item.href!) : undefined)}
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--bg-hover)]">
                 <item.icon className="h-5 w-5 text-[var(--text-secondary)]" />
@@ -177,6 +180,16 @@ export default function SettingsPage() {
                 description: t('settings.securityHint'),
                 href: '/settings/security',
               },
+              ...(profile?.role === 'admin'
+                ? [
+                    {
+                      icon: ShieldCheck,
+                      title: t('admin.title'),
+                      description: t('admin.subtitle'),
+                      href: '/admin',
+                    },
+                  ]
+                : []),
             ]}
           />
 

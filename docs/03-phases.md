@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ thể, có thể demo độc lập.
+Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ thể, có thể demo độc lập.
 
 ---
 
@@ -315,7 +315,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 ## Phase 5 — Voice & Video Call (WebRTC) 📞 ✅
 
 **Mục tiêu**: Cuộc gọi thoại và video thực sự hoạt động.
-**Trạng thái**: ✅ Hoàn thành (2026-08-27)
+**Trạng thái**: ✅ Hoàn thành implementation và nghiệm thu tự động hai browser (2026-09-01)
 
 ### Tasks
 
@@ -336,7 +336,7 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] STUN servers: Google public STUN servers
 - [x] Media controls: mute mic, toggle camera, switch camera
 - [x] ICE candidate handling và exchange
-- [x] Helper functions: `isWebRTCSupported()`, `requestMediaPermissions()`
+- [x] Kiểm tra hỗ trợ WebRTC mà không tự mở camera/microphone khi tải trang
 
 #### 5.3. Call Provider & Hooks ✅
 
@@ -359,15 +359,52 @@ Dự án chia thành **6 phases** rõ ràng. Mỗi phase có deliverable cụ th
 - [x] Filter: All, Missed, Incoming, Outgoing
 - [x] Realtime updates khi có cuộc gọi mới
 
+#### 5.6. Signaling & Media Hardening ✅ (2026-09-01)
+
+- [x] Nút Accept/Decline gọi đúng provider thay vì chỉ đổi Zustand state
+- [x] Đọc đúng `id` từ object trả về của RPC `initiate_call()`
+- [x] Callee subscribe signaling trước khi cập nhật trạng thái `answered`
+- [x] Queue ICE candidates đến khi có remote description
+- [x] Không gọi `getUserMedia()` khi ứng dụng vừa mount
+- [x] Sửa logic mute/camera bị đảo và nối đúng nút switch camera
+- [x] Gắn remote audio/video stream và có fallback click để vượt autoplay policy
+- [x] Bổ sung TURN config, authorization và call-history idempotency
+- [x] Sửa enum `call_direction` để kết thúc cuộc gọi ghi lịch sử nguyên tử
+- [x] Cô lập timer của từng session để cuộc gọi cũ không ghi đè cuộc gọi kế tiếp
+- [x] Giữ listener provider ổn định qua các lần thay đổi local/remote stream
+
 ### Deliverable ✅
 
-- ✅ Gọi được giữa 2 user
-- ✅ Cuộc gọi voice/video hoạt động qua WebRTC
-- ✅ Lịch sử cuộc gọi được lưu
+- [x] Nghiệm thu gọi thoại hai chiều giữa 2 user trên hai browser độc lập với audio track live
+- [x] Nghiệm thu video hai chiều và camera preview với audio/video track live
+- [x] Lịch sử cuộc gọi được lưu một lần cho mỗi session
+- [ ] Smoke test bổ sung trên hai thiết bị vật lý và mạng TURN của môi trường triển khai
 
 ---
 
-## Phase 6 — Group Chat, Stories, Polish ✨
+## Phase 6 — Friendships, Public Profiles & Administration 👥 ✅
+
+**Mục tiêu**: Bổ sung social graph và công cụ quản trị có phân quyền.
+**Trạng thái**: ✅ Hoàn thành implementation và migration (2026-09-01)
+
+### Tasks
+
+- [x] Gửi, nhận, chấp nhận, từ chối và hủy lời mời kết bạn
+- [x] Hủy kết bạn và đồng bộ Realtime
+- [x] Trang hồ sơ công khai `/profile/[id]`
+- [x] Chỉ hiển thị hành động phù hợp với trạng thái quan hệ
+- [x] Trang `/admin` với thống kê, tìm kiếm và quản lý user
+- [x] Role admin, khóa/mở tài khoản, chống tự nâng quyền và audit log
+- [x] Tài khoản admin test được bootstrap ngoài source code
+- [x] Xóa vĩnh viễn cuộc trò chuyện bằng RPC có kiểm tra quyền
+
+### Deliverable ✅
+
+- Social graph và trang quản trị hoạt động trên Supabase thật
+
+---
+
+## Phase 7 — Group Chat, Stories, Polish ✨
 
 **Mục tiêu**: Mở rộng cho nhóm và status, polish cuối cùng.
 

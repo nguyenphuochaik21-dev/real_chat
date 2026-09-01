@@ -74,6 +74,7 @@ export function useCallHistory(userId: string, limit: number = 50) {
           const otherUserId = call.caller_id === userId ? call.callee_id : call.caller_id
           return {
             ...call,
+            direction: call.caller_id === userId ? ('outgoing' as const) : ('incoming' as const),
             other_user: profilesMap.get(otherUserId),
           }
         }) || []

@@ -1,149 +1,156 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Search, Phone, MessageSquare, UserPlus } from 'lucide-react'
+import { Check, Clock3, MessageSquare, Search, UserMinus, UserPlus, Users, X } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
-import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { createClient } from '@/lib/supabase/client'
-import type { Tables } from '@/types'
+import { createConversation } from '@/lib/actions/conversations'
+import {
+  getFriendshipOverview,
+  removeFriendship,
+  respondFriendRequest,
+  sendFriendRequest,
+  type FriendProfile,
+  type FriendshipItem,
+  type FriendshipOverview,
+} from '@/lib/actions/friendships'
 import { useI18n } from '@/lib/i18n'
+import { createClient } from '@/lib/supabase/client'
 
-type Profile = Tables<'profiles'>
+function matchesSearch(profile: FriendProfile, search: string) {
+  const query = search.trim().toLocaleLowerCase()
+  if (!query) return true
+  return `${profile.display_name} ${profile.username}`.toLocaleLowerCase().includes(query)
+}
 
-function groupByLetter(users: Profile[]) {
-  const grouped: Record<string, Profile[]> = {}
-  users.forEach((user) => {
-    const letter = user.display_name[0].toUpperCase()
-    if (!grouped[letter]) {
-      grouped[letter] = []
-    }
-    grouped[letter].push(user)
-  })
-  return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
+function ProfileIdentity({ profile }: { profile: FriendProfile }) {
+  return (
+    <Link href={`/profile/${profile.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+      <Avatar user={profile} size="md" showStatus />
+      <div className="min-w-0">
+        <p className="truncate font-medium text-[var(--text-primary)]">{profile.display_name}</p>
+        <p className="truncate text-xs text-[var(--text-muted)]">
+          @{profile.username}
+          {profile.bio ? ` · ${profile.bio}` : ''}
+        </p>
+      </div>
+    </Link>
+  )
+}
+
+interface ContactRowProps {
+  profile: FriendProfile
+  children: React.ReactNode
+}
+
+function ContactRow({ profile, children }: ContactRowProps) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-[var(--bg-panel)] p-3 shadow-sm">
+      <ProfileIdentity profile={profile} />
+      <div className="flex shrink-0 items-center gap-1">{children}</div>
+    </div>
+  )
 }
 
 export default function ContactsPage() {
   const { t } = useI18n()
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
+  const [overview, setOverview] = useState<FriendshipOverview | null>(null)
   const [search, setSearch] = useState('')
-  const [contacts, setContacts] = useState<Profile[]>([])
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [startingChat, setStartingChat] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    setCurrentUserId(user?.id || null)
-
-    if (user) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .neq('id', user.id)
-        .order('display_name', { ascending: true })
-
-      if (!error && data) {
-        setContacts(data)
-      }
+  const refresh = useCallback(async () => {
+    try {
+      const nextOverview = await getFriendshipOverview()
+      setOverview(nextOverview)
+      setError(null)
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : t('common.unknownError'))
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }, [supabase])
+  }, [t])
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => void fetchData(), 0)
+    const timeoutId = window.setTimeout(() => void refresh(), 0)
     return () => window.clearTimeout(timeoutId)
-  }, [fetchData])
+  }, [refresh])
 
-  const startConversation = useCallback(
-    async (contactId: string) => {
-      if (!currentUserId || startingChat) return
+  useEffect(() => {
+    if (!overview?.currentUserId) return
 
-      setStartingChat(contactId)
+    const supabase = supabaseRef.current
+    const channel = supabase
+      .channel(`friendships:${overview.currentUserId}:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friendships',
+          filter: `requester_id=eq.${overview.currentUserId}`,
+        },
+        () => void refresh()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friendships',
+          filter: `addressee_id=eq.${overview.currentUserId}`,
+        },
+        () => void refresh()
+      )
+      .subscribe()
 
-      try {
-        // Check if conversation already exists
-        const { data: existingConvs } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', currentUserId)
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [overview?.currentUserId, refresh])
 
-        let conversationId: string | null = null
+  const runAction = async (id: string, action: () => Promise<void>) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      await action()
+      await refresh()
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : t('common.unknownError'))
+    } finally {
+      setBusyId(null)
+    }
+  }
 
-        for (const part of existingConvs || []) {
-          const { data: otherParts } = await supabase
-            .from('conversation_participants')
-            .select('user_id')
-            .eq('conversation_id', part.conversation_id)
-            .eq('user_id', contactId)
+  const startChat = async (profileId: string) => {
+    if (!overview) return
+    setBusyId(profileId)
+    try {
+      const conversation = await createConversation(overview.currentUserId, profileId)
+      router.push(`/chats/${conversation.id}`)
+    } catch (chatError) {
+      setError(chatError instanceof Error ? chatError.message : t('common.unknownError'))
+      setBusyId(null)
+    }
+  }
 
-          if (otherParts && otherParts.length > 0) {
-            conversationId = part.conversation_id
-            break
-          }
-        }
-
-        // Create new conversation if not found
-        if (!conversationId) {
-          const { data: newConv, error: createError } = await supabase
-            .from('conversations')
-            .insert({ created_by: currentUserId, type: 'direct' })
-            .select()
-            .single()
-
-          if (createError) {
-            console.error('Create conversation error:', createError)
-            throw new Error(`Failed to create conversation: ${createError.message}`)
-          }
-          if (!newConv) throw new Error('Failed to create conversation: no data returned')
-
-          conversationId = newConv.id
-
-          // Add current user first (RLS allows this)
-          const { error: addSelfError } = await supabase.from('conversation_participants').insert({
-            conversation_id: conversationId,
-            user_id: currentUserId,
-          })
-
-          if (addSelfError) {
-            console.error('Add self error:', addSelfError)
-            throw new Error(`Failed to add self: ${addSelfError.message}`)
-          }
-
-          // Add the other participant using a server action workaround
-          const { error: addOtherError } = await supabase.rpc('add_conversation_participant', {
-            p_conversation_id: conversationId,
-            p_user_id: contactId,
-          })
-
-          if (addOtherError) {
-            console.error('Add other error:', addOtherError)
-            throw new Error(`Failed to add other: ${addOtherError.message}`)
-          }
-        }
-
-        router.push(`/chats/${conversationId}`)
-      } catch (err) {
-        console.error('Failed to start conversation:', err)
-      } finally {
-        setStartingChat(null)
-      }
-    },
-    [currentUserId, startingChat, router, supabase]
-  )
-
-  const filteredUsers = contacts.filter((user) =>
-    user.display_name.toLowerCase().includes(search.toLowerCase())
-  )
-
-  const groupedUsers = groupByLetter(filteredUsers)
+  const filtered = useMemo(() => {
+    if (!overview) return null
+    return {
+      friends: overview.friends.filter((item) => matchesSearch(item.profile, search)),
+      incoming: overview.incoming.filter((item) => matchesSearch(item.profile, search)),
+      outgoing: overview.outgoing.filter((item) => matchesSearch(item.profile, search)),
+      discover: overview.discover.filter((profile) => matchesSearch(profile, search)),
+    }
+  }, [overview, search])
 
   if (loading) {
     return (
@@ -154,84 +161,160 @@ export default function ContactsPage() {
   }
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
-      {/* Header */}
-      <div className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-            {t('contacts.title')}
-          </h1>
-          <Button variant="outline" size="sm">
-            <UserPlus className="mr-2 h-4 w-4" />
-            {t('contacts.add')}
-          </Button>
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-app)]">
+      <header className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
+        <div className="mb-4 flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">{t('friends.title')}</h1>
+          {!!overview?.incoming.length && (
+            <Badge variant="primary" size="sm">
+              {overview.incoming.length}
+            </Badge>
+          )}
         </div>
-
-        {/* Search */}
         <div className="relative">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
           <Input
             type="search"
-            placeholder={t('contacts.search')}
+            placeholder={t('friends.search')}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
             className="pl-10"
           />
         </div>
-      </div>
+        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      </header>
 
-      {/* Contacts list */}
       <ScrollArea className="flex-1">
-        <div className="p-4">
-          {groupedUsers.length > 0 ? (
-            groupedUsers.map(([letter, users]) => (
-              <div key={letter}>
-                <div className="sticky top-0 z-10 bg-[var(--bg-app)] py-2">
-                  <h2 className="text-sm font-semibold text-[var(--text-muted)]">{letter}</h2>
-                </div>
-                <div className="space-y-1">
-                  {users.map((user) => (
-                    <div
-                      key={user.id}
-                      className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-[var(--bg-hover)]"
+        <div className="mx-auto w-full max-w-4xl space-y-7 p-4 sm:p-6">
+          {!!filtered?.incoming.length && (
+            <section>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">
+                <UserPlus className="h-4 w-4" />
+                {t('friends.incoming')}
+              </h2>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {filtered.incoming.map((item) => (
+                  <ContactRow key={item.id} profile={item.profile}>
+                    <Button
+                      size="icon-sm"
+                      onClick={() =>
+                        void runAction(item.id, () => respondFriendRequest(item.id, true))
+                      }
+                      disabled={busyId === item.id}
+                      aria-label={t('friends.accept')}
                     >
-                      <Avatar user={user} size="md" showStatus />
-                      <div className="flex-1">
-                        <p className="font-medium text-[var(--text-primary)]">
-                          {user.display_name}
-                        </p>
-                        {user.bio && (
-                          <p className="truncate text-xs text-[var(--text-muted)]">{user.bio}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => startConversation(user.id)}
-                          disabled={startingChat === user.id}
-                        >
-                          {startingChat === user.id ? (
-                            <div className="border-primary-500 h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
-                          ) : (
-                            <MessageSquare className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button variant="ghost" size="icon-sm">
-                          <Phone className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <Separator className="my-2" />
+                      <Check className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() =>
+                        void runAction(item.id, () => respondFriendRequest(item.id, false))
+                      }
+                      disabled={busyId === item.id}
+                      aria-label={t('friends.decline')}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </ContactRow>
+                ))}
               </div>
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
-              <p className="text-sm">{t('contacts.none')}</p>
-            </div>
+            </section>
           )}
+
+          <section>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">
+              <Users className="h-4 w-4" />
+              {t('friends.yourFriends')}
+            </h2>
+            {filtered?.friends.length ? (
+              <div className="grid gap-2 lg:grid-cols-2">
+                {filtered.friends.map((item) => (
+                  <ContactRow key={item.id} profile={item.profile}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => void startChat(item.profile.id)}
+                      disabled={busyId === item.profile.id}
+                      aria-label={t('friends.message')}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        if (
+                          confirm(t('friends.removeConfirm', { name: item.profile.display_name }))
+                        ) {
+                          void runAction(item.id, () => removeFriendship(item.id))
+                        }
+                      }}
+                      disabled={busyId === item.id}
+                      aria-label={t('friends.remove')}
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </Button>
+                  </ContactRow>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-xl border border-dashed border-[var(--border-default)] p-6 text-center text-sm text-[var(--text-muted)]">
+                {t('friends.none')}
+              </p>
+            )}
+          </section>
+
+          {!!filtered?.outgoing.length && (
+            <section>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">
+                <Clock3 className="h-4 w-4" />
+                {t('friends.outgoing')}
+              </h2>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {filtered.outgoing.map((item: FriendshipItem) => (
+                  <ContactRow key={item.id} profile={item.profile}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void runAction(item.id, () => removeFriendship(item.id))}
+                      disabled={busyId === item.id}
+                    >
+                      {t('friends.cancel')}
+                    </Button>
+                  </ContactRow>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">
+              <UserPlus className="h-4 w-4" />
+              {t('friends.discover')}
+            </h2>
+            {filtered?.discover.length ? (
+              <div className="grid gap-2 lg:grid-cols-2">
+                {filtered.discover.map((profile) => (
+                  <ContactRow key={profile.id} profile={profile}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void runAction(profile.id, () => sendFriendRequest(profile.id))
+                      }
+                      disabled={busyId === profile.id}
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span className="hidden sm:inline">{t('friends.add')}</span>
+                    </Button>
+                  </ContactRow>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--text-muted)]">{t('friends.noSuggestions')}</p>
+            )}
+          </section>
         </div>
       </ScrollArea>
     </div>

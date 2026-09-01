@@ -7,7 +7,7 @@ import { useI18n } from '@/lib/i18n'
 
 export function IncomingCallModal() {
   const { t } = useI18n()
-  const { status, type, remoteUser, acceptCall, declineCall } = useCallStore()
+  const { status, type, remoteUser } = useCallStore()
 
   if (status !== 'ringing') return null
 
@@ -23,11 +23,11 @@ export function IncomingCallModal() {
     : null
 
   const handleAccept = () => {
-    acceptCall()
+    window.dispatchEvent(new CustomEvent('call:accept'))
   }
 
   const handleDecline = () => {
-    declineCall()
+    window.dispatchEvent(new CustomEvent('call:decline'))
   }
 
   return (

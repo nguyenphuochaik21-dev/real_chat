@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Phone,
@@ -41,6 +42,7 @@ import { useScheduledMessagesProcessor } from '@/hooks/use-scheduled-messages-pr
 import { createScheduledMessage } from '@/lib/actions/scheduled-messages'
 import { editMessage, deleteMessage } from '@/lib/actions/messages'
 import { useChatCacheStore } from '@/stores/chat-cache-store'
+import { useChatsListStore } from '@/stores/chats-list-store'
 import { resolvePresence, type PresenceStatus } from '@/lib/presence'
 import { useI18n } from '@/lib/i18n'
 import type { Tables } from '@/types'
@@ -1143,7 +1145,10 @@ export function ChatView({
         )}
 
         {participant && (
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+          <Link
+            href={`/profile/${participant.id}`}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg sm:gap-3"
+          >
             {/* Avatar with dynamic status */}
             <div className="relative shrink-0">
               <Avatar user={participant} size="md" showStatus={false} />
@@ -1169,7 +1174,7 @@ export function ChatView({
                 {getStatusText()}
               </p>
             </div>
-          </div>
+          </Link>
         )}
 
         {!participant && showBackButton && <div className="flex-1" />}
@@ -1448,6 +1453,12 @@ export function ChatView({
               onClose={() => setShowConversationActions(false)}
               onSearch={() => setShowSearch(true)}
               onOpenMedia={() => setShowMediaGallery(true)}
+              onDeleted={() => {
+                useChatsListStore.getState().removeConversation(conversationId)
+                useChatCacheStore.getState().clearCache(conversationId)
+                router.replace('/chats')
+                router.refresh()
+              }}
               onAction={(updates) => {
                 setConversationFlags((prev) => ({
                   ...prev,

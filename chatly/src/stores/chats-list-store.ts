@@ -50,6 +50,7 @@ interface ChatsListStore {
   upsertConversation: (conv: ConversationWithDetails) => void
   moveToArchived: (id: string) => void
   moveToActive: (id: string) => void
+  removeConversation: (id: string) => void
   updateConversation: (id: string, patch: Partial<ConversationWithDetails>) => void
   incrementUnread: (id: string, lastMessage: Message | null, fromOther: boolean) => void
   updateLastMessage: (id: string, lastMessage: Message | null) => void
@@ -118,6 +119,14 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
         archivedConversations: state.archivedConversations.filter((c) => c.id !== id),
       }
     }),
+
+  removeConversation: (id) =>
+    set((state) => ({
+      conversations: state.conversations.filter((conversation) => conversation.id !== id),
+      archivedConversations: state.archivedConversations.filter(
+        (conversation) => conversation.id !== id
+      ),
+    })),
 
   updateConversation: (id, patch) =>
     set((state) => ({

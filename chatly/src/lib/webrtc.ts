@@ -1,6 +1,7 @@
 'use client'
 
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 
 export type CallType = 'voice' | 'video'
 
@@ -49,11 +50,8 @@ export class WebRTCService {
   private callType: CallType
   private isInitiator: boolean
   private channel: RealtimeChannel | null = null
-
   private channelName: string
-  private ws: WebSocket | null = null
-  private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
+  private pendingIceCandidates: RTCIceCandidateInit[] = []
 
   private userId: string
   private remoteUserId: string
@@ -80,7 +78,8 @@ export class WebRTCService {
     try {
       await this.acquireLocalStream()
       this.createPeerConnection()
-      this.connectSignaling()
+      await this.connectSignaling()
+      if (this.isInitiator) await this.createOffer()
     } catch (error) {
       this.config.onError(error instanceof Error ? error : new Error('Failed to initialize WebRTC'))
       throw error
@@ -93,17 +92,8 @@ export class WebRTCService {
       video: this.callType === 'video' ? { width: 1280, height: 720 } : false,
     }
 
-    try {
-      this.localStream = await navigator.mediaDevices.getUserMedia(constraints)
-      return this.localStream
-    } catch (error) {
-      if (this.callType === 'video') {
-        // Fallback to audio only
-        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        return this.localStream
-      }
-      throw error
-    }
+    this.localStream = await navigator.mediaDevices.getUserMedia(constraints)
+    return this.localStream
   }
 
   private createPeerConnection(): void {
@@ -148,7 +138,6 @@ export class WebRTCService {
    * The channel name is unique per call session, both peers subscribe.
    */
   private async connectSignaling(): Promise<void> {
-    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
 
     const channel = supabase.channel(this.channelName, {
@@ -158,40 +147,41 @@ export class WebRTCService {
     })
 
     channel.on('broadcast', { event: 'signal' }, (payload) => {
-      this.handleSignal(payload.payload as SignalingMessage)
+      void this.handleSignal(payload.payload as SignalingMessage).catch((error: unknown) => {
+        this.config.onError(
+          error instanceof Error ? error : new Error('Failed to process WebRTC signal')
+        )
+      })
     })
 
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // Once subscribed, the initiator can create the offer
-        if (this.isInitiator) {
-          // small delay to ensure both peers are subscribed
-          setTimeout(() => this.createOffer(), 500)
-        }
-      }
-    })
-
-    // Save for cleanup
     this.channel = channel
+    await new Promise<void>((resolve, reject) => {
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') resolve()
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          reject(new Error(`WebRTC signaling channel failed: ${status}`))
+        }
+      })
+    })
   }
 
-  private handleSignal(message: SignalingMessage): void {
+  private async handleSignal(message: SignalingMessage): Promise<void> {
     if (!message || message.fromUserId === this.userId) return
     if (message.toUserId !== this.userId) return
     if (message.sessionId !== this.sessionId) return
 
     switch (message.type) {
       case 'offer':
-        this.handleOffer(message.payload as RTCSessionDescriptionInit)
+        await this.handleOffer(message.payload as RTCSessionDescriptionInit)
         break
       case 'answer':
-        this.handleAnswer(message.payload as RTCSessionDescriptionInit)
+        await this.handleAnswer(message.payload as RTCSessionDescriptionInit)
         break
       case 'ice-candidate':
-        this.handleIceCandidate(message.payload as RTCIceCandidateInit)
+        await this.handleIceCandidate(message.payload as RTCIceCandidateInit)
         break
       case 'call-end':
-        this.config.onConnectionStateChange('disconnected')
+        this.config.onConnectionStateChange('closed')
         break
     }
   }
@@ -228,6 +218,7 @@ export class WebRTCService {
     if (!this.peerConnection) throw new Error('Peer connection not initialized')
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+    await this.flushPendingIceCandidates()
     const answer = await this.peerConnection.createAnswer()
     await this.peerConnection.setLocalDescription(answer)
 
@@ -243,14 +234,27 @@ export class WebRTCService {
   private async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     if (!this.peerConnection) throw new Error('Peer connection not initialized')
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
+    await this.flushPendingIceCandidates()
   }
 
   private async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     if (!this.peerConnection) return
+    if (!this.peerConnection.remoteDescription) {
+      this.pendingIceCandidates.push(candidate)
+      return
+    }
     try {
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
     } catch (error) {
       console.error('Error adding ICE candidate:', error)
+    }
+  }
+
+  private async flushPendingIceCandidates(): Promise<void> {
+    if (!this.peerConnection?.remoteDescription) return
+    const candidates = this.pendingIceCandidates.splice(0)
+    for (const candidate of candidates) {
+      await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
     }
   }
 
@@ -316,13 +320,10 @@ export class WebRTCService {
 
     const channel = this.channel
     if (channel) {
-      // Fire and forget - remove channel
-      import('@/lib/supabase/client').then(({ createClient }) => {
-        const supabase = createClient()
-        supabase.removeChannel(channel)
-      })
+      void createClient().removeChannel(channel)
       this.channel = null
     }
+    this.pendingIceCandidates = []
   }
 }
 
@@ -332,24 +333,4 @@ export function isWebRTCSupported(): boolean {
     typeof window.RTCPeerConnection !== 'undefined' &&
     !!navigator.mediaDevices?.getUserMedia
   )
-}
-
-export async function requestMediaPermissions(type: CallType = 'voice'): Promise<{
-  audio: boolean
-  video: boolean
-}> {
-  try {
-    const constraints: MediaStreamConstraints = {
-      audio: true,
-      video: type === 'video',
-    }
-    const stream = await navigator.mediaDevices.getUserMedia(constraints)
-    const audio = stream.getAudioTracks().length > 0
-    const video = stream.getVideoTracks().length > 0
-    stream.getTracks().forEach((t) => t.stop())
-    return { audio, video }
-  } catch (error) {
-    console.error('Permission request failed:', error)
-    return { audio: false, video: false }
-  }
 }

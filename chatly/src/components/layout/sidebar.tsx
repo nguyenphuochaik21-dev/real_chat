@@ -11,6 +11,7 @@ import {
   Settings,
   Search,
   MessageCircle,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -41,6 +42,7 @@ interface Profile {
   display_name: string
   avatar_url: string | null
   status?: 'online' | 'offline' | 'away' | 'busy'
+  role?: 'user' | 'admin'
 }
 
 async function setUserOnline(supabase: ReturnType<typeof createClient>) {
@@ -68,6 +70,11 @@ export function Sidebar() {
   const [showSearch, setShowSearch] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const supabaseRef = useRef(createClient())
+  const pathnameRef = useRef(pathname)
+
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
 
   // Notification store
   const notificationUnreadCount = useNotificationStore((s) => s.unreadCount)
@@ -83,7 +90,7 @@ export function Sidebar() {
     let currentUserId: string | null = null
 
     const supabase = supabaseRef.current
-    const currentPathname = pathname
+    const subscriptionId = crypto.randomUUID()
 
     const addNotification = useNotificationStore.getState().addNotification
 
@@ -93,7 +100,7 @@ export function Sidebar() {
         notificationChannel = null
       }
       notificationChannel = supabase
-        .channel(`notifications:${userId}`)
+        .channel(`notifications:${userId}:${subscriptionId}`)
         .on(
           'postgres_changes',
           {
@@ -102,6 +109,8 @@ export function Sidebar() {
             table: 'messages',
           },
           async (payload) => {
+            if (!mounted) return
+
             const newMsg = payload.new as {
               id: string
               sender_id: string
@@ -114,7 +123,7 @@ export function Sidebar() {
             if (newMsg.sender_id === userId) return
 
             // Skip if we're viewing this conversation
-            if (currentPathname === `/chats/${newMsg.conversation_id}`) return
+            if (pathnameRef.current === `/chats/${newMsg.conversation_id}`) return
 
             // Check conversation participation flags (muted / archived)
             const { data: participation } = await supabase
@@ -206,7 +215,7 @@ export function Sidebar() {
         unreadChannel = null
       }
       const channel = supabase
-        .channel(`sidebar-unread-${userId}`)
+        .channel(`sidebar-unread:${userId}:${subscriptionId}`)
         .on(
           'postgres_changes',
           {
@@ -215,6 +224,8 @@ export function Sidebar() {
             table: 'messages',
           },
           async (payload) => {
+            if (!mounted) return
+
             const newMsg = payload.new as {
               sender_id: string
               conversation_id: string
@@ -281,11 +292,11 @@ export function Sidebar() {
 
     return () => {
       mounted = false
-      if (unreadChannel) supabase.removeChannel(unreadChannel)
-      if (notificationChannel) supabase.removeChannel(notificationChannel)
-      if (currentUserId) setUserOffline(supabase)
+      if (unreadChannel) void supabase.removeChannel(unreadChannel)
+      if (notificationChannel) void supabase.removeChannel(notificationChannel)
+      if (currentUserId) void setUserOffline(supabase)
     }
-  }, [pathname])
+  }, [])
 
   const userForAvatar = profile || {
     id: 'unknown',
@@ -323,7 +334,12 @@ export function Sidebar() {
 
           {/* Notification bell */}
           <NotificationBell onClick={() => setShowNotifications(true)} />
-          {navItems.map((item) => {
+          {[
+            ...navItems,
+            ...(profile?.role === 'admin'
+              ? [{ href: '/admin', icon: ShieldCheck, labelKey: 'nav.admin' }]
+              : []),
+          ].map((item) => {
             const isActive =
               item.href === '/chats'
                 ? pathname.startsWith('/chats') || pathname === '/'

@@ -20,7 +20,8 @@ export async function getConversations(userId: string): Promise<ConversationWith
   // Get all conversations for this user
   const { data: participations, error: partError } = await supabase
     .from('conversation_participants')
-    .select(`
+    .select(
+      `
       *,
       conversation:conversations(
         *,
@@ -32,7 +33,8 @@ export async function getConversations(userId: string): Promise<ConversationWith
           status
         )
       )
-    `)
+    `
+    )
     .eq('user_id', userId)
     .order('last_read_at', { ascending: false })
 
@@ -56,11 +58,7 @@ export async function getConversations(userId: string): Promise<ConversationWith
 
     let participant = null
     if (otherUserId) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', otherUserId)
-        .single()
+      const { data } = await supabase.from('profiles').select('*').eq('id', otherUserId).single()
       participant = data
     }
 
@@ -169,11 +167,7 @@ export async function createConversation(
   return newConv
 }
 
-export async function togglePinned(
-  conversationId: string,
-  userId: string,
-  isPinned: boolean
-) {
+export async function togglePinned(conversationId: string, userId: string, isPinned: boolean) {
   const supabase = await createClient()
   await supabase
     .from('conversation_participants')
@@ -188,7 +182,14 @@ export async function toggleMuted(
   isMuted: boolean
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
-  console.log('[toggleMuted] Setting is_muted:', isMuted, 'for conversation:', conversationId, 'user:', userId)
+  console.log(
+    '[toggleMuted] Setting is_muted:',
+    isMuted,
+    'for conversation:',
+    conversationId,
+    'user:',
+    userId
+  )
 
   const { error } = await supabase
     .from('conversation_participants')
@@ -253,17 +254,19 @@ export async function archiveConversation(
  * Delete a conversation (removes user from conversation)
  */
 export async function deleteConversation(
-  conversationId: string,
-  userId: string
+  conversationId: string
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
 
-  // Remove user from conversation participants
-  const { error } = await supabase
-    .from('conversation_participants')
-    .delete()
-    .eq('conversation_id', conversationId)
-    .eq('user_id', userId)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { success: false, error: 'Authentication required' }
+
+  const { error } = await supabase.rpc('delete_conversation_permanently', {
+    p_conversation_id: conversationId,
+  })
 
   if (error) {
     return { success: false, error: error.message }
@@ -332,12 +335,14 @@ export async function getArchivedConversations(userId: string) {
 
   const { data, error } = await supabase
     .from('conversation_participants')
-    .select(`
+    .select(
+      `
       is_archived,
       conversation:conversations(
         *
       )
-    `)
+    `
+    )
     .eq('user_id', userId)
     .eq('is_archived', true)
 
@@ -346,5 +351,5 @@ export async function getArchivedConversations(userId: string) {
     return []
   }
 
-  return data?.map(d => d.conversation).filter(Boolean) || []
+  return data?.map((d) => d.conversation).filter(Boolean) || []
 }

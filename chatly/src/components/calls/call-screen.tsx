@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { Video, VideoOff, Mic, MicOff, Volume2, PhoneOff, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Video, VideoOff, Mic, MicOff, Volume2, VolumeX, PhoneOff, RefreshCw } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { useCallStore, formatCallDuration } from '@/stores/call-store'
 import { useI18n } from '@/lib/i18n'
 
@@ -13,17 +14,24 @@ interface CallScreenProps {
 
 export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
   const { t } = useI18n()
-  const { status, type, remoteUser, duration, isMuted, isVideoOff, error } = useCallStore()
+  const { status, type, remoteUser, duration, isMuted, isVideoOff, isSpeakerOn, error } =
+    useCallStore()
 
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const remoteAudioRef = useRef<HTMLAudioElement>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [playbackBlocked, setPlaybackBlocked] = useState(false)
 
   // Attach local stream
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream
+    const localVideo = localVideoRef.current
+    if (localVideo && localStream) {
+      localVideo.srcObject = localStream
+      void localVideo.play().catch(() => undefined)
+    }
+    return () => {
+      if (localVideo) localVideo.srcObject = null
     }
   }, [localStream])
 
@@ -32,14 +40,20 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
     if (!remoteStream) return
     const isVideoCall = type === 'video'
 
-    if (isVideoCall && remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStream
-      remoteVideoRef.current.play().catch(console.error)
-    } else if (!isVideoCall && remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = remoteStream
-      remoteAudioRef.current.play().catch(console.error)
+    const mediaElement = isVideoCall ? remoteVideoRef.current : remoteAudioRef.current
+    if (!mediaElement) return
+
+    mediaElement.srcObject = remoteStream
+    mediaElement.muted = !isSpeakerOn
+    void mediaElement
+      .play()
+      .then(() => setPlaybackBlocked(false))
+      .catch(() => setPlaybackBlocked(true))
+
+    return () => {
+      mediaElement.srcObject = null
     }
-  }, [remoteStream, type])
+  }, [remoteStream, type, isSpeakerOn])
 
   // Duration timer
   useEffect(() => {
@@ -104,6 +118,13 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
     window.dispatchEvent(new CustomEvent('call:video', { detail: !isVideoOff }))
   }
 
+  const resumePlayback = () => {
+    const mediaElement = type === 'video' ? remoteVideoRef.current : remoteAudioRef.current
+    if (!mediaElement) return
+    mediaElement.muted = false
+    void mediaElement.play().then(() => setPlaybackBlocked(false))
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Hidden audio element for voice calls */}
@@ -158,6 +179,13 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
         </div>
       </div>
 
+      {playbackBlocked && remoteStream && (
+        <Button className="absolute top-5 left-1/2 z-20 -translate-x-1/2" onClick={resumePlayback}>
+          <Volume2 className="h-4 w-4" />
+          {t('call.enableAudio')}
+        </Button>
+      )}
+
       {/* Local video preview */}
       {showLocalVideo && (
         <div className="absolute right-4 bottom-28 h-52 w-40 overflow-hidden rounded-2xl bg-slate-800 shadow-2xl ring-2 ring-white/30">
@@ -176,9 +204,8 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
           )}
           <button
             className="absolute right-2 bottom-2 rounded-full bg-black/40 p-1.5 text-white hover:bg-black/60"
-            onClick={() =>
-              window.dispatchEvent(new CustomEvent('call:video', { detail: !isVideoOff }))
-            }
+            onClick={() => window.dispatchEvent(new CustomEvent('call:switch-camera'))}
+            aria-label={t('call.switchCamera')}
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
@@ -204,10 +231,12 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
         )}
 
         <ControlButton
-          icon={<Volume2 className="h-6 w-6" />}
-          label={t('call.speaker')}
-          onClick={() => window.dispatchEvent(new CustomEvent('call:speaker', { detail: true }))}
-          variant="secondary"
+          icon={isSpeakerOn ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
+          label={isSpeakerOn ? t('call.speakerOff') : t('call.speakerOn')}
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent('call:speaker', { detail: !isSpeakerOn }))
+          }
+          variant={isSpeakerOn ? 'secondary' : 'danger'}
         />
 
         <ControlButton

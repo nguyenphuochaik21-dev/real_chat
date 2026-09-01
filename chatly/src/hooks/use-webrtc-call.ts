@@ -2,12 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import {
-  WebRTCService,
-  type CallType,
-  isWebRTCSupported,
-  requestMediaPermissions,
-} from '@/lib/webrtc'
+import { WebRTCService, type CallType, isWebRTCSupported } from '@/lib/webrtc'
 import { useCallStore } from '@/stores/call-store'
 
 export interface UseWebRTCCallOptions {
@@ -19,20 +14,17 @@ export interface UseWebRTCCallOptions {
 
 export function useWebRTCCall(options: UseWebRTCCallOptions) {
   const { userId, onCallStarted, onCallEnded, onError } = options
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
-  const [hasPermissions, setHasPermissions] = useState<boolean | null>(null)
 
   const webrtcRef = useRef<WebRTCService | null>(null)
   // Ref so the useEffect closure can call startWebRTC without circular deps
-  const startWebRTCRef = useRef<((isInitiator: boolean) => Promise<void>) | null>(null)
+  const startWebRTCRef = useRef<((isInitiator: boolean) => Promise<boolean>) | null>(null)
   const onCallStartedRef = useRef(onCallStarted)
   const onCallEndedRef = useRef(onCallEnded)
   const onErrorRef = useRef(onError)
-
-  const store = useCallStore()
 
   // Keep callbacks in refs to avoid stale closures
   useEffect(() => {
@@ -53,20 +45,6 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
     }
   }, [])
 
-  // Initial permission check
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      if (!isWebRTCSupported()) {
-        setHasPermissions(false)
-        return
-      }
-      requestMediaPermissions('video')
-        .then((p) => setHasPermissions(p.audio))
-        .catch(() => setHasPermissions(false))
-    }, 0)
-    return () => window.clearTimeout(timeoutId)
-  }, [])
-
   /**
    * Start WebRTC peer connection.
    * isInitiator=true → we create offer (caller after callee answers).
@@ -75,11 +53,10 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   const startWebRTC = useCallback(
     async (isInitiator: boolean) => {
       const s = useCallStore.getState()
-      if (!s.remoteUser || !s.sessionId || !s.type) return
+      if (!s.remoteUser || !s.sessionId || !s.type) return false
 
       try {
-        const perms = await requestMediaPermissions(s.type)
-        if (!perms.audio) throw new Error('Microphone permission denied')
+        if (!isWebRTCSupported()) throw new Error('WebRTC is not supported in this browser')
 
         webrtcRef.current?.cleanup()
 
@@ -95,14 +72,14 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
               if (state === 'connected') {
                 useCallStore.getState().setConnected()
                 onCallStartedRef.current?.()
-              } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+              } else if (state === 'failed' || state === 'closed') {
                 const cur = useCallStore.getState()
                 if (cur.status === 'connected' || cur.status === 'connecting') {
                   webrtcRef.current?.cleanup()
                   webrtcRef.current = null
                   setRemoteStream(null)
                   setLocalStream(null)
-                  store.endCall()
+                  useCallStore.getState().endCall()
                 }
               }
             },
@@ -113,19 +90,23 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
           }
         )
 
+        webrtcRef.current = webrtc
         await webrtc.initialize()
         const ls = webrtc.getLocalStream()
         if (ls) setLocalStream(ls)
-        webrtcRef.current = webrtc
+        return true
       } catch (error) {
         console.error('[startWebRTC failed]', error)
         onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to start WebRTC'))
         webrtcRef.current?.cleanup()
         webrtcRef.current = null
-        store.setError(error instanceof Error ? error.message : 'Failed to start call')
+        useCallStore
+          .getState()
+          .setError(error instanceof Error ? error.message : 'Failed to start call')
+        return false
       }
     },
-    [userId, store]
+    [userId]
   )
 
   // Keep ref updated
@@ -137,8 +118,40 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   useEffect(() => {
     if (!userId) return
 
+    interface IncomingSession {
+      id: string
+      caller_id: string
+      call_type: CallType
+      conversation_id: string
+    }
+
+    const receiveIncomingCall = async (session: IncomingSession) => {
+      const current = useCallStore.getState()
+      if (current.sessionId === session.id) return
+      if (['calling', 'ringing', 'connecting', 'connected'].includes(current.status)) return
+
+      const { data: caller } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .eq('id', session.caller_id)
+        .single()
+
+      if (caller) {
+        useCallStore.getState().receiveCall(
+          session.id,
+          session.conversation_id,
+          {
+            id: caller.id,
+            displayName: caller.display_name,
+            avatarUrl: caller.avatar_url || undefined,
+          },
+          session.call_type
+        )
+      }
+    }
+
     const channel = supabase
-      .channel(`call-sessions-${userId}`)
+      .channel(`call-sessions:${userId}:${crypto.randomUUID()}`)
       // New incoming call (we are the callee)
       .on(
         'postgres_changes',
@@ -149,34 +162,7 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
           filter: `callee_id=eq.${userId}`,
         },
         async (payload) => {
-          const session = payload.new as {
-            id: string
-            caller_id: string
-            call_type: CallType
-            conversation_id: string
-          }
-
-          const current = useCallStore.getState()
-          if (current.sessionId === session.id) return
-
-          const { data: caller } = await supabase
-            .from('profiles')
-            .select('id, display_name, avatar_url')
-            .eq('id', session.caller_id)
-            .single()
-
-          if (caller) {
-            store.receiveCall(
-              session.id,
-              session.conversation_id,
-              {
-                id: caller.id,
-                displayName: caller.display_name,
-                avatarUrl: caller.avatar_url || undefined,
-              },
-              session.call_type
-            )
-          }
+          await receiveIncomingCall(payload.new as IncomingSession)
         }
       )
       // Updates as callee (caller ends the call while we're ringing/connected)
@@ -199,7 +185,7 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
             webrtcRef.current = null
             setRemoteStream(null)
             setLocalStream(null)
-            store.endCall()
+            useCallStore.getState().endCall()
           }
         }
       )
@@ -218,8 +204,14 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
           if (current.sessionId !== session.id) return
 
           if (current.status === 'calling' && session.status === 'answered') {
-            store.setConnecting()
-            await startWebRTCRef.current?.(true)
+            useCallStore.getState().setConnecting()
+            const started = await startWebRTCRef.current?.(true)
+            if (!started) {
+              await supabase.rpc('update_call_status', {
+                p_session_id: session.id,
+                p_status: 'failed',
+              })
+            }
           }
 
           const terminal = ['declined', 'missed', 'ended', 'failed']
@@ -233,34 +225,52 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
             webrtcRef.current = null
             setRemoteStream(null)
             setLocalStream(null)
-            store.endCall()
+            useCallStore.getState().endCall()
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return
+        void supabase
+          .from('call_sessions')
+          .select('id, caller_id, call_type, conversation_id')
+          .eq('callee_id', userId)
+          .in('status', ['pending', 'ringing'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data?.call_type && data.conversation_id) {
+              void receiveIncomingCall(data as IncomingSession)
+            }
+          })
+      })
 
     return () => {
-      supabase.removeChannel(channel)
+      void supabase.removeChannel(channel)
     }
-  }, [userId, supabase, store])
+  }, [userId, supabase])
 
   // Callee accepts the incoming call
   const acceptCall = useCallback(async () => {
     const s = useCallStore.getState()
     if (s.status !== 'ringing' || !s.sessionId) return
 
-    try {
-      await supabase.rpc('update_call_status', {
-        p_session_id: s.sessionId,
-        p_status: 'answered',
-      })
-    } catch (err) {
-      console.error('[acceptCall] DB update failed', err)
-    }
+    useCallStore.getState().acceptCall()
+    const started = await startWebRTC(false)
+    if (!started) return
 
-    store.acceptCall()
-    await startWebRTC(false)
-  }, [supabase, store, startWebRTC])
+    const { error } = await supabase.rpc('update_call_status', {
+      p_session_id: s.sessionId,
+      p_status: 'answered',
+    })
+    if (error) {
+      webrtcRef.current?.cleanup()
+      webrtcRef.current = null
+      setLocalStream(null)
+      useCallStore.getState().setError(error.message)
+    }
+  }, [supabase, startWebRTC])
 
   // Caller initiates an outgoing call
   const initiateCall = useCallback(
@@ -270,32 +280,33 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       type: CallType
     ) => {
       try {
-        if (hasPermissions === false) {
-          throw new Error('Microphone permission denied')
-        }
+        if (!isWebRTCSupported()) throw new Error('WebRTC is not supported in this browser')
 
-        const perms = await requestMediaPermissions(type)
-        if (!perms.audio) {
-          throw new Error('Microphone permission denied')
-        }
-
-        const { data: sessionId, error } = await supabase.rpc('initiate_call', {
+        const { data: session, error } = await supabase.rpc('initiate_call', {
           p_callee_id: remoteUser.id,
           p_conversation_id: conversationId,
           p_call_type: type,
         })
 
         if (error) throw error
+        const sessionId =
+          typeof session === 'string'
+            ? session
+            : session && typeof session === 'object' && 'id' in session
+              ? String(session.id)
+              : null
         if (!sessionId) throw new Error('No session id returned')
 
-        store.initiateCall(conversationId, sessionId, remoteUser, type)
+        useCallStore.getState().initiateCall(conversationId, sessionId, remoteUser, type)
       } catch (error) {
         console.error('[initiateCall]', error)
         onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to initiate call'))
-        store.setError(error instanceof Error ? error.message : 'Failed to initiate call')
+        useCallStore
+          .getState()
+          .setError(error instanceof Error ? error.message : 'Failed to initiate call')
       }
     },
-    [hasPermissions, supabase, store]
+    [supabase]
   )
 
   // Decline an incoming call
@@ -311,8 +322,8 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         console.error('[declineCall] DB update failed', err)
       }
     }
-    store.declineCall()
-  }, [supabase, store])
+    useCallStore.getState().declineCall()
+  }, [supabase])
 
   // End an active call
   const endCall = useCallback(async () => {
@@ -336,31 +347,24 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
     setLocalStream(null)
 
     onCallEndedRef.current?.(s.duration)
-    store.endCall()
-  }, [supabase, store])
+    useCallStore.getState().endCall()
+  }, [supabase])
 
-  const toggleMute = useCallback(
-    (enabled: boolean) => {
-      webrtcRef.current?.toggleMicrophone(enabled)
-      store.toggleMute()
-    },
-    [store]
-  )
+  const toggleMute = useCallback((muted: boolean) => {
+    webrtcRef.current?.toggleMicrophone(!muted)
+    if (useCallStore.getState().isMuted !== muted) useCallStore.getState().toggleMute()
+  }, [])
 
-  const toggleVideo = useCallback(
-    (enabled: boolean) => {
-      webrtcRef.current?.toggleCamera(enabled)
-      store.toggleVideo()
-    },
-    [store]
-  )
+  const toggleVideo = useCallback((videoOff: boolean) => {
+    webrtcRef.current?.toggleCamera(!videoOff)
+    if (useCallStore.getState().isVideoOff !== videoOff) useCallStore.getState().toggleVideo()
+  }, [])
 
-  const toggleSpeaker = useCallback(
-    (enabled: boolean) => {
-      if (store.isSpeakerOn !== enabled) store.toggleSpeaker()
-    },
-    [store]
-  )
+  const toggleSpeaker = useCallback((enabled: boolean) => {
+    if (useCallStore.getState().isSpeakerOn !== enabled) {
+      useCallStore.getState().toggleSpeaker()
+    }
+  }, [])
 
   const switchCamera = useCallback(async () => {
     await webrtcRef.current?.switchCamera()
@@ -371,7 +375,6 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   return {
     remoteStream,
     localStream,
-    hasPermissions,
     initiateCall,
     acceptCall,
     declineCall,

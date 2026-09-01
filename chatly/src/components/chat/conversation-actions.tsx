@@ -38,6 +38,7 @@ interface ConversationActionsProps {
   onClose: () => void
   onSearch?: () => void
   onOpenMedia?: () => void
+  onDeleted?: () => void
   onAction?: (
     updates: Partial<{ is_pinned: boolean; is_muted: boolean; is_archived: boolean }>
   ) => void
@@ -53,6 +54,7 @@ export function ConversationActions({
   onClose,
   onSearch,
   onOpenMedia,
+  onDeleted,
   onAction,
 }: ConversationActionsProps) {
   const { t } = useI18n()
@@ -194,14 +196,14 @@ export function ConversationActions({
     if (!confirm(t('actions.deleteConfirm', { name: conversationTitle }))) return
     setLoading('delete')
     try {
-      const result = await deleteConversation(conversationId, userId)
+      const result = await deleteConversation(conversationId)
       if (result.success) {
         addToast({
           type: 'system',
           title: t('actions.deleted'),
           body: t('actions.deletedBody'),
         })
-        onAction?.({})
+        onDeleted?.()
         onClose()
       } else {
         addToast({

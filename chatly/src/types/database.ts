@@ -1,16 +1,10 @@
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: '14.15'
   }
   public: {
     Tables: {
@@ -44,18 +38,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "conversation_participants_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: 'conversation_participants_conversation_id_fkey'
+            columns: ['conversation_id']
             isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "conversation_participants_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: 'conversation_participants_user_id_fkey'
+            columns: ['user_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -67,7 +61,7 @@ export type Database = {
           id: string
           last_message_at: string | null
           title: string | null
-          type: Database["public"]["Enums"]["conversation_type"] | null
+          type: Database['public']['Enums']['conversation_type'] | null
           updated_at: string | null
         }
         Insert: {
@@ -77,7 +71,7 @@ export type Database = {
           id?: string
           last_message_at?: string | null
           title?: string | null
-          type?: Database["public"]["Enums"]["conversation_type"] | null
+          type?: Database['public']['Enums']['conversation_type'] | null
           updated_at?: string | null
         }
         Update: {
@@ -87,16 +81,16 @@ export type Database = {
           id?: string
           last_message_at?: string | null
           title?: string | null
-          type?: Database["public"]["Enums"]["conversation_type"] | null
+          type?: Database['public']['Enums']['conversation_type'] | null
           updated_at?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "conversations_created_by_fkey"
-            columns: ["created_by"]
+            foreignKeyName: 'conversations_created_by_fkey'
+            columns: ['created_by']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -104,7 +98,7 @@ export type Database = {
         Row: {
           content: string
           conversation_id: string | null
-          content_type: Database["public"]["Enums"]["message_content_type"] | null
+          content_type: Database['public']['Enums']['message_content_type'] | null
           created_at: string | null
           deleted_at: string | null
           edited_at: string | null
@@ -116,11 +110,11 @@ export type Database = {
           media_url: string | null
           reply_to: string | null
           sender_id: string | null
-          status: Database["public"]["Enums"]["message_status"] | null
+          status: Database['public']['Enums']['message_status'] | null
         }
         Insert: {
           content: string
-          content_type?: Database["public"]["Enums"]["message_content_type"] | null
+          content_type?: Database['public']['Enums']['message_content_type'] | null
           conversation_id?: string | null
           created_at?: string | null
           deleted_at?: string | null
@@ -133,11 +127,11 @@ export type Database = {
           media_url?: string | null
           reply_to?: string | null
           sender_id?: string | null
-          status?: Database["public"]["Enums"]["message_status"] | null
+          status?: Database['public']['Enums']['message_status'] | null
         }
         Update: {
           content?: string
-          content_type?: Database["public"]["Enums"]["message_content_type"] | null
+          content_type?: Database['public']['Enums']['message_content_type'] | null
           conversation_id?: string | null
           created_at?: string | null
           deleted_at?: string | null
@@ -150,29 +144,29 @@ export type Database = {
           media_url?: string | null
           reply_to?: string | null
           sender_id?: string | null
-          status?: Database["public"]["Enums"]["message_status"] | null
+          status?: Database['public']['Enums']['message_status'] | null
         }
         Relationships: [
           {
-            foreignKeyName: "messages_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: 'messages_conversation_id_fkey'
+            columns: ['conversation_id']
             isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "messages_reply_to_fkey"
-            columns: ["reply_to"]
+            foreignKeyName: 'messages_reply_to_fkey'
+            columns: ['reply_to']
             isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
+            referencedRelation: 'messages'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "messages_sender_id_fkey"
-            columns: ["sender_id"]
+            foreignKeyName: 'messages_sender_id_fkey'
+            columns: ['sender_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -183,8 +177,10 @@ export type Database = {
           created_at: string | null
           display_name: string
           id: string
+          is_suspended: boolean
           last_seen: string | null
           phone: string | null
+          role: string
           status: 'online' | 'offline' | 'away' | 'busy' | null
           updated_at: string | null
           username: string
@@ -195,8 +191,10 @@ export type Database = {
           created_at?: string | null
           display_name: string
           id: string
+          is_suspended?: boolean
           last_seen?: string | null
           phone?: string | null
+          role?: string
           status?: 'online' | 'offline' | 'away' | 'busy' | null
           updated_at?: string | null
           username: string
@@ -207,13 +205,102 @@ export type Database = {
           created_at?: string | null
           display_name?: string
           id?: string
+          is_suspended?: boolean
           last_seen?: string | null
           phone?: string | null
+          role?: string
           status?: 'online' | 'offline' | 'away' | 'busy' | null
           updated_at?: string | null
           username?: string
         }
         Relationships: []
+      }
+      friendships: {
+        Row: {
+          addressee_id: string
+          created_at: string
+          id: string
+          requester_id: string
+          responded_at: string | null
+          status: Database['public']['Enums']['friendship_status']
+          updated_at: string
+        }
+        Insert: {
+          addressee_id: string
+          created_at?: string
+          id?: string
+          requester_id: string
+          responded_at?: string | null
+          status?: Database['public']['Enums']['friendship_status']
+          updated_at?: string
+        }
+        Update: {
+          addressee_id?: string
+          created_at?: string
+          id?: string
+          requester_id?: string
+          responded_at?: string | null
+          status?: Database['public']['Enums']['friendship_status']
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'friendships_addressee_id_fkey'
+            columns: ['addressee_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'friendships_requester_id_fkey'
+            columns: ['requester_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      admin_audit_logs: {
+        Row: {
+          action: string
+          admin_id: string | null
+          created_at: string
+          details: Json
+          id: string
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          admin_id?: string | null
+          created_at?: string
+          details?: Json
+          id?: string
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: string | null
+          created_at?: string
+          details?: Json
+          id?: string
+          target_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'admin_audit_logs_admin_id_fkey'
+            columns: ['admin_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'admin_audit_logs_target_user_id_fkey'
+            columns: ['target_user_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
       }
       message_reactions: {
         Row: {
@@ -239,19 +326,19 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "message_reactions_message_id_fkey"
-            columns: ["message_id"]
+            foreignKeyName: 'message_reactions_message_id_fkey'
+            columns: ['message_id']
             isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
+            referencedRelation: 'messages'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "message_reactions_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: 'message_reactions_user_id_fkey'
+            columns: ['user_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
         ]
       }
       starred_messages: {
@@ -275,19 +362,19 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "starred_messages_message_id_fkey"
-            columns: ["message_id"]
+            foreignKeyName: 'starred_messages_message_id_fkey'
+            columns: ['message_id']
             isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
+            referencedRelation: 'messages'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "starred_messages_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: 'starred_messages_user_id_fkey'
+            columns: ['user_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
         ]
       }
       scheduled_messages: {
@@ -344,19 +431,19 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scheduled_messages_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: 'scheduled_messages_conversation_id_fkey'
+            columns: ['conversation_id']
             isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "scheduled_messages_sender_id_fkey"
-            columns: ["sender_id"]
+            foreignKeyName: 'scheduled_messages_sender_id_fkey'
+            columns: ['sender_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
         ]
       }
       conversation_labels: {
@@ -383,12 +470,12 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "conversation_labels_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: 'conversation_labels_user_id_fkey'
+            columns: ['user_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
         ]
       }
       conversation_label_map: {
@@ -409,19 +496,19 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "conversation_label_map_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: 'conversation_label_map_conversation_id_fkey'
+            columns: ['conversation_id']
             isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "conversation_label_map_label_id_fkey"
-            columns: ["label_id"]
+            foreignKeyName: 'conversation_label_map_label_id_fkey'
+            columns: ['label_id']
             isOneToOne: false
-            referencedRelation: "conversation_labels"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'conversation_labels'
+            referencedColumns: ['id']
+          },
         ]
       }
       user_blocks: {
@@ -445,19 +532,19 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "user_blocks_blocker_id_fkey"
-            columns: ["blocker_id"]
+            foreignKeyName: 'user_blocks_blocker_id_fkey'
+            columns: ['blocker_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "user_blocks_blocked_id_fkey"
-            columns: ["blocked_id"]
+            foreignKeyName: 'user_blocks_blocked_id_fkey'
+            columns: ['blocked_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
         ]
       }
       push_subscriptions: {
@@ -490,12 +577,12 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "push_subscriptions_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: 'push_subscriptions_user_id_fkey'
+            columns: ['user_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
         ]
       }
       call_sessions: {
@@ -504,8 +591,8 @@ export type Database = {
           caller_id: string
           callee_id: string
           conversation_id: string | null
-          call_type: Database["public"]["Enums"]["call_type"] | null
-          status: Database["public"]["Enums"]["call_session_status"] | null
+          call_type: Database['public']['Enums']['call_type'] | null
+          status: Database['public']['Enums']['call_session_status'] | null
           offer_sdp: string | null
           answer_sdp: string | null
           ice_candidates: Json | null
@@ -519,8 +606,8 @@ export type Database = {
           caller_id: string
           callee_id: string
           conversation_id?: string | null
-          call_type?: Database["public"]["Enums"]["call_type"] | null
-          status?: Database["public"]["Enums"]["call_session_status"] | null
+          call_type?: Database['public']['Enums']['call_type'] | null
+          status?: Database['public']['Enums']['call_session_status'] | null
           offer_sdp?: string | null
           answer_sdp?: string | null
           ice_candidates?: Json | null
@@ -534,8 +621,8 @@ export type Database = {
           caller_id?: string
           callee_id?: string
           conversation_id?: string | null
-          call_type?: Database["public"]["Enums"]["call_type"] | null
-          status?: Database["public"]["Enums"]["call_session_status"] | null
+          call_type?: Database['public']['Enums']['call_type'] | null
+          status?: Database['public']['Enums']['call_session_status'] | null
           offer_sdp?: string | null
           answer_sdp?: string | null
           ice_candidates?: Json | null
@@ -546,37 +633,38 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "call_sessions_caller_id_fkey"
-            columns: ["caller_id"]
+            foreignKeyName: 'call_sessions_caller_id_fkey'
+            columns: ['caller_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "call_sessions_callee_id_fkey"
-            columns: ["callee_id"]
+            foreignKeyName: 'call_sessions_callee_id_fkey'
+            columns: ['callee_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "call_sessions_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: 'call_sessions_conversation_id_fkey'
+            columns: ['conversation_id']
             isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
+          },
         ]
       }
       call_history: {
         Row: {
           id: string
+          session_id: string | null
           caller_id: string
           callee_id: string
           conversation_id: string | null
-          call_type: Database["public"]["Enums"]["call_type"] | null
-          direction: Database["public"]["Enums"]["call_direction"] | null
-          status: Database["public"]["Enums"]["call_session_status"] | null
+          call_type: Database['public']['Enums']['call_type'] | null
+          direction: Database['public']['Enums']['call_direction'] | null
+          status: Database['public']['Enums']['call_session_status'] | null
           duration_seconds: number | null
           started_at: string | null
           ended_at: string | null
@@ -584,12 +672,13 @@ export type Database = {
         }
         Insert: {
           id?: string
+          session_id?: string | null
           caller_id: string
           callee_id: string
           conversation_id?: string | null
-          call_type?: Database["public"]["Enums"]["call_type"] | null
-          direction?: Database["public"]["Enums"]["call_direction"] | null
-          status?: Database["public"]["Enums"]["call_session_status"] | null
+          call_type?: Database['public']['Enums']['call_type'] | null
+          direction?: Database['public']['Enums']['call_direction'] | null
+          status?: Database['public']['Enums']['call_session_status'] | null
           duration_seconds?: number | null
           started_at?: string | null
           ended_at?: string | null
@@ -597,12 +686,13 @@ export type Database = {
         }
         Update: {
           id?: string
+          session_id?: string | null
           caller_id?: string
           callee_id?: string
           conversation_id?: string | null
-          call_type?: Database["public"]["Enums"]["call_type"] | null
-          direction?: Database["public"]["Enums"]["call_direction"] | null
-          status?: Database["public"]["Enums"]["call_session_status"] | null
+          call_type?: Database['public']['Enums']['call_type'] | null
+          direction?: Database['public']['Enums']['call_direction'] | null
+          status?: Database['public']['Enums']['call_session_status'] | null
           duration_seconds?: number | null
           started_at?: string | null
           ended_at?: string | null
@@ -610,26 +700,33 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "call_history_caller_id_fkey"
-            columns: ["caller_id"]
+            foreignKeyName: 'call_history_session_id_fkey'
+            columns: ['session_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'call_sessions'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "call_history_callee_id_fkey"
-            columns: ["callee_id"]
+            foreignKeyName: 'call_history_caller_id_fkey'
+            columns: ['caller_id']
             isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "call_history_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: 'call_history_callee_id_fkey'
+            columns: ['callee_id']
             isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          }
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'call_history_conversation_id_fkey'
+            columns: ['conversation_id']
+            isOneToOne: false
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
+          },
         ]
       }
     }
@@ -637,6 +734,46 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_list_users: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          avatar_url: string | null
+          created_at: string | null
+          display_name: string
+          email: string | null
+          friend_count: number
+          id: string
+          is_suspended: boolean
+          last_seen: string | null
+          role: string
+          status: string | null
+          username: string
+        }[]
+      }
+      admin_update_user: {
+        Args: { p_is_suspended: boolean; p_role: string; p_user_id: string }
+        Returns: boolean
+      }
+      bootstrap_chatly_admin: {
+        Args: { p_email: string }
+        Returns: string
+      }
+      delete_conversation_permanently: {
+        Args: { p_conversation_id: string }
+        Returns: boolean
+      }
+      remove_friendship: {
+        Args: { p_friendship_id: string }
+        Returns: boolean
+      }
+      respond_friend_request: {
+        Args: { p_accept: boolean; p_friendship_id: string }
+        Returns: unknown
+      }
+      send_friend_request: {
+        Args: { p_addressee_id: string }
+        Returns: unknown
+      }
       is_conversation_participant: {
         Args: { conv_id: string }
         Returns: boolean
@@ -646,30 +783,51 @@ export type Database = {
         Returns: string
       }
       initiate_call: {
-        Args: { p_callee_id: string; p_conversation_id: string; p_call_type: Database["public"]["Enums"]["call_type"] }
+        Args: {
+          p_callee_id: string
+          p_conversation_id: string
+          p_call_type: Database['public']['Enums']['call_type']
+        }
         Returns: unknown
       }
       update_call_status: {
-        Args: { p_session_id: string; p_status: Database["public"]["Enums"]["call_session_status"]; p_answer_sdp?: string }
+        Args: {
+          p_session_id: string
+          p_status: Database['public']['Enums']['call_session_status']
+          p_answer_sdp?: string
+        }
         Returns: unknown
       }
       end_call: {
-        Args: { p_session_id: string; p_status?: Database["public"]["Enums"]["call_session_status"] }
+        Args: {
+          p_session_id: string
+          p_status?: Database['public']['Enums']['call_session_status']
+        }
         Returns: unknown
       }
       get_call_history: {
         Args: { p_user_id?: string; p_limit?: number }
         Returns: unknown
       }
+      get_admin_dashboard_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      is_chatly_admin: {
+        Args: { p_user_id?: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      conversation_type: "direct" | "group"
-      message_content_type: "text" | "image" | "video" | "audio" | "file"
-      message_status: "sending" | "sent" | "delivered" | "read" | "failed"
-      scheduled_message_status: "pending" | "sent" | "cancelled"
-      call_type: "voice" | "video"
-      call_direction: "incoming" | "outgoing"
-      call_session_status: "pending" | "ringing" | "answered" | "declined" | "missed" | "ended" | "failed"
+      conversation_type: 'direct' | 'group'
+      message_content_type: 'text' | 'image' | 'video' | 'audio' | 'file'
+      message_status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
+      scheduled_message_status: 'pending' | 'sent' | 'cancelled'
+      call_type: 'voice' | 'video'
+      call_direction: 'incoming' | 'outgoing'
+      call_session_status:
+        'pending' | 'ringing' | 'answered' | 'declined' | 'missed' | 'ended' | 'failed'
+      friendship_status: 'pending' | 'accepted' | 'declined'
     }
     CompositeTypes: {
       [_ in never]: never
@@ -677,33 +835,31 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
+    ? (DefaultSchema['Tables'] & DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -712,23 +868,22 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -737,23 +892,22 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -762,48 +916,55 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    keyof DefaultSchema['Enums'] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums']
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums'][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums']
+    ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    keyof DefaultSchema['CompositeTypes'] | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema['CompositeTypes']
+    ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
     : never
 
 export const Constants = {
   public: {
     Enums: {
-      conversation_type: ["direct", "group"],
-      message_content_type: ["text", "image", "video", "audio", "file"],
-      message_status: ["sending", "sent", "delivered", "read", "failed"],
-      scheduled_message_status: ["pending", "sent", "cancelled"],
-      call_type: ["voice", "video"],
-      call_direction: ["incoming", "outgoing"],
-      call_session_status: ["pending", "ringing", "answered", "declined", "missed", "ended", "failed"],
+      conversation_type: ['direct', 'group'],
+      message_content_type: ['text', 'image', 'video', 'audio', 'file'],
+      message_status: ['sending', 'sent', 'delivered', 'read', 'failed'],
+      scheduled_message_status: ['pending', 'sent', 'cancelled'],
+      call_type: ['voice', 'video'],
+      call_direction: ['incoming', 'outgoing'],
+      call_session_status: [
+        'pending',
+        'ringing',
+        'answered',
+        'declined',
+        'missed',
+        'ended',
+        'failed',
+      ],
+      friendship_status: ['pending', 'accepted', 'declined'],
     },
   },
 } as const
