@@ -60,7 +60,7 @@ const showBrowserNotification = (notification: Notification) => {
     browserNotification.onclick = () => {
       window.focus()
       if (notification.conversationId) {
-        window.location.href = `/chats/${notification.conversationId}`
+        window.open(`/chats/${encodeURIComponent(notification.conversationId)}`, '_self')
       }
       browserNotification.close()
     }
@@ -120,9 +120,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       if (!notification || notification.read) return state
 
       return {
-        notifications: state.notifications.map((n) =>
-          n.id === id ? { ...n, read: true } : n
-        ),
+        notifications: state.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
         unreadCount: Math.max(0, state.unreadCount - 1),
       }
     })
@@ -140,9 +138,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       const notification = state.notifications.find((n) => n.id === id)
       return {
         notifications: state.notifications.filter((n) => n.id !== id),
-        unreadCount: notification && !notification.read
-          ? Math.max(0, state.unreadCount - 1)
-          : state.unreadCount,
+        unreadCount:
+          notification && !notification.read
+            ? Math.max(0, state.unreadCount - 1)
+            : state.unreadCount,
       }
     })
   },

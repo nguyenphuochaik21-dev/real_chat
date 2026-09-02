@@ -1,11 +1,11 @@
 import type { Json } from '@/types/database'
-import type { Tables } from '@/types'
+import type { PublicProfile, Tables } from '@/types'
 
 type Message = Tables<'messages'>
-type Profile = Tables<'profiles'>
 
 export interface ConversationSummary extends Tables<'conversations'> {
-  participant: Profile | null
+  participant: PublicProfile | null
+  group_members: PublicProfile[]
   last_message: Message | null
   unread_count: number
   member_count: number
@@ -38,7 +38,8 @@ export function parseConversationSummaries(value: Json | null): ConversationSumm
         last_message_at: nullableString(item.last_message_at),
         created_at: nullableString(item.created_at),
         updated_at: nullableString(item.updated_at),
-        participant: isRecord(item.participant) ? (item.participant as Profile) : null,
+        participant: isRecord(item.participant) ? (item.participant as PublicProfile) : null,
+        group_members: [],
         last_message: isRecord(item.last_message) ? (item.last_message as Message) : null,
         unread_count: typeof item.unread_count === 'number' ? item.unread_count : 0,
         member_count: typeof item.member_count === 'number' ? item.member_count : 0,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Reply, Pencil, Trash2, Share2, Copy, Ban } from 'lucide-react'
+import { Reply, Pencil, Trash2, Share2, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import type { Tables } from '@/types'
@@ -13,21 +13,9 @@ interface MessageContextMenuProps {
   currentUserId: string
   onEdit?: (message: Message) => void
   onDelete?: (message: Message) => void
-  onBlockUser?: (userId: string, userName: string) => void
 }
 
-interface MessageContextMenuProps {
-  currentUserId: string
-  onEdit?: (message: Message) => void
-  onDelete?: (message: Message) => void
-}
-
-export function MessageContextMenu({
-  currentUserId,
-  onEdit,
-  onDelete,
-  onBlockUser,
-}: MessageContextMenuProps) {
+export function MessageContextMenu({ currentUserId, onEdit, onDelete }: MessageContextMenuProps) {
   const { t } = useI18n()
   const menuRef = useRef<HTMLDivElement>(null)
   const {
@@ -99,15 +87,6 @@ export function MessageContextMenu({
     closeContextMenu()
   }
 
-  const handleBlockUser = () => {
-    if (onBlockUser && contextMenuTarget.sender_id) {
-      const senderId = contextMenuTarget.sender_id
-      // We'll pass the userId and a default name - the modal will fetch details if needed
-      onBlockUser(senderId, senderId)
-    }
-    closeContextMenu()
-  }
-
   return (
     <>
       {/* Backdrop for mobile */}
@@ -150,11 +129,6 @@ export function MessageContextMenu({
             onClick={handleForward}
             disabled={isDeleted}
           />
-
-          {/* Block user (only for others' messages) */}
-          {!isOwnMessage && !isDeleted && (
-            <MenuItem icon={Ban} label={t('message.block')} onClick={handleBlockUser} />
-          )}
 
           <div className="my-1 h-px bg-[var(--border-default)]" />
 

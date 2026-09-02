@@ -22,7 +22,12 @@ const ALLOWED_MIME_TYPES: Record<MediaType, string[]> = {
   image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   video: ['video/mp4', 'video/webm'],
   audio: ['audio/mpeg', 'audio/ogg', 'audio/wav'],
-  file: ['application/pdf', 'application/zip', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  file: [
+    'application/pdf',
+    'application/zip',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ],
 }
 
 export function getMediaType(mimeType: string): MediaType | null {
@@ -34,7 +39,7 @@ export function getMediaType(mimeType: string): MediaType | null {
   return null
 }
 
-export function formatFileSize(bytes: number): string {
+function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -57,12 +62,10 @@ export function isValidMediaFile(file: File): { valid: boolean; error?: string }
  * Create a signed URL for accessing private storage files.
  * Signed URLs expire after the specified duration.
  */
-export async function createSignedUrl(path: string, expiresIn = 3600): Promise<string> {
+async function createSignedUrl(path: string, expiresIn = 3600): Promise<string> {
   const supabase = createClient()
 
-  const { data, error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .createSignedUrl(path, expiresIn)
+  const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(path, expiresIn)
 
   if (error || !data) {
     throw new Error(`Failed to create signed URL: ${error?.message || 'Unknown error'}`)
@@ -84,7 +87,7 @@ export async function getMediaUrl(urlOrPath: string, expiresIn = 3600): Promise<
 /**
  * Extract the storage path from a URL or path.
  */
-export function extractPathFromUrl(urlOrPath: string): string | null {
+function extractPathFromUrl(urlOrPath: string): string | null {
   // If it's already a path (no http), return it
   if (!urlOrPath.startsWith('http')) {
     return urlOrPath
@@ -103,8 +106,7 @@ export function extractPathFromUrl(urlOrPath: string): string | null {
 export async function uploadMedia(
   file: File,
   conversationId: string,
-  userId: string,
-  onProgress?: (progress: number) => void
+  userId: string
 ): Promise<UploadResult> {
   const supabase = createClient()
 
@@ -114,12 +116,10 @@ export async function uploadMedia(
   const path = `${userId}/${conversationId}/${filename}`
 
   // Upload file
-  const { data, error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .upload(path, file, {
-      cacheControl: '3600',
-      upsert: false,
-    })
+  const { data, error } = await supabase.storage.from(BUCKET_NAME).upload(path, file, {
+    cacheControl: '3600',
+    upsert: false,
+  })
 
   if (error) {
     throw new Error(`Upload failed: ${error.message}`)
@@ -132,27 +132,6 @@ export async function uploadMedia(
     url: signedUrl,
     path: data.path,
   }
-}
-
-export async function deleteMedia(path: string): Promise<void> {
-  const supabase = createClient()
-
-  const { error } = await supabase.storage
-    .from(BUCKET_NAME)
-    .remove([path])
-
-  if (error) {
-    throw new Error(`Delete failed: ${error.message}`)
-  }
-}
-
-export function getMediaThumbnail(url: string, mimeType: string): string | null {
-  // For images, we can use the image itself as thumbnail
-  if (mimeType.startsWith('image/')) {
-    return url
-  }
-  // For other types, return null (will show file icon)
-  return null
 }
 
 export function isImage(mimeType: string | null): boolean {

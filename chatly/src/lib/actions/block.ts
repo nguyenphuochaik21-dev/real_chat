@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { parseInput, uuidSchema } from '@/lib/actions/validation'
 
 /**
  * Block a user
@@ -8,25 +9,26 @@ import { createClient } from '@/lib/supabase/server'
 export async function blockUser(
   blockedUserId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const blockedId = parseInput(uuidSchema, blockedUserId)
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
 
   // Prevent blocking yourself
-  if (blockedUserId === user.id) {
+  if (blockedId === user.id) {
     return { success: false, error: 'Cannot block yourself' }
   }
 
   // Insert block record
-  const { error } = await supabase
-    .from('user_blocks')
-    .insert({
-      blocker_id: user.id,
-      blocked_id: blockedUserId,
-    })
+  const { error } = await supabase.from('user_blocks').insert({
+    blocker_id: user.id,
+    blocked_id: blockedId,
+  })
 
   // Ignore if already blocked (unique constraint)
   if (error && error.code !== '23505') {
@@ -42,9 +44,12 @@ export async function blockUser(
 export async function unblockUser(
   blockedUserId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const blockedId = parseInput(uuidSchema, blockedUserId)
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -53,7 +58,7 @@ export async function unblockUser(
     .from('user_blocks')
     .delete()
     .eq('blocker_id', user.id)
-    .eq('blocked_id', blockedUserId)
+    .eq('blocked_id', blockedId)
 
   if (error) {
     return { success: false, error: error.message }
@@ -63,33 +68,14 @@ export async function unblockUser(
 }
 
 /**
- * Check if a user is blocked by the current user
- */
-export async function isUserBlocked(
-  userId: string
-): Promise<boolean> {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
-
-  const { data } = await supabase
-    .from('user_blocks')
-    .select('id')
-    .eq('blocker_id', user.id)
-    .eq('blocked_id', userId)
-    .single()
-
-  return !!data
-}
-
-/**
  * Get list of blocked users
  */
 export async function getBlockedUsers(): Promise<string[]> {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) return []
 
   const { data } = await supabase
@@ -98,7 +84,7 @@ export async function getBlockedUsers(): Promise<string[]> {
     .eq('blocker_id', user.id)
     .order('created_at', { ascending: false })
 
-  return data?.map(b => b.blocked_id) || []
+  return data?.map((block) => block.blocked_id).filter((id): id is string => id !== null) || []
 }
 
 /**
@@ -107,7 +93,9 @@ export async function getBlockedUsers(): Promise<string[]> {
 export async function getBlockedUsersWithProfiles() {
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) return []
 
   const { data: blocks } = await supabase
@@ -118,15 +106,19 @@ export async function getBlockedUsersWithProfiles() {
 
   if (!blocks || blocks.length === 0) return []
 
-  const blockedIds = blocks.map(b => b.blocked_id)
+  const blockedIds = blocks
+    .map((block) => block.blocked_id)
+    .filter((id): id is string => id !== null)
+
+  if (blockedIds.length === 0) return []
 
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
     .in('id', blockedIds)
 
-  return (profiles || []).map(profile => ({
+  return (profiles || []).map((profile) => ({
     ...profile,
-    blocked_at: blocks.find(b => b.blocked_id === profile.id)?.created_at,
+    blocked_at: blocks.find((block) => block.blocked_id === profile.id)?.created_at ?? null,
   }))
 }

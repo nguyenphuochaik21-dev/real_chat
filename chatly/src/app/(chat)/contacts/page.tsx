@@ -107,7 +107,7 @@ export default function ContactsPage() {
     if (!overview) return
     setBusyId(profileId)
     try {
-      const conversation = await createConversation(overview.currentUserId, profileId)
+      const conversation = await createConversation(profileId)
       router.push(`/chats/${conversation.id}`)
     } catch (chatError) {
       setError(chatError instanceof Error ? chatError.message : t('common.unknownError'))

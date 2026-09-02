@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chatly-shell-v2'
+const CACHE_NAME = 'chatly-shell-v3'
 const SHELL_ASSETS = ['/offline', '/manifest.webmanifest', '/pwa-icon/192', '/pwa-icon/512']
 
 self.addEventListener('install', (event) => {
@@ -78,17 +78,20 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: data.icon,
-      badge: data.badge,
-      tag: data.tag,
-      data: data.data,
-      vibrate: [200, 100, 200],
-      actions: [
-        { action: 'open', title: 'Mở Chatly' },
-        { action: 'dismiss', title: 'Đóng' },
-      ],
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      if (clients.some((client) => client.visibilityState === 'visible')) return undefined
+      return self.registration.showNotification(data.title, {
+        body: data.body,
+        icon: data.icon,
+        badge: data.badge,
+        tag: data.tag,
+        data: data.data,
+        vibrate: [200, 100, 200],
+        actions: [
+          { action: 'open', title: 'Mở Chatly' },
+          { action: 'dismiss', title: 'Đóng' },
+        ],
+      })
     })
   )
 })

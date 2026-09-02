@@ -1,7 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useState, useCallback } from 'react'
-import Link from 'next/link'
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import {
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react'
 import { cn, getCompactDisplayName } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
+import { GroupAvatar } from '@/components/ui/group-avatar'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { createClient } from '@/lib/supabase/client'
@@ -35,20 +35,23 @@ import { EmojiPicker } from './emoji-picker'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useDraftStore } from '@/stores/draft-store'
-import { useScheduledMessagesProcessor } from '@/hooks/use-scheduled-messages-processor'
 import { createScheduledMessage } from '@/lib/actions/scheduled-messages'
 import { editMessage, deleteMessage } from '@/lib/actions/messages'
 import { useChatCacheStore } from '@/stores/chat-cache-store'
 import { useChatsListStore } from '@/stores/chats-list-store'
 import { resolvePresence, type PresenceStatus } from '@/lib/presence'
 import { useI18n } from '@/lib/i18n'
-import type { Tables } from '@/types'
+import { queuePushNotification } from '@/lib/push'
+import type { PublicProfile, Tables } from '@/types'
+import { ConversationProfilePanel } from './conversation-profile-panel'
 
 type Message = Tables<'messages'>
-type Profile = Tables<'profiles'>
+type Profile = PublicProfile
 type Conversation = Tables<'conversations'>
 type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
 type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
+
+const MESSAGE_PAGE_SIZE = 50
 
 const GroupDetailsPanel = dynamic(
   () =>
@@ -81,6 +84,48 @@ function formatMessageTime(dateStr: string, dateLocale: string): string {
   return date.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })
 }
 
+function compactLink(link: string): string {
+  if (link.length <= 52) return link
+  return `${link.slice(0, 30)}…${link.slice(-16)}`
+}
+
+function MessageText({ content }: { content: string }) {
+  const parts = content.split(/(https?:\/\/[^\s<>()]+|www\.[^\s<>()]+|@[\p{L}\p{N}_.-]+)/giu)
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (/^(https?:\/\/|www\.)/i.test(part)) {
+          const href = part.startsWith('www.') ? `https://${part}` : part
+          return (
+            <a
+              key={`${part}-${index}`}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={part}
+              className="font-medium underline decoration-current/50 underline-offset-2 hover:decoration-current"
+            >
+              {compactLink(part)}
+            </a>
+          )
+        }
+        if (part.startsWith('@')) {
+          return (
+            <span
+              key={`${part}-${index}`}
+              className="font-semibold underline decoration-current/40"
+            >
+              {part}
+            </span>
+          )
+        }
+        return <span key={`${part}-${index}`}>{part}</span>
+      })}
+    </>
+  )
+}
+
 function getDateSeparator(messages: Message[], index: number, dateLocale: string): string | null {
   const currentDate = messages[index].created_at
   const prevDate = index > 0 ? messages[index - 1].created_at : null
@@ -98,6 +143,7 @@ function getDateSeparator(messages: Message[], index: number, dateLocale: string
 
 interface MessageBubbleProps {
   message: Message
+  mediaGroup?: Message[]
   showAvatar: boolean
   participant: MessageAuthor
   isFromMe: boolean
@@ -113,6 +159,7 @@ interface MessageBubbleProps {
 
 function MessageBubble({
   message,
+  mediaGroup,
   showAvatar,
   participant,
   isFromMe,
@@ -288,7 +335,25 @@ function MessageBubble({
                   if (event.pointerType === 'touch') handleTouchTap()
                 }}
               >
-                <MediaMessageBubble message={message} isFromMe={isFromMe} />
+                {mediaGroup && mediaGroup.length > 1 ? (
+                  <div
+                    className={cn(
+                      'grid max-w-[360px] gap-1 overflow-hidden rounded-2xl',
+                      mediaGroup.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
+                    )}
+                  >
+                    {mediaGroup.map((groupedMessage) => (
+                      <MediaMessageBubble
+                        key={groupedMessage.id}
+                        message={groupedMessage}
+                        isFromMe={isFromMe}
+                        compact
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <MediaMessageBubble message={message} isFromMe={isFromMe} />
+                )}
                 <MessageReactions
                   reactions={reactions}
                   onToggleReaction={onToggleReaction || (() => {})}
@@ -349,7 +414,7 @@ function MessageBubble({
                     isSticker ? 'text-5xl leading-none' : 'text-sm'
                   )}
                 >
-                  {message.content}
+                  {isSticker ? message.content : <MessageText content={message.content} />}
                 </p>
               </div>
               <MessageReactions
@@ -392,6 +457,8 @@ export function ChatView({
   const cached = conversationId ? getCached(conversationId) : undefined
 
   const [messages, setMessages] = useState<Message[]>(cached?.messages || [])
+  const [hasOlderMessages, setHasOlderMessages] = useState(cached?.hasOlderMessages ?? true)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [participant, setParticipant] = useState<Profile | null>(cached?.participant || null)
   const [conversation, setConversation] = useState<Conversation | null>(null)
   const [memberProfiles, setMemberProfiles] = useState<Map<string, Profile>>(new Map())
@@ -400,6 +467,7 @@ export function ChatView({
   const [inputValue, setInputValue] = useState(() =>
     conversationId ? getInput(conversationId) : ''
   )
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   // Show loading only if we don't have cached data
   const [loading, setLoading] = useState(!cached)
   const [sending, setSending] = useState(false)
@@ -428,15 +496,14 @@ export function ChatView({
     Map<string, { emoji: string; count: number; userReacted: boolean }[]>
   >(cached?.messageReactions || new Map())
   const reactionMutationVersionRef = useRef(0)
+  const reactionFetchedIdsRef = useRef<Set<string>>(new Set())
+  const reactionFetchConversationRef = useRef<string | null>(null)
   // Store hooks
   const { replyToMessage, clearReply } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
 
   // Draft messages
   const { getDraft, setDraft, clearDraft } = useDraftStore()
-
-  // Auto-process scheduled messages that are due (handles its own state)
-  useScheduledMessagesProcessor()
 
   // Create schedule function (no hook needed)
   const createSchedule = useCallback(
@@ -476,6 +543,7 @@ export function ChatView({
 
   // Conversation actions menu
   const [showConversationActions, setShowConversationActions] = useState(false)
+  const [showProfilePanel, setShowProfilePanel] = useState(false)
   const conversationActionsRef = useRef<HTMLDivElement>(null)
   // Track participation flags for this conversation
   const [conversationFlags, setConversationFlags] = useState({
@@ -489,6 +557,7 @@ export function ChatView({
     if (!conversationId) return
     setCached(conversationId, {
       messages,
+      hasOlderMessages,
       participant,
       participantStatus,
       messageStatuses,
@@ -497,6 +566,7 @@ export function ChatView({
   }, [
     conversationId,
     messages,
+    hasOlderMessages,
     participant,
     participantStatus,
     messageStatuses,
@@ -513,6 +583,7 @@ export function ChatView({
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const loadedMessageIdsRef = useRef<Set<string>>(new Set())
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const supabase = createClient()
 
@@ -543,7 +614,9 @@ export function ChatView({
           supabase.from('conversations').select('*').eq('id', conversationId).single(),
           supabase
             .from('conversation_participants')
-            .select('user_id, profile:profiles(*)')
+            .select(
+              'user_id, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at)'
+            )
             .eq('conversation_id', conversationId),
         ])
 
@@ -604,45 +677,13 @@ export function ChatView({
           table: 'profiles',
           filter: `id=eq.${participant.id}`,
         },
-        async (payload) => {
+        (payload) => {
           const updated = payload.new as Profile
-          const oldEffective = participantStatus
           const newStatus = (updated.status as PresenceStatus) || 'offline'
           setParticipantStatusRaw({
             status: newStatus,
             lastSeen: updated.last_seen ?? null,
           })
-
-          // When participant comes online, refresh message statuses
-          // This ensures messages that were "sent" (recipient offline) become "delivered"
-          const newEffective = resolvePresence({
-            status: newStatus,
-            lastSeen: updated.last_seen ?? null,
-          })
-          if (oldEffective !== 'online' && newEffective === 'online' && conversationId) {
-            try {
-              const { data } = await supabase
-                .from('messages')
-                .select('*')
-                .eq('conversation_id', conversationId)
-                .eq('status', 'sent')
-                .neq('sender_id', currentUserId)
-
-              // Refresh all messages to get updated statuses
-              if (data && data.length > 0) {
-                const { data: allMessages } = await supabase
-                  .from('messages')
-                  .select('*')
-                  .eq('conversation_id', conversationId)
-                  .order('created_at', { ascending: true })
-                if (allMessages) {
-                  setMessages(allMessages)
-                }
-              }
-            } catch (err) {
-              console.error('Failed to refresh messages:', err)
-            }
-          }
         }
       )
       .subscribe()
@@ -650,7 +691,7 @@ export function ChatView({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [participant?.id, supabase, participantStatus, conversationId, currentUserId])
+  }, [participant?.id, supabase, currentUserId])
 
   useEffect(() => {
     if (!conversationId || !isGroup) return
@@ -660,7 +701,9 @@ export function ChatView({
         supabase.from('conversations').select('*').eq('id', conversationId).single(),
         supabase
           .from('conversation_participants')
-          .select('user_id, profile:profiles(*)')
+          .select(
+            'user_id, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at)'
+          )
           .eq('conversation_id', conversationId),
       ])
 
@@ -715,6 +758,7 @@ export function ChatView({
     const fetchMessages = async () => {
       if (!conversationId || !currentUserId) {
         setMessages([])
+        setHasOlderMessages(false)
         setLoading(false)
         return
       }
@@ -726,17 +770,60 @@ export function ChatView({
       }
 
       try {
-        const { data, error } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true })
+        let nextMessages: Message[] = []
+        let hasOlder = false
 
-        if (error) throw error
-        setMessages(data || [])
+        const { data: targetMessage } = scrollToMessageId
+          ? await supabase
+              .from('messages')
+              .select('id, created_at')
+              .eq('id', scrollToMessageId)
+              .eq('conversation_id', conversationId)
+              .maybeSingle()
+          : { data: null }
+
+        if (targetMessage?.created_at) {
+          const [olderResult, newerResult] = await Promise.all([
+            supabase
+              .from('messages')
+              .select('*')
+              .eq('conversation_id', conversationId)
+              .lte('created_at', targetMessage.created_at)
+              .order('created_at', { ascending: false })
+              .limit(MESSAGE_PAGE_SIZE / 2 + 1),
+            supabase
+              .from('messages')
+              .select('*')
+              .eq('conversation_id', conversationId)
+              .gt('created_at', targetMessage.created_at)
+              .order('created_at', { ascending: true })
+              .limit(MESSAGE_PAGE_SIZE / 2),
+          ])
+
+          if (olderResult.error) throw olderResult.error
+          if (newerResult.error) throw newerResult.error
+          hasOlder = (olderResult.data?.length ?? 0) > MESSAGE_PAGE_SIZE / 2
+          const older = (olderResult.data ?? []).slice(0, MESSAGE_PAGE_SIZE / 2).reverse()
+          nextMessages = [...older, ...(newerResult.data ?? [])]
+        } else {
+          const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: false })
+            .limit(MESSAGE_PAGE_SIZE + 1)
+
+          if (error) throw error
+          hasOlder = (data?.length ?? 0) > MESSAGE_PAGE_SIZE
+          nextMessages = (data ?? []).slice(0, MESSAGE_PAGE_SIZE).reverse()
+        }
+
+        setMessages(nextMessages)
+        setHasOlderMessages(hasOlder)
 
         // Mark messages as read
-        markAsRead()
+        await markAsRead()
+        useChatsListStore.getState().updateConversation(conversationId, { unread_count: 0 })
       } catch (err) {
         console.error('Failed to fetch messages:', err)
       } finally {
@@ -745,7 +832,42 @@ export function ChatView({
     }
 
     fetchMessages()
-  }, [conversationId, currentUserId, supabase, markAsRead, getCached])
+  }, [conversationId, currentUserId, supabase, markAsRead, getCached, scrollToMessageId])
+
+  const loadOlderMessages = useCallback(async () => {
+    const oldestMessage = messages[0]
+    if (
+      !conversationId ||
+      !oldestMessage?.created_at ||
+      !hasOlderMessages ||
+      loadingOlderMessages
+    ) {
+      return
+    }
+
+    setLoadingOlderMessages(true)
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .lt('created_at', oldestMessage.created_at)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGE_PAGE_SIZE + 1)
+
+      if (error) throw error
+      const page = (data ?? []).slice(0, MESSAGE_PAGE_SIZE).reverse()
+      setHasOlderMessages((data?.length ?? 0) > MESSAGE_PAGE_SIZE)
+      setMessages((current) => {
+        const existingIds = new Set(current.map((message) => message.id))
+        return [...page.filter((message) => !existingIds.has(message.id)), ...current]
+      })
+    } catch (error) {
+      console.error('Failed to load older messages:', error)
+    } finally {
+      setLoadingOlderMessages(false)
+    }
+  }, [conversationId, hasOlderMessages, loadingOlderMessages, messages, supabase])
 
   useEffect(() => {
     if (!isGroup || messages.length === 0) return
@@ -761,7 +883,7 @@ export function ChatView({
     let cancelled = false
     void supabase
       .from('profiles')
-      .select('*')
+      .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
       .in('id', missingSenderIds)
       .then(({ data }) => {
         if (cancelled || !data) return
@@ -800,7 +922,9 @@ export function ChatView({
 
           // Mark as read if from other user
           if (newMessage.sender_id !== currentUserId) {
-            markAsRead()
+            void markAsRead().then(() => {
+              useChatsListStore.getState().updateConversation(conversationId, { unread_count: 0 })
+            })
           }
         }
       )
@@ -836,16 +960,17 @@ export function ChatView({
     }
   }, [conversationId, currentUserId, supabase, markAsRead])
 
-  // Subscribe to reactions for all messages in this conversation
   useEffect(() => {
-    if (!conversationId || messages.length === 0) return
+    loadedMessageIdsRef.current = new Set(
+      messages
+        .filter((message) => message.id && !message.id.startsWith('temp-'))
+        .map((message) => message.id)
+    )
+  }, [conversationId, messages])
 
-    // Get message IDs for this conversation
-    const messageIds = messages
-      .filter((msg) => msg.id && !msg.id.startsWith('temp-'))
-      .map((msg) => msg.id)
-
-    if (messageIds.length === 0) return
+  // Subscribe once per conversation and refresh only the affected loaded message.
+  useEffect(() => {
+    if (!conversationId) return
 
     const channel = supabase
       .channel(`reactions-${conversationId}`)
@@ -856,14 +981,24 @@ export function ChatView({
           schema: 'public',
           table: 'message_reactions',
         },
-        async () => {
+        async (payload) => {
+          const changedReaction = (Object.keys(payload.new).length ? payload.new : payload.old) as {
+            message_id?: string
+          }
+          const messageId = changedReaction.message_id
+          if (!messageId || !loadedMessageIdsRef.current.has(messageId)) return
+
           const fetchVersion = reactionMutationVersionRef.current
-          // Refetch all reactions for this conversation
-          const { getReactionsForMessages } = await import('@/lib/actions/messages')
+          const { getMessageReactions } = await import('@/lib/actions/messages')
           try {
-            const newReactions = await getReactionsForMessages(messageIds)
+            const newReactions = await getMessageReactions(messageId)
             if (fetchVersion === reactionMutationVersionRef.current) {
-              setMessageReactions(newReactions)
+              setMessageReactions((current) => {
+                const next = new Map(current)
+                if (newReactions.length) next.set(messageId, newReactions)
+                else next.delete(messageId)
+                return next
+              })
             }
           } catch (err) {
             console.error('Failed to refetch reactions:', err)
@@ -875,14 +1010,30 @@ export function ChatView({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversationId, messages, supabase])
+  }, [conversationId, supabase])
 
-  // Scroll to bottom when messages change (only if no scrollToMessageId)
+  const latestMessageId = messages[messages.length - 1]?.id
+  const messagesById = useMemo(
+    () => new Map(messages.map((message) => [message.id, message])),
+    [messages]
+  )
+  const mediaGroups = useMemo(() => {
+    const groups = new Map<string, Message[]>()
+    messages.forEach((message) => {
+      if (!message.media_group_id || !message.media_mime_type?.startsWith('image/')) return
+      const group = groups.get(message.media_group_id) ?? []
+      group.push(message)
+      groups.set(message.media_group_id, group)
+    })
+    return groups
+  }, [messages])
+
+  // Scroll only when the newest message changes. Prepending history must preserve position.
   useEffect(() => {
     if (!scrollToMessageId) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, scrollToMessageId])
+  }, [latestMessageId, scrollToMessageId])
 
   // Scroll to specific message when scrollToMessageId is set
   useEffect(() => {
@@ -929,6 +1080,7 @@ export function ChatView({
     const frameId = window.requestAnimationFrame(() => {
       if (!conversationId) {
         setMessages([])
+        setHasOlderMessages(false)
         setParticipant(null)
         setParticipantStatusRaw({ status: 'offline', lastSeen: null })
         setMessageStatuses(new Map())
@@ -943,6 +1095,7 @@ export function ChatView({
       const cached = getCached(conversationId)
       if (cached) {
         setMessages(cached.messages)
+        setHasOlderMessages(cached.hasOlderMessages)
         setParticipant(cached.participant)
         setParticipantStatusRaw({
           status: cached.participantStatus,
@@ -955,6 +1108,7 @@ export function ChatView({
       } else {
         // No cache — start fresh
         setMessages([])
+        setHasOlderMessages(true)
         setParticipant(null)
         setParticipantStatusRaw({ status: 'offline', lastSeen: null })
         setMessageStatuses(new Map())
@@ -1106,6 +1260,8 @@ export function ChatView({
         media_name: null,
         media_size: null,
         media_mime_type: null,
+        media_group_id: null,
+        push_sent_at: null,
       }
       setMessages((prev) => [...prev, optimisticMessage])
 
@@ -1114,7 +1270,7 @@ export function ChatView({
           conversation_id: conversationId,
           sender_id: currentUserId,
           content,
-          status: 'sent',
+          status: 'sent' as const,
           reply_to: replyToMessage?.id || null,
         }
         const { data, error } = await supabase
@@ -1127,6 +1283,7 @@ export function ChatView({
 
         // Replace optimistic message with real one
         setMessages((prev) => prev.map((m) => (m.id === optimisticMessage.id ? data : m)))
+        queuePushNotification(data.id)
 
         // Clear reply state and draft
         clearReply()
@@ -1161,16 +1318,53 @@ export function ChatView({
   )
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputValue(e.target.value)
-    if (e.target.value.trim()) {
+    const value = e.target.value
+    setInputValue(value)
+    const beforeCaret = value.slice(0, e.target.selectionStart)
+    const mentionMatch = isGroup ? beforeCaret.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u) : null
+    setMentionQuery(mentionMatch?.[1] ?? null)
+    if (value.trim()) {
       onType()
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  const mentionOptions = useMemo(() => {
+    if (!isGroup || mentionQuery === null) return []
+    const query = mentionQuery.toLocaleLowerCase()
+    return [...memberProfiles.values()]
+      .filter((profile) => profile.id !== currentUserId)
+      .filter(
+        (profile) =>
+          profile.username.toLocaleLowerCase().includes(query) ||
+          profile.display_name.toLocaleLowerCase().includes(query)
+      )
+      .slice(0, 6)
+  }, [currentUserId, isGroup, memberProfiles, mentionQuery])
+
+  const insertMention = (profile: Profile) => {
+    const caret = inputRef.current?.selectionStart ?? inputValue.length
+    const beforeCaret = inputValue.slice(0, caret)
+    const mentionStart = beforeCaret.lastIndexOf('@')
+    if (mentionStart < 0) return
+    const nextValue = `${inputValue.slice(0, mentionStart)}@${profile.username} ${inputValue.slice(caret)}`
+    setInputValue(nextValue)
+    if (conversationId) setDraft(conversationId, nextValue)
+    setMentionQuery(null)
+    window.setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && mentionQuery !== null) {
+      setMentionQuery(null)
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      handleSend()
+      if (mentionOptions[0]) {
+        insertMention(mentionOptions[0])
+        return
+      }
+      void handleSend()
     }
   }
 
@@ -1250,25 +1444,40 @@ export function ChatView({
     }
   }, [])
 
-  // Fetch reactions when messages change (optimized batch query)
+  // Fetch reactions only for message IDs that have not been loaded yet.
   useEffect(() => {
     let cancelled = false
-    const fetchVersion = reactionMutationVersionRef.current
 
     const fetchReactions = async () => {
       const { getReactionsForMessages } = await import('@/lib/actions/messages')
 
-      // Get non-temp message IDs
+      if (reactionFetchConversationRef.current !== conversationId) {
+        reactionFetchConversationRef.current = conversationId
+        reactionFetchedIdsRef.current.clear()
+      }
+
       const messageIds = messages
-        .filter((msg) => msg.id && !msg.id.startsWith('temp-'))
-        .map((msg) => msg.id)
+        .filter(
+          (message) =>
+            message.id &&
+            !message.id.startsWith('temp-') &&
+            !reactionFetchedIdsRef.current.has(message.id)
+        )
+        .map((message) => message.id)
 
       if (messageIds.length === 0) return
 
       try {
         const newReactions = await getReactionsForMessages(messageIds)
-        if (!cancelled && fetchVersion === reactionMutationVersionRef.current) {
-          setMessageReactions(newReactions)
+        if (!cancelled) {
+          messageIds.forEach((messageId) => reactionFetchedIdsRef.current.add(messageId))
+          setMessageReactions((current) => {
+            const next = new Map(current)
+            newReactions.forEach((reactions, messageId) => {
+              if (!next.has(messageId)) next.set(messageId, reactions)
+            })
+            return next
+          })
         }
       } catch (err) {
         console.error('Failed to fetch reactions:', err)
@@ -1282,7 +1491,7 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [messages])
+  }, [conversationId, messages])
 
   // Get typing text
   const getTypingText = (): string => {
@@ -1366,7 +1575,12 @@ export function ChatView({
   }
 
   return (
-    <div className="relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--bg-app)]">
+    <div
+      className={cn(
+        'relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--bg-app)] transition-[padding] lg:duration-200',
+        showProfilePanel && 'lg:pr-80'
+      )}
+    >
       {/* Header */}
       <div className="flex min-w-0 items-center gap-1 border-b border-[var(--border-default)] bg-[var(--bg-panel)] px-2 py-2.5 sm:gap-3 md:px-4 md:py-3">
         {showBackButton && (
@@ -1387,12 +1601,11 @@ export function ChatView({
             onClick={() => setShowGroupDetails(true)}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left sm:gap-3"
           >
-            <Avatar
-              user={{
-                id: conversation.id,
-                display_name: conversation.title || t('group.tab'),
-                avatar_url: conversation.avatar_url,
-              }}
+            <GroupAvatar
+              id={conversation.id}
+              name={conversation.title || t('group.tab')}
+              avatarUrl={conversation.avatar_url}
+              members={[...memberProfiles.values()]}
               size="md"
             />
             <div className="min-w-0 flex-1">
@@ -1414,8 +1627,12 @@ export function ChatView({
         )}
 
         {!isGroup && participant && (
-          <Link
-            href={`/profile/${participant.id}`}
+          <button
+            type="button"
+            onClick={() => {
+              setShowConversationActions(false)
+              setShowProfilePanel(true)
+            }}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg sm:gap-3"
           >
             {/* Avatar with dynamic status */}
@@ -1443,7 +1660,7 @@ export function ChatView({
                 {getStatusText()}
               </p>
             </div>
-          </Link>
+          </button>
         )}
 
         {!participant && !isGroup && showBackButton && <div className="flex-1" />}
@@ -1507,7 +1724,14 @@ export function ChatView({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => (isGroup ? setShowGroupDetails(true) : setShowConversationActions(true))}
+            onClick={() => {
+              if (isGroup) {
+                setShowGroupDetails(true)
+              } else {
+                setShowProfilePanel(false)
+                setShowConversationActions(true)
+              }
+            }}
             className="h-9 w-9 sm:h-10 sm:w-10"
             aria-label={t('chat.options')}
           >
@@ -1519,7 +1743,25 @@ export function ChatView({
       {/* Messages */}
       <ScrollArea className="min-w-0 flex-1 p-2 sm:p-4">
         <div className="space-y-4" role="log" aria-live="polite" aria-relevant="additions">
+          {hasOlderMessages && (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadOlderMessages()}
+                disabled={loadingOlderMessages}
+              >
+                {loadingOlderMessages ? t('chat.loadingOlder') : t('chat.loadOlder')}
+              </Button>
+            </div>
+          )}
           {messages.map((message, index) => {
+            const mediaGroup = message.media_group_id
+              ? mediaGroups.get(message.media_group_id)
+              : undefined
+            if (mediaGroup && mediaGroup[0]?.id !== message.id) return null
+
             const showDateSeparator = getDateSeparator(messages, index, dateLocale)
             const showAvatar = index === 0 || messages[index - 1].sender_id !== message.sender_id
             const isFromMe = message.sender_id === currentUserId
@@ -1537,9 +1779,14 @@ export function ChatView({
             return (
               <div
                 key={message.id}
+                className="message-render-row"
                 data-message-id={message.id}
                 ref={(el) => {
-                  if (el) messageRefs.current.set(message.id, el)
+                  if (el) {
+                    ;(mediaGroup ?? [message]).forEach((groupedMessage) =>
+                      messageRefs.current.set(groupedMessage.id, el)
+                    )
+                  }
                 }}
               >
                 {showDateSeparator && (
@@ -1553,6 +1800,7 @@ export function ChatView({
                 )}
                 <MessageBubble
                   message={message}
+                  mediaGroup={mediaGroup}
                   showAvatar={showAvatar}
                   participant={messageAuthor}
                   isFromMe={isFromMe}
@@ -1561,11 +1809,11 @@ export function ChatView({
                   reactions={messageReactions.get(message.id) || []}
                   onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
                   replyToMessage={
-                    message.reply_to ? messages.find((m) => m.id === message.reply_to) : null
+                    message.reply_to ? (messagesById.get(message.reply_to) ?? null) : null
                   }
                   replyToAuthor={(() => {
                     const repliedMessage = message.reply_to
-                      ? messages.find((item) => item.id === message.reply_to)
+                      ? messagesById.get(message.reply_to)
                       : null
                     return repliedMessage?.sender_id
                       ? memberProfiles.get(repliedMessage.sender_id) || participant
@@ -1626,18 +1874,38 @@ export function ChatView({
             }}
           />
 
-          <div className="min-w-0 flex-1">
+          <div className="relative min-w-0 flex-1">
+            {mentionOptions.length > 0 && (
+              <div className="absolute right-0 bottom-full left-0 z-50 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-panel)] p-1 shadow-xl">
+                {mentionOptions.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => insertMention(profile)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-[var(--bg-hover)]"
+                  >
+                    <Avatar user={profile} size="sm" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-[var(--text-primary)]">
+                        {profile.display_name}
+                      </span>
+                      <span className="block truncate text-xs text-[var(--text-muted)]">
+                        @{profile.username}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               ref={inputRef}
               rows={1}
+              maxLength={10000}
               placeholder={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
               value={inputValue}
               onChange={(e) => {
                 handleInputChange(e)
-                // Auto-save draft
-                if (conversationId && e.target.value.trim()) {
-                  setDraft(conversationId, e.target.value)
-                }
+                if (conversationId) setDraft(conversationId, e.target.value)
               }}
               onKeyDown={handleKeyDown}
               className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -1708,10 +1976,6 @@ export function ChatView({
           setInputValue(message.content || '')
         }}
         onDelete={handleDelete}
-        onBlockUser={(userId, userName) => {
-          setUserToBlock({ id: userId, display_name: userName, avatar_url: null })
-          setBlockModalOpen(true)
-        }}
       />
 
       {/* Forward Modal */}
@@ -1743,7 +2007,6 @@ export function ChatView({
             <ConversationActions
               conversationId={conversationId}
               conversationTitle={participant.display_name}
-              userId={currentUserId}
               isPinned={conversationFlags.is_pinned}
               isMuted={conversationFlags.is_muted}
               isArchived={conversationFlags.is_archived}
@@ -1755,6 +2018,10 @@ export function ChatView({
                 useChatCacheStore.getState().clearCache(conversationId)
                 router.replace('/chats')
                 router.refresh()
+              }}
+              onBlock={() => {
+                setUserToBlock(participant)
+                setBlockModalOpen(true)
               }}
               onAction={(updates) => {
                 setConversationFlags((prev) => ({
@@ -1774,6 +2041,14 @@ export function ChatView({
           onClose={() => setShowGroupDetails(false)}
           onLeft={handleGroupLeft}
           onUpdated={handleGroupUpdated}
+        />
+      )}
+
+      {showProfilePanel && participant && !isGroup && (
+        <ConversationProfilePanel
+          profile={participant}
+          status={participantStatus}
+          onClose={() => setShowProfilePanel(false)}
         />
       )}
 

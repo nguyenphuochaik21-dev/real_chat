@@ -1,12 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import type { Database } from '@/types'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -42,11 +43,13 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/calls') ||
     request.nextUrl.pathname.startsWith('/settings') ||
     request.nextUrl.pathname.startsWith('/profile') ||
-    request.nextUrl.pathname.startsWith('/admin') ||
-    request.nextUrl.pathname.startsWith('/starred')
+    request.nextUrl.pathname.startsWith('/admin')
 
   let isSuspended = false
-  if (user) {
+  const shouldCheckSuspension =
+    isProtectedRoute || isAuthRoute || request.nextUrl.pathname === '/suspended'
+
+  if (user && shouldCheckSuspension) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('is_suspended')

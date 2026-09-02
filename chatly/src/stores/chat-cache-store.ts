@@ -1,19 +1,23 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Tables } from '@/types'
+import type { PublicProfile, Tables } from '@/types'
 
 type Message = Tables<'messages'>
-type Profile = Tables<'profiles'>
 
 interface ConversationCache {
   messages: Message[]
-  participant: Profile | null
+  hasOlderMessages: boolean
+  participant: PublicProfile | null
   participantStatus: 'online' | 'offline' | 'away' | 'busy'
   messageStatuses: Map<string, string>
   messageReactions: Map<string, { emoji: string; count: number; userReacted: boolean }[]>
   lastFetchedAt: number
 }
+
+const MAX_CACHED_CONVERSATIONS = 10
+const MAX_CACHED_MESSAGES = 200
+const MAX_CACHED_INPUTS = 50
 
 interface ChatCacheStore {
   cache: Map<string, ConversationCache>
@@ -38,13 +42,26 @@ export const useChatCacheStore = create<ChatCacheStore>((set, get) => ({
       const newCache = new Map(state.cache)
       const existing = newCache.get(conversationId) || {
         messages: [],
+        hasOlderMessages: true,
         participant: null,
         participantStatus: 'offline' as const,
         messageStatuses: new Map(),
         messageReactions: new Map(),
         lastFetchedAt: 0,
       }
-      newCache.set(conversationId, { ...existing, ...partial, lastFetchedAt: Date.now() })
+      const nextCache = { ...existing, ...partial, lastFetchedAt: Date.now() }
+      if (nextCache.messages.length > MAX_CACHED_MESSAGES) {
+        nextCache.messages = nextCache.messages.slice(-MAX_CACHED_MESSAGES)
+        nextCache.hasOlderMessages = true
+      }
+      newCache.set(conversationId, nextCache)
+
+      if (newCache.size > MAX_CACHED_CONVERSATIONS) {
+        const oldestEntry = [...newCache.entries()]
+          .filter(([id]) => id !== conversationId)
+          .sort(([, left], [, right]) => left.lastFetchedAt - right.lastFetchedAt)[0]
+        if (oldestEntry) newCache.delete(oldestEntry[0])
+      }
       return { cache: newCache }
     })
   },
@@ -64,7 +81,12 @@ export const useChatCacheStore = create<ChatCacheStore>((set, get) => ({
   setInput: (conversationId, value) => {
     set((state) => {
       const newInputs = new Map(state.inputValues)
-      newInputs.set(conversationId, value)
+      newInputs.delete(conversationId)
+      if (value) newInputs.set(conversationId, value)
+      if (newInputs.size > MAX_CACHED_INPUTS) {
+        const oldestConversationId = newInputs.keys().next().value
+        if (oldestConversationId) newInputs.delete(oldestConversationId)
+      }
       return { inputValues: newInputs }
     })
   },

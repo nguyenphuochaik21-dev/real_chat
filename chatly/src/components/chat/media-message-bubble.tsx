@@ -14,6 +14,7 @@ type Message = Tables<'messages'>
 interface MediaMessageBubbleProps {
   message: Message
   isFromMe: boolean
+  compact?: boolean
 }
 
 function formatFileSize(bytes: number | null): string {
@@ -23,7 +24,11 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function MediaMessageBubble({ message, isFromMe }: MediaMessageBubbleProps) {
+export function MediaMessageBubble({
+  message,
+  isFromMe,
+  compact = false,
+}: MediaMessageBubbleProps) {
   const { t } = useI18n()
   const mediaPath = message.media_url
   const mimeType = message.media_mime_type
@@ -38,7 +43,10 @@ export function MediaMessageBubble({ message, isFromMe }: MediaMessageBubbleProp
     return (
       <div
         className={cn(
-          'flex max-w-[280px] min-w-[200px] items-center gap-3 rounded-2xl px-4 py-3',
+          'flex items-center gap-3 rounded-2xl',
+          compact
+            ? 'aspect-square min-w-0 justify-center rounded-lg p-1'
+            : 'max-w-[280px] min-w-[200px] px-4 py-3',
           isFromMe ? 'bg-primary-500 text-white' : 'bg-[var(--bg-message-in)]'
         )}
       >
@@ -52,7 +60,10 @@ export function MediaMessageBubble({ message, isFromMe }: MediaMessageBubbleProp
     return (
       <div
         className={cn(
-          'flex min-h-[100px] min-w-[200px] items-center justify-center rounded-2xl px-4 py-3',
+          'flex items-center justify-center rounded-2xl',
+          compact
+            ? 'aspect-square min-h-0 min-w-0 rounded-lg p-1'
+            : 'min-h-[100px] min-w-[200px] px-4 py-3',
           isFromMe ? 'bg-primary-500' : 'bg-[var(--bg-message-in)]'
         )}
       >
@@ -65,7 +76,11 @@ export function MediaMessageBubble({ message, isFromMe }: MediaMessageBubbleProp
   if (isImage(mimeType)) {
     return (
       <div
-        className={cn('overflow-hidden rounded-2xl', isFromMe ? 'rounded-br-md' : 'rounded-bl-md')}
+        className={cn(
+          'overflow-hidden',
+          compact ? 'h-full w-full rounded-lg' : 'rounded-2xl',
+          !compact && (isFromMe ? 'rounded-br-md' : 'rounded-bl-md')
+        )}
       >
         <Image
           src={signedUrl}
@@ -74,7 +89,9 @@ export function MediaMessageBubble({ message, isFromMe }: MediaMessageBubbleProp
           height={560}
           sizes="(max-width: 640px) 70vw, 280px"
           className={cn(
-            'h-auto max-h-[300px] w-auto max-w-[280px] cursor-pointer object-cover',
+            compact
+              ? 'aspect-square h-full w-full cursor-pointer object-cover'
+              : 'h-auto max-h-[300px] w-auto max-w-[280px] cursor-pointer object-cover',
             !imageLoaded && 'blur-sm'
           )}
           onLoad={() => setImageLoaded(true)}

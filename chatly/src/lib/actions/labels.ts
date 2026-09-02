@@ -1,7 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { parseInput, shortTextSchema, uuidSchema } from '@/lib/actions/validation'
 import type { Tables } from '@/types'
+import { z } from 'zod'
 
 type Label = Tables<'conversation_labels'>
 
@@ -35,9 +37,7 @@ export async function createLabel(
     return { success: false, error: 'Not authenticated' }
   }
 
-  if (!params.name.trim()) {
-    return { success: false, error: 'Label name is required' }
-  }
+  const name = parseInput(shortTextSchema, params.name)
 
   // Validate color format (hex)
   const hexColorRegex = /^#[0-9A-Fa-f]{6}$/
@@ -49,7 +49,7 @@ export async function createLabel(
     .from('conversation_labels')
     .insert({
       user_id: user.id,
-      name: params.name.trim(),
+      name,
       color: params.color,
     })
     .select()
@@ -69,69 +69,7 @@ export async function createLabel(
 export async function updateLabel(
   params: UpdateLabelParams
 ): Promise<{ success: boolean; label?: Label; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  // Verify ownership
-  const { data: existing } = await supabase
-    .from('conversation_labels')
-    .select('id, user_id')
-    .eq('id', params.id)
-    .single()
-
-  if (!existing) {
-    return { success: false, error: 'Label not found' }
-  }
-
-  if (existing.user_id !== user.id) {
-    return { success: false, error: 'Not authorized to update this label' }
-  }
-
-  const updates: Partial<{
-    name: string
-    color: string
-  }> = {}
-
-  if (params.name !== undefined) {
-    if (!params.name.trim()) {
-      return { success: false, error: 'Label name is required' }
-    }
-    updates.name = params.name.trim()
-  }
-
-  if (params.color !== undefined) {
-    const hexColorRegex = /^#[0-9A-Fa-f]{6}$/
-    if (!hexColorRegex.test(params.color)) {
-      return { success: false, error: 'Invalid color format. Use hex format like #8B5CF6' }
-    }
-    updates.color = params.color
-  }
-
-  const { data, error } = await supabase
-    .from('conversation_labels')
-    .update(updates)
-    .eq('id', params.id)
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Failed to update label:', error)
-    return { success: false, error: error.message }
-  }
-
-  return { success: true, label: data }
-}
-
-/**
- * Delete a conversation label
- */
-export async function deleteLabel(labelId: string): Promise<{ success: boolean; error?: string }> {
+  const labelId = parseInput(uuidSchema, params.id)
   const supabase = await createClient()
 
   const {
@@ -153,11 +91,72 @@ export async function deleteLabel(labelId: string): Promise<{ success: boolean; 
   }
 
   if (existing.user_id !== user.id) {
+    return { success: false, error: 'Not authorized to update this label' }
+  }
+
+  const updates: Partial<{
+    name: string
+    color: string
+  }> = {}
+
+  if (params.name !== undefined) {
+    updates.name = parseInput(shortTextSchema, params.name)
+  }
+
+  if (params.color !== undefined) {
+    const hexColorRegex = /^#[0-9A-Fa-f]{6}$/
+    if (!hexColorRegex.test(params.color)) {
+      return { success: false, error: 'Invalid color format. Use hex format like #8B5CF6' }
+    }
+    updates.color = params.color
+  }
+
+  const { data, error } = await supabase
+    .from('conversation_labels')
+    .update(updates)
+    .eq('id', labelId)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Failed to update label:', error)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, label: data }
+}
+
+/**
+ * Delete a conversation label
+ */
+export async function deleteLabel(labelId: string): Promise<{ success: boolean; error?: string }> {
+  const id = parseInput(uuidSchema, labelId)
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return { success: false, error: 'Not authenticated' }
+  }
+
+  // Verify ownership
+  const { data: existing } = await supabase
+    .from('conversation_labels')
+    .select('id, user_id')
+    .eq('id', id)
+    .single()
+
+  if (!existing) {
+    return { success: false, error: 'Label not found' }
+  }
+
+  if (existing.user_id !== user.id) {
     return { success: false, error: 'Not authorized to delete this label' }
   }
 
   // Delete the label (cascade will remove mappings)
-  const { error } = await supabase.from('conversation_labels').delete().eq('id', labelId)
+  const { error } = await supabase.from('conversation_labels').delete().eq('id', id)
 
   if (error) {
     console.error('Failed to delete label:', error)
@@ -205,6 +204,8 @@ export async function assignLabelToConversation(
   conversationId: string,
   labelId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const conversation = parseInput(uuidSchema, conversationId)
+  const label = parseInput(uuidSchema, labelId)
   const supabase = await createClient()
 
   const {
@@ -218,7 +219,7 @@ export async function assignLabelToConversation(
   const { data: participation } = await supabase
     .from('conversation_participants')
     .select('user_id')
-    .eq('conversation_id', conversationId)
+    .eq('conversation_id', conversation)
     .eq('user_id', user.id)
     .single()
 
@@ -227,24 +228,24 @@ export async function assignLabelToConversation(
   }
 
   // Verify label belongs to user
-  const { data: label } = await supabase
+  const { data: ownedLabel } = await supabase
     .from('conversation_labels')
     .select('id, user_id')
-    .eq('id', labelId)
+    .eq('id', label)
     .single()
 
-  if (!label) {
+  if (!ownedLabel) {
     return { success: false, error: 'Label not found' }
   }
 
-  if (label.user_id !== user.id) {
+  if (ownedLabel.user_id !== user.id) {
     return { success: false, error: 'Not authorized to use this label' }
   }
 
   const { error } = await supabase.from('conversation_label_map').upsert(
     {
-      conversation_id: conversationId,
-      label_id: labelId,
+      conversation_id: conversation,
+      label_id: label,
     },
     {
       onConflict: 'conversation_id,label_id',
@@ -302,56 +303,6 @@ export async function removeLabelFromConversation(
 }
 
 /**
- * Get labels for a specific conversation
- */
-export async function getConversationLabels(conversationId: string): Promise<{
-  success: boolean
-  labels?: Label[]
-  error?: string
-}> {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  // Verify user is participant
-  const { data: participation } = await supabase
-    .from('conversation_participants')
-    .select('user_id')
-    .eq('conversation_id', conversationId)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!participation) {
-    return { success: false, error: 'Not authorized to view labels for this conversation' }
-  }
-
-  const { data, error } = await supabase
-    .from('conversation_label_map')
-    .select(
-      `
-      label:conversation_labels(
-        *
-      )
-    `
-    )
-    .eq('conversation_id', conversationId)
-
-  if (error) {
-    console.error('Failed to fetch conversation labels:', error)
-    return { success: false, error: error.message }
-  }
-
-  const labels = (data || []).flatMap((item) => (item.label as unknown as Label[] | null) ?? [])
-
-  return { success: true, labels }
-}
-
-/**
  * Get labels for multiple conversations (batch query)
  */
 export async function getLabelsForConversations(conversationIds: string[]): Promise<{
@@ -362,6 +313,8 @@ export async function getLabelsForConversations(conversationIds: string[]): Prom
   if (conversationIds.length === 0) {
     return { success: true, labelsByConversation: new Map() }
   }
+
+  const ids = Array.from(new Set(parseInput(z.array(uuidSchema).max(200), conversationIds)))
 
   const supabase = await createClient()
 
@@ -382,7 +335,7 @@ export async function getLabelsForConversations(conversationIds: string[]): Prom
       )
     `
     )
-    .in('conversation_id', conversationIds)
+    .in('conversation_id', ids)
 
   if (error) {
     console.error('Failed to fetch labels for conversations:', error)
@@ -393,6 +346,7 @@ export async function getLabelsForConversations(conversationIds: string[]): Prom
   const labelsByConversation = new Map<string, Label[]>()
   for (const item of data || []) {
     const convId = item.conversation_id
+    if (!convId) continue
     // Supabase returns nested relations as arrays, get first element
     const labelArray = item.label as unknown as Label[] | null
     const label = Array.isArray(labelArray) ? labelArray[0] : labelArray

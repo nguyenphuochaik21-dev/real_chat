@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
+import { GroupAvatar } from '@/components/ui/group-avatar'
 import { resolvePresence, type PresenceStatus } from '@/lib/presence'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -31,11 +32,12 @@ import { useDraftStore } from '@/stores/draft-store'
 import { useConversationLabels } from '@/hooks/use-conversation-labels'
 import { useSearch } from '@/hooks/use-search'
 import { useChatsListStore, type ConversationWithDetails } from '@/stores/chats-list-store'
-import type { Tables } from '@/types'
+import type { PublicProfile, Tables } from '@/types'
 import { useI18n } from '@/lib/i18n'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
+import { createConversation } from '@/lib/actions/conversations'
 
-type Profile = Tables<'profiles'>
+type Profile = PublicProfile
 
 const CreateGroupModal = dynamic(
   () => import('@/components/groups/create-group-modal').then((module) => module.CreateGroupModal),
@@ -109,7 +111,17 @@ function ConversationItem({
       aria-current={isActive ? 'page' : undefined}
     >
       <div className="relative">
-        <Avatar user={avatarUser!} size="lg" showStatus={false} />
+        {isGroup ? (
+          <GroupAvatar
+            id={conversation.id}
+            name={displayName}
+            avatarUrl={conversation.avatar_url}
+            members={conversation.group_members}
+            size="lg"
+          />
+        ) : (
+          <Avatar user={avatarUser!} size="lg" showStatus={false} />
+        )}
         {isGroup ? (
           <span className="bg-primary-500 absolute right-0 bottom-0 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--bg-panel)] px-1 text-[10px] font-semibold text-white">
             {conversation.member_count}
@@ -296,7 +308,28 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       const { data, error } = await supabase.rpc('get_conversation_summaries')
       if (error) throw error
 
-      const conversationsWithParticipants = parseConversationSummaries(data)
+      let conversationsWithParticipants = parseConversationSummaries(data)
+      const groupIds = conversationsWithParticipants
+        .filter((conversation) => conversation.type === 'group')
+        .map((conversation) => conversation.id)
+
+      if (groupIds.length > 0) {
+        const { data: groupMemberRows } = await supabase.rpc('get_group_avatar_members', {
+          p_conversation_ids: groupIds,
+        })
+        if (groupMemberRows) {
+          const membersByConversation = new Map<string, PublicProfile[]>()
+          groupMemberRows.forEach(({ conversation_id, ...profile }) => {
+            const members = membersByConversation.get(conversation_id) ?? []
+            members.push(profile)
+            membersByConversation.set(conversation_id, members)
+          })
+          conversationsWithParticipants = conversationsWithParticipants.map((conversation) => ({
+            ...conversation,
+            group_members: membersByConversation.get(conversation.id) ?? [],
+          }))
+        }
+      }
       const participantIds = conversationsWithParticipants.flatMap((conversation) =>
         conversation.type === 'direct' && conversation.participant
           ? [conversation.participant.id]
@@ -409,10 +442,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             is_pinned: updated.is_pinned ?? undefined,
             is_muted: updated.is_muted ?? undefined,
             is_archived: updated.is_archived ?? undefined,
-            unread_count:
-              updated.last_read_at && updated.last_read_at !== updated.conversation_id
-                ? 0
-                : undefined,
           })
         }
       )
@@ -433,12 +462,21 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           }
 
           if (storeConversationIdsRef.current.includes(updated.id)) {
+            const store = useChatsListStore.getState()
+            const existing = [...store.conversations, ...store.archivedConversations].find(
+              (conversation) => conversation.id === updated.id
+            )
+            const hasNewMessage = Boolean(
+              updated.last_message_at && updated.last_message_at !== existing?.last_message_at
+            )
             updateConversation(updated.id, {
               title: updated.title,
               avatar_url: updated.avatar_url,
               updated_at: updated.updated_at,
               last_message_at: updated.last_message_at,
             })
+            if (!hasNewMessage) return
+
             try {
               const { data: lastMessage } = await supabase
                 .from('messages')
@@ -449,7 +487,11 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                 .single()
 
               if (lastMessage) {
-                incrementUnread(updated.id, lastMessage, lastMessage.sender_id !== currentUserId)
+                incrementUnread(
+                  updated.id,
+                  lastMessage,
+                  lastMessage.sender_id !== currentUserId && updated.id !== selectedConversationId
+                )
               }
             } catch (err) {
               console.error('[ChatsList] Error fetching last message:', err)
@@ -467,7 +509,14 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       supabase.removeChannel(channel)
       channelRef.current = null
     }
-  }, [currentUserId, supabase, updateConversation, incrementUnread, fetchConversations])
+  }, [
+    currentUserId,
+    supabase,
+    updateConversation,
+    incrementUnread,
+    fetchConversations,
+    selectedConversationId,
+  ])
 
   // Subscribe to profile status changes for all participants
   useEffect(() => {
@@ -556,69 +605,16 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       if (!currentUserId) return
 
       try {
-        const { data: existingConvs } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', currentUserId)
-
-        let conversationId: string | null = null
-
-        for (const part of existingConvs || []) {
-          const { data: otherParts } = await supabase
-            .from('conversation_participants')
-            .select('user_id')
-            .eq('conversation_id', part.conversation_id)
-            .eq('user_id', contactId)
-
-          if (otherParts && otherParts.length > 0) {
-            const { data: directConversation } = await supabase
-              .from('conversations')
-              .select('id')
-              .eq('id', part.conversation_id)
-              .eq('type', 'direct')
-              .maybeSingle()
-            if (directConversation) {
-              conversationId = directConversation.id
-              break
-            }
-          }
-        }
-
-        if (!conversationId) {
-          const { data: newConv, error: createError } = await supabase
-            .from('conversations')
-            .insert({ created_by: currentUserId, type: 'direct' })
-            .select()
-            .single()
-
-          if (createError || !newConv) {
-            throw new Error(createError?.message || 'Failed to create conversation')
-          }
-
-          conversationId = newConv.id
-
-          const { error: addSelfError } = await supabase
-            .from('conversation_participants')
-            .insert({ conversation_id: conversationId, user_id: currentUserId })
-
-          if (addSelfError) throw new Error(addSelfError.message)
-
-          const { error: addOtherError } = await supabase.rpc('add_conversation_participant', {
-            p_conversation_id: conversationId,
-            p_user_id: contactId,
-          })
-
-          if (addOtherError) throw new Error(addOtherError.message)
-        }
+        const conversation = await createConversation(contactId)
 
         setSearch('')
         clearSearch()
-        router.push(`/chats/${conversationId}`)
+        router.push(`/chats/${conversation.id}`)
       } catch (err) {
         console.error('Failed to start conversation from search:', err)
       }
     },
-    [currentUserId, supabase, router, clearSearch]
+    [currentUserId, router, clearSearch]
   )
 
   const openMessageInConversation = useCallback(

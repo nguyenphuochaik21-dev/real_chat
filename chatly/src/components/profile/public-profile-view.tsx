@@ -6,15 +6,18 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   CalendarDays,
+  Cake,
   Check,
   Clock3,
   Edit3,
   MessageSquare,
+  Globe2,
   Phone,
   UserMinus,
   UserPlus,
   X,
 } from 'lucide-react'
+import { FaFacebookF, FaGithub, FaInstagram, FaLinkedinIn, FaYoutube } from 'react-icons/fa6'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,15 +26,15 @@ import {
   removeFriendship,
   respondFriendRequest,
   sendFriendRequest,
-  type FriendProfile,
 } from '@/lib/actions/friendships'
+import type { PublicProfileDetails } from '@/lib/actions/profile'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
 import type { Tables } from '@/types'
 
 interface PublicProfileViewProps {
   currentUserId: string
-  profile: FriendProfile
+  profile: PublicProfileDetails
   initialFriendship: Tables<'friendships'> | null
 }
 
@@ -69,7 +72,7 @@ export function PublicProfileView({
     setBusy(true)
     setError(null)
     try {
-      const conversation = await createConversation(currentUserId, profile.id)
+      const conversation = await createConversation(profile.id)
       router.push(`/chats/${conversation.id}`)
     } catch (chatError) {
       setError(chatError instanceof Error ? chatError.message : t('common.unknownError'))
@@ -189,15 +192,16 @@ export function PublicProfileView({
           </div>
 
           <div className="mt-8 grid gap-3 border-t border-[var(--border-default)] pt-6 sm:grid-cols-2">
-            <div className="flex items-center gap-3 rounded-xl bg-[var(--bg-app)] p-4">
-              <Phone className="text-primary-500 h-5 w-5" />
-              <div className="min-w-0">
-                <p className="text-xs text-[var(--text-muted)]">{t('profile.phone')}</p>
-                <p className="truncate text-sm text-[var(--text-primary)]">
-                  {profile.phone || t('profile.notSet')}
-                </p>
-              </div>
-            </div>
+            {profile.phone && (
+              <ProfileFact icon={Phone} label={t('profile.phone')} value={profile.phone} />
+            )}
+            {profile.birth_date && (
+              <ProfileFact
+                icon={Cake}
+                label={t('profile.birthDate')}
+                value={new Date(profile.birth_date).toLocaleDateString(dateLocale)}
+              />
+            )}
             <div className="flex items-center gap-3 rounded-xl bg-[var(--bg-app)] p-4">
               <CalendarDays className="text-primary-500 h-5 w-5" />
               <div>
@@ -210,6 +214,26 @@ export function PublicProfileView({
               </div>
             </div>
           </div>
+
+          {!!profile.social_links.length && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {profile.social_links.map((link) => {
+                const Icon = getSocialIcon(link)
+                return (
+                  <a
+                    key={link}
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-full border border-[var(--border-default)] px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                  >
+                    <Icon className="h-4 w-4" />
+                    {getSocialLabel(link)}
+                  </a>
+                )
+              })}
+            </div>
+          )}
         </section>
 
         {!isSelf && (
@@ -223,4 +247,42 @@ export function PublicProfileView({
       </main>
     </div>
   )
+}
+
+function ProfileFact({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-[var(--bg-app)] p-4">
+      <Icon className="text-primary-500 h-5 w-5" />
+      <div className="min-w-0">
+        <p className="text-xs text-[var(--text-muted)]">{label}</p>
+        <p className="truncate text-sm text-[var(--text-primary)]">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function getSocialIcon(link: string) {
+  const host = getSocialLabel(link).toLowerCase()
+  if (host.includes('facebook')) return FaFacebookF
+  if (host.includes('instagram')) return FaInstagram
+  if (host.includes('linkedin')) return FaLinkedinIn
+  if (host.includes('youtube') || host.includes('youtu.be')) return FaYoutube
+  if (host.includes('github')) return FaGithub
+  return Globe2
+}
+
+function getSocialLabel(link: string) {
+  try {
+    return new URL(link).hostname.replace(/^www\./, '')
+  } catch {
+    return link
+  }
 }

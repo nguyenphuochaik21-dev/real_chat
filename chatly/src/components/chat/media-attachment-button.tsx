@@ -6,6 +6,7 @@ import { useMediaUpload } from '@/hooks/use-media-upload'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import type { Tables } from '@/types'
+import { queuePushNotification } from '@/lib/push'
 
 type Message = Tables<'messages'>
 type AttachmentGroup = 'media' | 'files'
@@ -43,10 +44,13 @@ export function MediaAttachmentButton({
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(event.target.files ?? [])
       event.target.value = ''
+      const files = selectedFiles.slice(0, 12)
+      const isImageGroup = files.length > 1 && files.every((file) => file.type.startsWith('image/'))
+      const mediaGroupId = isImageGroup ? crypto.randomUUID() : undefined
 
-      for (const file of selectedFiles) {
-        await upload(file)
-      }
+      let lastUploaded: Message | null = null
+      for (const file of files) lastUploaded = (await upload(file, mediaGroupId)) ?? lastUploaded
+      if (lastUploaded) queuePushNotification(lastUploaded.id)
     },
     [upload]
   )

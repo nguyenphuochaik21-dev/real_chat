@@ -17,6 +17,16 @@ The application is available at `http://localhost:3000`. Supabase schema changes
 files under `supabase/migrations/` and must be applied to the target project before testing a
 feature that depends on new tables or policies.
 
+Copy `.env.example` to `.env.local`. Background notifications additionally require a VAPID key
+pair (`npx web-push generate-vapid-keys`) and the Supabase service-role key. The private VAPID and
+service-role keys are server-only and must never use a `NEXT_PUBLIC_` prefix.
+
+Apply pending local migrations to a linked development project with:
+
+```bash
+npx supabase db push
+```
+
 ## Quality checks
 
 ```bash

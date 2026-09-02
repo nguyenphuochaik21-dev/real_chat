@@ -1,90 +1,13 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { messageContentSchema, parseInput, uuidSchema } from '@/lib/actions/validation'
 import type { Tables } from '@/types'
+import { z } from 'zod'
 
-export type Message = Tables<'messages'>
+type Message = Tables<'messages'>
 
-export async function getMessages(
-  conversationId: string,
-  limit = 50,
-  offset = 0
-): Promise<Message[]> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
-    .range(offset, offset + limit - 1)
-
-  if (error) throw new Error(error.message)
-  return data || []
-}
-
-export async function sendMessage(
-  conversationId: string,
-  senderId: string,
-  content: string
-): Promise<Message> {
-  const supabase = await createClient()
-
-  const { data, error } = await supabase
-    .from('messages')
-    .insert({
-      conversation_id: conversationId,
-      sender_id: senderId,
-      content,
-      status: 'sent',
-    })
-    .select()
-    .single()
-
-  if (error) throw new Error(error.message)
-
-  // Update conversation's last_message_at
-  await supabase
-    .from('conversations')
-    .update({ last_message_at: new Date().toISOString() })
-    .eq('id', conversationId)
-
-  return data
-}
-
-export async function updateMessageStatus(
-  messageId: string,
-  status: 'sent' | 'delivered' | 'read'
-) {
-  const supabase = await createClient()
-  await supabase
-    .from('messages')
-    .update({ status })
-    .eq('id', messageId)
-}
-
-export async function markMessagesAsRead(
-  conversationId: string,
-  readerId: string,
-  senderId: string
-) {
-  const supabase = await createClient()
-
-  // Get unread messages from sender
-  const { data: unreadMessages } = await supabase
-    .from('messages')
-    .select('id')
-    .eq('conversation_id', conversationId)
-    .eq('sender_id', senderId)
-    .neq('status', 'read')
-
-  if (unreadMessages && unreadMessages.length > 0) {
-    // Mark them as read
-    await supabase
-      .from('messages')
-      .update({ status: 'read' })
-      .in('id', unreadMessages.map(m => m.id))
-  }
-}
+const emojiSchema = z.string().trim().min(1).max(32)
 
 // ============================================================================
 // Message Features: Edit, Delete, Forward, Reactions, Star
@@ -97,10 +20,14 @@ export async function editMessage(
   messageId: string,
   newContent: string
 ): Promise<{ success: boolean; message?: Message; error?: string }> {
+  const id = parseInput(uuidSchema, messageId)
+  const content = parseInput(messageContentSchema, newContent)
   const supabase = await createClient()
 
   // Get current user
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -109,7 +36,7 @@ export async function editMessage(
   const { data: existing, error: fetchError } = await supabase
     .from('messages')
     .select('id, sender_id, created_at, conversation_id')
-    .eq('id', messageId)
+    .eq('id', id)
     .single()
 
   if (fetchError || !existing) {
@@ -122,6 +49,10 @@ export async function editMessage(
   }
 
   // Check time constraint (15 minutes)
+  if (!existing.created_at) {
+    return { success: false, error: 'Message creation time is missing' }
+  }
+
   const createdAt = new Date(existing.created_at)
   const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
 
@@ -133,10 +64,10 @@ export async function editMessage(
   const { data, error } = await supabase
     .from('messages')
     .update({
-      content: newContent,
-      edited_at: new Date().toISOString()
+      content,
+      edited_at: new Date().toISOString(),
     })
-    .eq('id', messageId)
+    .eq('id', id)
     .select()
     .single()
 
@@ -153,10 +84,13 @@ export async function editMessage(
 export async function deleteMessage(
   messageId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const id = parseInput(uuidSchema, messageId)
   const supabase = await createClient()
 
   // Get current user
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -165,7 +99,7 @@ export async function deleteMessage(
   const { data: existing, error: fetchError } = await supabase
     .from('messages')
     .select('id, sender_id')
-    .eq('id', messageId)
+    .eq('id', id)
     .single()
 
   if (fetchError || !existing) {
@@ -181,7 +115,7 @@ export async function deleteMessage(
   const { error } = await supabase
     .from('messages')
     .update({ deleted_at: new Date().toISOString() })
-    .eq('id', messageId)
+    .eq('id', id)
 
   if (error) {
     return { success: false, error: error.message }
@@ -197,10 +131,16 @@ export async function forwardMessage(
   messageId: string,
   targetConversationIds: string[]
 ): Promise<{ success: boolean; forwardedCount?: number; error?: string }> {
+  const id = parseInput(uuidSchema, messageId)
+  const targetIds = Array.from(
+    new Set(parseInput(z.array(uuidSchema).min(1).max(20), targetConversationIds))
+  )
   const supabase = await createClient()
 
   // Get current user
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -208,12 +148,18 @@ export async function forwardMessage(
   // Get the original message
   const { data: originalMessage, error: fetchError } = await supabase
     .from('messages')
-    .select('*')
-    .eq('id', messageId)
+    .select(
+      'id, conversation_id, content, content_type, media_url, media_thumbnail_url, media_name, media_size, media_mime_type'
+    )
+    .eq('id', id)
     .single()
 
   if (fetchError || !originalMessage) {
     return { success: false, error: 'Original message not found' }
+  }
+
+  if (!originalMessage.conversation_id) {
+    return { success: false, error: 'Original message has no conversation' }
   }
 
   // Verify user is participant of the source conversation
@@ -233,22 +179,20 @@ export async function forwardMessage(
     .from('conversation_participants')
     .select('conversation_id')
     .eq('user_id', user.id)
-    .in('conversation_id', targetConversationIds)
+    .in('conversation_id', targetIds)
 
-  const authorizedTargets = targetParticipations?.map(p => p.conversation_id) || []
-  const unauthorizedTargets = targetConversationIds.filter(
-    id => !authorizedTargets.includes(id)
-  )
+  const authorizedTargets = targetParticipations?.map((item) => item.conversation_id) || []
+  const unauthorizedTargets = targetIds.filter((targetId) => !authorizedTargets.includes(targetId))
 
   if (unauthorizedTargets.length > 0) {
     return {
       success: false,
-      error: `Not authorized to forward to ${unauthorizedTargets.length} conversation(s)`
+      error: `Not authorized to forward to ${unauthorizedTargets.length} conversation(s)`,
     }
   }
 
   // Insert forwarded messages
-  const forwardedMessages = targetConversationIds.map(convId => ({
+  const forwardedMessages = targetIds.map((convId) => ({
     conversation_id: convId,
     sender_id: user.id,
     content: originalMessage.content,
@@ -258,12 +202,10 @@ export async function forwardMessage(
     media_name: originalMessage.media_name,
     media_size: originalMessage.media_size,
     media_mime_type: originalMessage.media_mime_type,
-    status: 'sent',
+    status: 'sent' as const,
   }))
 
-  const { error: insertError } = await supabase
-    .from('messages')
-    .insert(forwardedMessages)
+  const { error: insertError } = await supabase.from('messages').insert(forwardedMessages)
 
   if (insertError) {
     return { success: false, error: insertError.message }
@@ -273,9 +215,9 @@ export async function forwardMessage(
   await supabase
     .from('conversations')
     .update({ last_message_at: new Date().toISOString() })
-    .in('id', targetConversationIds)
+    .in('id', targetIds)
 
-  return { success: true, forwardedCount: targetConversationIds.length }
+  return { success: true, forwardedCount: targetIds.length }
 }
 
 // ============================================================================
@@ -291,24 +233,26 @@ export interface MessageReaction {
 /**
  * Add a reaction to a message
  */
-export async function addReaction(
+async function addReaction(
   messageId: string,
   emoji: string
 ): Promise<{ success: boolean; error?: string }> {
+  const id = parseInput(uuidSchema, messageId)
+  const reaction = parseInput(emojiSchema, emoji)
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
 
-  const { error } = await supabase
-    .from('message_reactions')
-    .insert({
-      message_id: messageId,
-      user_id: user.id,
-      emoji,
-    })
+  const { error } = await supabase.from('message_reactions').insert({
+    message_id: id,
+    user_id: user.id,
+    emoji: reaction,
+  })
 
   // Ignore unique constraint violation (already reacted)
   if (error && error.code !== '23505') {
@@ -321,13 +265,17 @@ export async function addReaction(
 /**
  * Remove a reaction from a message
  */
-export async function removeReaction(
+async function removeReaction(
   messageId: string,
   emoji: string
 ): Promise<{ success: boolean; error?: string }> {
+  const id = parseInput(uuidSchema, messageId)
+  const reaction = parseInput(emojiSchema, emoji)
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, error: 'Not authenticated' }
   }
@@ -335,9 +283,9 @@ export async function removeReaction(
   const { error } = await supabase
     .from('message_reactions')
     .delete()
-    .eq('message_id', messageId)
+    .eq('message_id', id)
     .eq('user_id', user.id)
-    .eq('emoji', emoji)
+    .eq('emoji', reaction)
 
   if (error) {
     return { success: false, error: error.message }
@@ -353,9 +301,13 @@ export async function toggleReaction(
   messageId: string,
   emoji: string
 ): Promise<{ success: boolean; added: boolean; error?: string }> {
+  const id = parseInput(uuidSchema, messageId)
+  const reaction = parseInput(emojiSchema, emoji)
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { success: false, added: false, error: 'Not authenticated' }
   }
@@ -364,16 +316,16 @@ export async function toggleReaction(
   const { data: existing } = await supabase
     .from('message_reactions')
     .select('id')
-    .eq('message_id', messageId)
+    .eq('message_id', id)
     .eq('user_id', user.id)
-    .eq('emoji', emoji)
+    .eq('emoji', reaction)
     .single()
 
   if (existing) {
-    const result = await removeReaction(messageId, emoji)
+    const result = await removeReaction(id, reaction)
     return { ...result, added: false }
   } else {
-    const result = await addReaction(messageId, emoji)
+    const result = await addReaction(id, reaction)
     return { ...result, added: true }
   }
 }
@@ -381,17 +333,18 @@ export async function toggleReaction(
 /**
  * Get reactions for a message
  */
-export async function getMessageReactions(
-  messageId: string
-): Promise<MessageReaction[]> {
+export async function getMessageReactions(messageId: string): Promise<MessageReaction[]> {
+  const id = parseInput(uuidSchema, messageId)
   const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const { data, error } = await supabase
     .from('message_reactions')
     .select('emoji, user_id')
-    .eq('message_id', messageId)
+    .eq('message_id', id)
 
   if (error) {
     console.error('Failed to fetch reactions:', error)
@@ -425,13 +378,17 @@ export async function getReactionsForMessages(
 ): Promise<Map<string, MessageReaction[]>> {
   if (messageIds.length === 0) return new Map()
 
+  const ids = Array.from(new Set(parseInput(z.array(uuidSchema).max(200), messageIds)))
+
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const { data, error } = await supabase
     .from('message_reactions')
     .select('emoji, user_id, message_id')
-    .in('message_id', messageIds)
+    .in('message_id', ids)
 
   if (error) {
     console.error('Failed to batch fetch reactions:', error)
@@ -463,144 +420,15 @@ export async function getReactionsForMessages(
       reactionMap.set(r.emoji, existing)
     }
 
-    result.set(msgId, Array.from(reactionMap.entries()).map(([emoji, stats]) => ({
-      emoji,
-      count: stats.count,
-      userReacted: stats.userReacted,
-    })))
+    result.set(
+      msgId,
+      Array.from(reactionMap.entries()).map(([emoji, stats]) => ({
+        emoji,
+        count: stats.count,
+        userReacted: stats.userReacted,
+      }))
+    )
   }
 
   return result
-}
-
-// ============================================================================
-// Starred Messages
-// ============================================================================
-
-/**
- * Star a message
- */
-export async function starMessage(
-  messageId: string
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  const { error } = await supabase
-    .from('starred_messages')
-    .insert({
-      message_id: messageId,
-      user_id: user.id,
-    })
-
-  // Ignore unique constraint violation (already starred)
-  if (error && error.code !== '23505') {
-    return { success: false, error: error.message }
-  }
-
-  return { success: true }
-}
-
-/**
- * Unstar a message
- */
-export async function unstarMessage(
-  messageId: string
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  const { error } = await supabase
-    .from('starred_messages')
-    .delete()
-    .eq('message_id', messageId)
-    .eq('user_id', user.id)
-
-  if (error) {
-    return { success: false, error: error.message }
-  }
-
-  return { success: true }
-}
-
-/**
- * Toggle star status of a message
- */
-export async function toggleStar(
-  messageId: string
-): Promise<{ success: boolean; starred: boolean; error?: string }> {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, starred: false, error: 'Not authenticated' }
-  }
-
-  // Check if starred
-  const { data: existing } = await supabase
-    .from('starred_messages')
-    .select('id')
-    .eq('message_id', messageId)
-    .eq('user_id', user.id)
-    .single()
-
-  if (existing) {
-    const result = await unstarMessage(messageId)
-    return { ...result, starred: false }
-  } else {
-    const result = await starMessage(messageId)
-    return { ...result, starred: true }
-  }
-}
-
-/**
- * Get all starred messages for the current user
- */
-export async function getStarredMessages(
-  limit = 50,
-  offset = 0
-): Promise<(Message & { conversation_title?: string })[]> {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    throw new Error('Not authenticated')
-  }
-
-  const { data, error } = await supabase
-    .from('starred_messages')
-    .select(`
-      id,
-      created_at,
-      message:messages(
-        *,
-        conversation:conversations(title)
-      )
-    `)
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1)
-
-  if (error) {
-    console.error('Failed to fetch starred messages:', error)
-    throw new Error(error.message)
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data || []).map((item: any) => {
-    const message = item.message
-    if (!message) return null
-    return {
-      ...message,
-      conversation_title: message.conversation?.title,
-    }
-  }).filter(Boolean) as (Message & { conversation_title?: string })[]
 }

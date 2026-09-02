@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { searchMessages, searchConversations, type SearchFilters } from '@/lib/actions/search'
-import type { SearchResult } from '@/lib/actions/search'
-import type { Tables } from '@/types'
+import type { PublicProfile, SearchResult } from '@/lib/actions/search'
 
 export type { SearchResult }
-export type Profile = Tables<'profiles'>
+export type Profile = PublicProfile
 
 export interface SearchState {
   query: string
@@ -41,37 +40,37 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     total: 0,
     filters: conversationId ? { conversationId } : {},
   })
-
-  // Use refs to avoid dependency changes that cause infinite loops
   const conversationIdRef = useRef(conversationId)
   const stateRef = useRef(state)
   conversationIdRef.current = conversationId
   stateRef.current = state
 
-  const debounceRef = useRef<NodeJS.Timeout | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasMoreRef = useRef(true)
+  const messageRequestRef = useRef(0)
+  const contactRequestRef = useRef(0)
+  const messageLoadingRef = useRef(false)
+  const contactLoadingRef = useRef(false)
 
   const search = useCallback(async (query: string) => {
-    // Clear previous debounce
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
-    }
+    const requestId = ++messageRequestRef.current
+    if (debounceRef.current) clearTimeout(debounceRef.current)
 
     if (!query.trim()) {
-      setState((prev) => ({
-        ...prev,
+      messageLoadingRef.current = false
+      setState((previous) => ({
+        ...previous,
         query: '',
         results: [],
         total: 0,
-        loading: false,
+        loading: contactLoadingRef.current,
       }))
       hasMoreRef.current = true
       return
     }
 
-    setState((prev) => ({ ...prev, loading: true, error: null }))
-
-    // Debounce the search
+    messageLoadingRef.current = true
+    setState((previous) => ({ ...previous, loading: true, error: null }))
     debounceRef.current = setTimeout(async () => {
       try {
         const filters = {
@@ -79,36 +78,61 @@ export function useSearch(conversationId?: string): UseSearchReturn {
           ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
         }
         const results = await searchMessages(query, filters, PAGE_SIZE, 0)
+        if (requestId !== messageRequestRef.current) return
 
-        setState((prev) => ({
-          ...prev,
+        messageLoadingRef.current = false
+        setState((previous) => ({
+          ...previous,
           query,
           results: results.results,
           total: results.total,
-          loading: false,
+          loading: contactLoadingRef.current,
         }))
         hasMoreRef.current = results.results.length < results.total
-      } catch (err) {
-        setState((prev) => ({
-          ...prev,
-          loading: false,
-          error: err instanceof Error ? err.message : 'Search failed',
+      } catch (error) {
+        if (requestId !== messageRequestRef.current) return
+        messageLoadingRef.current = false
+        setState((previous) => ({
+          ...previous,
+          loading: contactLoadingRef.current,
+          error: error instanceof Error ? error.message : 'Search failed',
         }))
       }
     }, DEBOUNCE_MS)
-  }, []) // No dependencies - uses refs instead
+  }, [])
 
   const searchContacts = useCallback(async (query: string) => {
+    const requestId = ++contactRequestRef.current
     if (!query.trim()) {
-      setState((prev) => ({ ...prev, contacts: [] }))
+      contactLoadingRef.current = false
+      setState((previous) => ({
+        ...previous,
+        contacts: [],
+        loading: messageLoadingRef.current,
+        error: null,
+      }))
       return
     }
 
+    contactLoadingRef.current = true
+    setState((previous) => ({ ...previous, loading: true, error: null }))
     try {
       const contacts = await searchConversations(query)
-      setState((prev) => ({ ...prev, contacts }))
-    } catch (err) {
-      console.error('Contact search failed:', err)
+      if (requestId !== contactRequestRef.current) return
+      contactLoadingRef.current = false
+      setState((previous) => ({
+        ...previous,
+        contacts,
+        loading: messageLoadingRef.current,
+      }))
+    } catch (error) {
+      if (requestId !== contactRequestRef.current) return
+      contactLoadingRef.current = false
+      setState((previous) => ({
+        ...previous,
+        loading: messageLoadingRef.current,
+        error: error instanceof Error ? error.message : 'Contact search failed',
+      }))
     }
   }, [])
 
@@ -118,21 +142,20 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         ...filters,
         ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
       }
+      const currentQuery = stateRef.current.query
       stateRef.current = { ...stateRef.current, filters: nextFilters }
-      setState((prev) => ({ ...prev, filters: nextFilters }))
-
-      // Re-run search with new filters if we have a query
-      if (stateRef.current.query) {
-        search(stateRef.current.query)
-      }
+      setState((previous) => ({ ...previous, filters: nextFilters }))
+      if (currentQuery) void search(currentQuery)
     },
     [search]
-  ) // No state.query dependency - use ref instead
+  )
 
   const clearSearch = useCallback(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
-    }
+    messageRequestRef.current += 1
+    contactRequestRef.current += 1
+    messageLoadingRef.current = false
+    contactLoadingRef.current = false
+    if (debounceRef.current) clearTimeout(debounceRef.current)
     setState({
       query: '',
       results: [],
@@ -140,43 +163,49 @@ export function useSearch(conversationId?: string): UseSearchReturn {
       loading: false,
       error: null,
       total: 0,
-      filters: conversationId ? { conversationId } : {},
+      filters: conversationIdRef.current ? { conversationId: conversationIdRef.current } : {},
     })
     hasMoreRef.current = true
-  }, [conversationId])
+  }, [])
 
   const loadMore = useCallback(async () => {
-    if (stateRef.current.loading || !hasMoreRef.current || !stateRef.current.query) return
+    if (messageLoadingRef.current || !hasMoreRef.current || !stateRef.current.query) return
 
-    setState((prev) => ({ ...prev, loading: true }))
-
+    const requestId = ++messageRequestRef.current
+    messageLoadingRef.current = true
+    setState((previous) => ({ ...previous, loading: true }))
     try {
       const filters = {
         ...stateRef.current.filters,
         ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
       }
+      const previousCount = stateRef.current.results.length
       const results = await searchMessages(
         stateRef.current.query,
         filters,
         PAGE_SIZE,
-        stateRef.current.results.length
+        previousCount
       )
+      if (requestId !== messageRequestRef.current) return
 
-      setState((prev) => ({
-        ...prev,
-        results: [...prev.results, ...results.results],
+      messageLoadingRef.current = false
+      setState((previous) => ({
+        ...previous,
+        results: [...previous.results, ...results.results],
         total: results.total,
-        loading: false,
+        loading: contactLoadingRef.current,
       }))
-      hasMoreRef.current = stateRef.current.results.length + results.results.length < results.total
-    } catch (err) {
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: err instanceof Error ? err.message : 'Load more failed',
+      hasMoreRef.current = previousCount + results.results.length < results.total
+    } catch (error) {
+      if (requestId !== messageRequestRef.current) return
+      messageLoadingRef.current = false
+      setState((previous) => ({
+        ...previous,
+        loading: contactLoadingRef.current,
+        error: error instanceof Error ? error.message : 'Load more failed',
       }))
     }
-  }, []) // No dependencies - uses refs instead
+  }, [])
 
   return {
     state,

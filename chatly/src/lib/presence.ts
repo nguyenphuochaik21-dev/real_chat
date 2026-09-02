@@ -3,7 +3,7 @@ export type PresenceStatus = 'online' | 'offline' | 'away' | 'busy'
 // A presence record is considered "fresh" if last_seen was within this many ms.
 // Beyond that, even if status === 'online' the user is treated as offline —
 // heartbeat has lapsed (closed tab, no network, etc.).
-export const PRESENCE_STALE_MS = 90_000 // 90 seconds
+const PRESENCE_STALE_MS = 90_000 // 90 seconds
 
 export interface PresenceRecord {
   status: PresenceStatus | null | undefined
@@ -34,11 +34,4 @@ export function resolvePresence(record: PresenceRecord | null | undefined): Pres
   }
 
   return rawStatus
-}
-
-/**
- * Same as resolvePresence but returns false/true instead of a status string.
- */
-export function isUserOnline(record: PresenceRecord | null | undefined): boolean {
-  return resolvePresence(record) === 'online'
 }

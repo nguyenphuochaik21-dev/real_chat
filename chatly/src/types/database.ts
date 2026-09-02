@@ -107,10 +107,12 @@ export type Database = {
           edited_at: string | null
           id: string
           media_mime_type: string | null
+          media_group_id: string | null
           media_name: string | null
           media_size: number | null
           media_thumbnail_url: string | null
           media_url: string | null
+          push_sent_at: string | null
           reply_to: string | null
           sender_id: string | null
           status: Database['public']['Enums']['message_status'] | null
@@ -124,10 +126,12 @@ export type Database = {
           edited_at?: string | null
           id?: string
           media_mime_type?: string | null
+          media_group_id?: string | null
           media_name?: string | null
           media_size?: number | null
           media_thumbnail_url?: string | null
           media_url?: string | null
+          push_sent_at?: string | null
           reply_to?: string | null
           sender_id?: string | null
           status?: Database['public']['Enums']['message_status'] | null
@@ -141,10 +145,12 @@ export type Database = {
           edited_at?: string | null
           id?: string
           media_mime_type?: string | null
+          media_group_id?: string | null
           media_name?: string | null
           media_size?: number | null
           media_thumbnail_url?: string | null
           media_url?: string | null
+          push_sent_at?: string | null
           reply_to?: string | null
           sender_id?: string | null
           status?: Database['public']['Enums']['message_status'] | null
@@ -177,42 +183,54 @@ export type Database = {
         Row: {
           avatar_url: string | null
           bio: string | null
+          birth_date: string | null
+          birth_date_visibility: 'public' | 'private'
           created_at: string | null
           display_name: string
           id: string
           is_suspended: boolean
           last_seen: string | null
           phone: string | null
+          phone_visibility: 'public' | 'private'
           role: string
           status: 'online' | 'offline' | 'away' | 'busy' | null
+          social_links: Json
           updated_at: string | null
           username: string
         }
         Insert: {
           avatar_url?: string | null
           bio?: string | null
+          birth_date?: string | null
+          birth_date_visibility?: 'public' | 'private'
           created_at?: string | null
           display_name: string
           id: string
           is_suspended?: boolean
           last_seen?: string | null
           phone?: string | null
+          phone_visibility?: 'public' | 'private'
           role?: string
           status?: 'online' | 'offline' | 'away' | 'busy' | null
+          social_links?: Json
           updated_at?: string | null
           username: string
         }
         Update: {
           avatar_url?: string | null
           bio?: string | null
+          birth_date?: string | null
+          birth_date_visibility?: 'public' | 'private'
           created_at?: string | null
           display_name?: string
           id?: string
           is_suspended?: boolean
           last_seen?: string | null
           phone?: string | null
+          phone_visibility?: 'public' | 'private'
           role?: string
           status?: 'online' | 'offline' | 'away' | 'busy' | null
+          social_links?: Json
           updated_at?: string | null
           username?: string
         }
@@ -732,6 +750,32 @@ export type Database = {
           },
         ]
       }
+      typing_indicators: {
+        Row: {
+          conversation_id: string
+          user_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          conversation_id: string
+          user_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          conversation_id?: string
+          user_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'typing_indicators_conversation_id_fkey'
+            columns: ['conversation_id']
+            isOneToOne: false
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -764,6 +808,10 @@ export type Database = {
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_title: string }
         Returns: string
+      }
+      add_conversation_participant: {
+        Args: { p_conversation_id: string; p_user_id: string }
+        Returns: boolean
       }
       delete_conversation_permanently: {
         Args: { p_conversation_id: string }
@@ -855,6 +903,76 @@ export type Database = {
       get_conversation_summaries: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      get_or_create_direct_conversation: {
+        Args: { p_other_user_id: string }
+        Returns: string
+      }
+      get_my_profile: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      get_group_avatar_members: {
+        Args: { p_conversation_ids: string[] }
+        Returns: {
+          conversation_id: string
+          id: string
+          username: string
+          display_name: string
+          avatar_url: string | null
+          bio: string | null
+          status: Database['public']['Tables']['profiles']['Row']['status']
+          last_seen: string | null
+          created_at: string | null
+        }[]
+      }
+      get_public_profile: {
+        Args: { p_profile_id: string }
+        Returns: Json
+      }
+      mark_conversation_read: {
+        Args: { p_conversation_id: string }
+        Returns: number
+      }
+      search_messages: {
+        Args: {
+          p_user_id: string
+          p_query: string
+          p_conversation_id?: string | null
+          p_sender_id?: string | null
+          p_date_from?: string | null
+          p_date_to?: string | null
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: {
+          id: string
+          content: string
+          conversation_id: string | null
+          sender_id: string | null
+          created_at: string | null
+          content_type: Database['public']['Enums']['message_content_type'] | null
+          media_url: string | null
+          media_name: string | null
+          relevance: number
+          conversation_title: string | null
+        }[]
+      }
+      set_user_online: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      set_user_offline: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      set_user_away: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      set_user_busy: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
       get_admin_dashboard_stats: {
         Args: Record<PropertyKey, never>

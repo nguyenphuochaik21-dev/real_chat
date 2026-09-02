@@ -3,8 +3,14 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
+import { parseInput, uuidSchema } from '@/lib/actions/validation'
+import { z } from 'zod'
 
 export type Message = Tables<'messages'>
+export type PublicProfile = Pick<
+  Tables<'profiles'>,
+  'id' | 'username' | 'display_name' | 'avatar_url' | 'status'
+>
 
 export interface SearchResult {
   id: string
@@ -32,6 +38,14 @@ export interface SearchResults {
   query: string
 }
 
+const searchQuerySchema = z.string().trim().min(1).max(200)
+const searchFiltersSchema = z.object({
+  conversationId: uuidSchema.optional(),
+  senderId: uuidSchema.optional(),
+  dateFrom: z.union([z.iso.date(), z.iso.datetime()]).optional(),
+  dateTo: z.union([z.iso.date(), z.iso.datetime()]).optional(),
+})
+
 export async function searchMessages(
   query: string,
   filters: SearchFilters = {},
@@ -41,6 +55,11 @@ export async function searchMessages(
   if (!query.trim()) {
     return { results: [], total: 0, query: '' }
   }
+
+  const searchQuery = parseInput(searchQuerySchema, query)
+  const safeFilters = parseInput(searchFiltersSchema, filters)
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100)
+  const safeOffset = Math.max(Math.trunc(offset), 0)
 
   const supabase = await createClient()
 
@@ -56,26 +75,26 @@ export async function searchMessages(
     // Use the search_messages function via RPC
     const { data, error } = await supabase.rpc('search_messages', {
       p_user_id: user.id,
-      p_query: query,
-      p_conversation_id: filters.conversationId || null,
-      p_sender_id: filters.senderId || null,
-      p_date_from: filters.dateFrom || null,
-      p_date_to: filters.dateTo || null,
-      p_limit: limit,
-      p_offset: offset,
+      p_query: searchQuery,
+      p_conversation_id: safeFilters.conversationId || null,
+      p_sender_id: safeFilters.senderId || null,
+      p_date_from: safeFilters.dateFrom || null,
+      p_date_to: safeFilters.dateTo || null,
+      p_limit: safeLimit,
+      p_offset: safeOffset,
     })
 
     if (error) {
       console.error('Search error:', error)
       // Fallback to basic search if function not available
-      return fallbackSearch(supabase, user.id, query, filters, limit, offset)
+      return fallbackSearch(supabase, user.id, searchQuery, safeFilters, safeLimit, safeOffset)
     }
 
-    return {
-      results: data || [],
-      total: (data || []).length,
-      query,
+    if (!data?.length) {
+      return fallbackSearch(supabase, user.id, searchQuery, safeFilters, safeLimit, safeOffset)
     }
+
+    return { results: data, total: data.length, query: searchQuery }
   } catch (err) {
     console.error('Search error:', err)
     throw err
@@ -166,8 +185,9 @@ async function fallbackSearch(
   }
 }
 
-export async function searchConversations(query: string): Promise<Tables<'profiles'>[]> {
+export async function searchConversations(query: string): Promise<PublicProfile[]> {
   if (!query.trim()) return []
+  const searchQuery = parseInput(searchQuerySchema, query)
 
   const supabase = await createClient()
 
@@ -176,18 +196,23 @@ export async function searchConversations(query: string): Promise<Tables<'profil
   } = await supabase.auth.getUser()
   if (!user) return []
 
-  // Search profiles (contacts)
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .or(`display_name.ilike.%${query}%,username.ilike.%${query}%`)
-    .neq('id', user.id)
-    .limit(10)
+  const selectFields = 'id, username, display_name, avatar_url, status' as const
+  const [nameResult, usernameResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select(selectFields)
+      .ilike('display_name', `%${searchQuery}%`)
+      .neq('id', user.id)
+      .limit(10),
+    supabase
+      .from('profiles')
+      .select(selectFields)
+      .ilike('username', `%${searchQuery}%`)
+      .neq('id', user.id)
+      .limit(10),
+  ])
 
-  if (error) {
-    console.error('Search conversations error:', error)
-    return []
-  }
-
-  return data || []
+  if (nameResult.error || usernameResult.error) return []
+  const profiles = [...(nameResult.data || []), ...(usernameResult.data || [])]
+  return [...new Map(profiles.map((profile) => [profile.id, profile])).values()].slice(0, 10)
 }

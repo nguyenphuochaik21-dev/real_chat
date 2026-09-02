@@ -5,6 +5,46 @@ import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
 
+function decodeVapidPublicKey(value: string) {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4)
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const bytes = window.atob(base64)
+  return Uint8Array.from(bytes, (character) => character.charCodeAt(0))
+}
+
+async function subscribeToPush() {
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  if (!publicKey || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.warn('[Push] VAPID or PushManager is unavailable')
+    return
+  }
+
+  const registration = await navigator.serviceWorker.ready
+  const subscription =
+    (await registration.pushManager.getSubscription()) ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeVapidPublicKey(publicKey),
+    }))
+  const serialized = subscription.toJSON()
+  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys.auth) return
+
+  const response = await fetch('/api/push/subscription', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({
+      endpoint: serialized.endpoint,
+      p256dh: serialized.keys.p256dh,
+      auth: serialized.keys.auth,
+    }),
+  })
+  if (!response.ok) {
+    await subscription.unsubscribe()
+    throw new Error('Could not save push subscription')
+  }
+}
+
 export function NotificationPermission() {
   const { t } = useI18n()
   const [permission, setPermission] = useState<NotificationPermission>('default')
@@ -13,7 +53,14 @@ export function NotificationPermission() {
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setMounted(true)
-      if ('Notification' in window) setPermission(Notification.permission)
+      if ('Notification' in window) {
+        setPermission(Notification.permission)
+        if (Notification.permission === 'granted') {
+          void subscribeToPush().catch((error: unknown) => {
+            console.warn('[Push] Could not save subscription:', error)
+          })
+        }
+      }
     }, 0)
     return () => window.clearTimeout(timeoutId)
   }, [])
@@ -27,9 +74,9 @@ export function NotificationPermission() {
     try {
       const result = await Notification.requestPermission()
       setPermission(result)
-      console.log('Notification permission:', result)
+      if (result === 'granted') await subscribeToPush()
     } catch (error) {
-      console.error('Failed to request notification permission:', error)
+      console.warn('Failed to enable push notifications:', error)
     }
   }
 
@@ -52,39 +99,4 @@ export function NotificationPermission() {
       </div>
     </div>
   )
-}
-
-// Hook to check and request notification permission
-export function useBrowserNotificationPermission() {
-  const [permission, setPermission] = useState<NotificationPermission>('default')
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setMounted(true)
-      if ('Notification' in window) setPermission(Notification.permission)
-    }, 0)
-    return () => window.clearTimeout(timeoutId)
-  }, [])
-
-  const requestPermission = async (): Promise<boolean> => {
-    if (!mounted || !('Notification' in window)) return false
-
-    try {
-      const result = await Notification.requestPermission()
-      setPermission(result)
-      return result === 'granted'
-    } catch (error) {
-      console.error('Failed to request permission:', error)
-      return false
-    }
-  }
-
-  return {
-    permission,
-    isSupported: mounted && typeof window !== 'undefined' && 'Notification' in window,
-    isGranted: permission === 'granted',
-    isDenied: permission === 'denied',
-    requestPermission,
-  }
 }

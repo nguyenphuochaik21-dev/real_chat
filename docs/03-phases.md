@@ -289,7 +289,7 @@ Dự án chia thành **7 phases** rõ ràng. Mỗi phase có deliverable cụ th
 #### 4.6. Scheduled Messages, Drafts & Labels ✅ (2026-08-27)
 
 - [x] **Scheduled Messages**: Schedule picker với tùy chọn thời gian (30m, 1h, Tomorrow, Custom)
-- [x] **Auto-send**: Client polling (30s) + pg_cron (1 phút) cho scheduled messages
+- [x] **Auto-send**: pg_cron (1 phút); đã bỏ client polling trùng lặp
 - [x] **Draft Messages**: Auto-save/restore với Zustand store
 - [x] **Conversation Labels**: Label manager modal, filter by label trong sidebar
 - [x] **Database**: Bảng `scheduled_messages`, `conversation_labels`, `conversation_label_map`

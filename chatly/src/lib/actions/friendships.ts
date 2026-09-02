@@ -1,20 +1,10 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import type { Tables } from '@/types'
+import { parseInput, uuidSchema } from '@/lib/actions/validation'
+import type { PublicProfile } from '@/types'
 
-export type FriendProfile = Pick<
-  Tables<'profiles'>,
-  | 'id'
-  | 'username'
-  | 'display_name'
-  | 'avatar_url'
-  | 'bio'
-  | 'phone'
-  | 'status'
-  | 'last_seen'
-  | 'created_at'
->
+export type FriendProfile = PublicProfile
 
 export interface FriendshipItem {
   id: string
@@ -52,24 +42,44 @@ async function getAuthenticatedUser() {
 export async function getFriendshipOverview(): Promise<FriendshipOverview> {
   const { supabase, user } = await getAuthenticatedUser()
 
-  const [relationsResult, profilesResult] = await Promise.all([
-    supabase
-      .from('friendships')
-      .select('id, requester_id, addressee_id, status')
-      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
-    supabase
-      .from('profiles')
-      .select('id, username, display_name, avatar_url, bio, phone, status, last_seen, created_at')
-      .neq('id', user.id)
-      .order('display_name'),
-  ])
+  const relationsResult = await supabase
+    .from('friendships')
+    .select('id, requester_id, addressee_id, status')
+    .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
 
   if (relationsResult.error) throw new Error(relationsResult.error.message)
-  if (profilesResult.error) throw new Error(profilesResult.error.message)
 
   const relations = (relationsResult.data ?? []) as FriendshipRow[]
-  const profiles = (profilesResult.data ?? []) as FriendProfile[]
-  const profileMap = new Map(profiles.map((profile) => [profile.id, profile]))
+  const relatedIds = Array.from(
+    new Set(
+      relations.map((relation) =>
+        relation.requester_id === user.id ? relation.addressee_id : relation.requester_id
+      )
+    )
+  )
+
+  const relatedProfilesPromise = relatedIds.length
+    ? supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
+        .in('id', relatedIds)
+    : Promise.resolve({ data: [] as FriendProfile[], error: null })
+
+  const [relatedProfilesResult, discoveryResult] = await Promise.all([
+    relatedProfilesPromise,
+    supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
+      .neq('id', user.id)
+      .order('display_name')
+      .limit(200),
+  ])
+
+  if (relatedProfilesResult.error) throw new Error(relatedProfilesResult.error.message)
+  if (discoveryResult.error) throw new Error(discoveryResult.error.message)
+
+  const relatedProfiles = (relatedProfilesResult.data ?? []) as FriendProfile[]
+  const profileMap = new Map(relatedProfiles.map((profile) => [profile.id, profile]))
 
   const toItem = (relation: FriendshipRow): FriendshipItem | null => {
     const otherId =
@@ -87,7 +97,11 @@ export async function getFriendshipOverview(): Promise<FriendshipOverview> {
 
   const items = relations.map(toItem).filter((item): item is FriendshipItem => item !== null)
   const relatedUserIds = new Set(
-    items.filter((item) => item.status !== 'declined').map((item) => item.profile.id)
+    relations
+      .filter((relation) => relation.status !== 'declined')
+      .map((relation) =>
+        relation.requester_id === user.id ? relation.addressee_id : relation.requester_id
+      )
   )
 
   return {
@@ -95,29 +109,34 @@ export async function getFriendshipOverview(): Promise<FriendshipOverview> {
     friends: items.filter((item) => item.status === 'accepted'),
     incoming: items.filter((item) => item.status === 'pending' && item.addresseeId === user.id),
     outgoing: items.filter((item) => item.status === 'pending' && item.requesterId === user.id),
-    discover: profiles.filter((profile) => !relatedUserIds.has(profile.id)),
+    discover: ((discoveryResult.data ?? []) as FriendProfile[])
+      .filter((profile) => !relatedUserIds.has(profile.id))
+      .slice(0, 50),
   }
 }
 
 export async function sendFriendRequest(profileId: string) {
+  const id = parseInput(uuidSchema, profileId)
   const { supabase } = await getAuthenticatedUser()
-  const { error } = await supabase.rpc('send_friend_request', { p_addressee_id: profileId })
+  const { error } = await supabase.rpc('send_friend_request', { p_addressee_id: id })
   if (error) throw new Error(error.message)
 }
 
 export async function respondFriendRequest(friendshipId: string, accept: boolean) {
+  const id = parseInput(uuidSchema, friendshipId)
   const { supabase } = await getAuthenticatedUser()
   const { error } = await supabase.rpc('respond_friend_request', {
-    p_friendship_id: friendshipId,
+    p_friendship_id: id,
     p_accept: accept,
   })
   if (error) throw new Error(error.message)
 }
 
 export async function removeFriendship(friendshipId: string) {
+  const id = parseInput(uuidSchema, friendshipId)
   const { supabase } = await getAuthenticatedUser()
   const { error } = await supabase.rpc('remove_friendship', {
-    p_friendship_id: friendshipId,
+    p_friendship_id: id,
   })
   if (error) throw new Error(error.message)
 }

@@ -1,33 +1,11 @@
 'use server'
 
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { messageContentSchema, parseInput, uuidSchema } from '@/lib/actions/validation'
 import type { Tables } from '@/types'
 
 type ScheduledMessage = Tables<'scheduled_messages'>
-type ParticipantProfile = Pick<Tables<'profiles'>, 'display_name'>
-
-interface ScheduledConversationParticipant {
-  user_id: string
-  profile: ParticipantProfile[] | ParticipantProfile | null
-}
-
-interface ScheduledConversationRow {
-  title: string | null
-  conversation_participants: ScheduledConversationParticipant[]
-}
-
-type ScheduledMessageQueryRow = ScheduledMessage & {
-  conversation: ScheduledConversationRow[] | ScheduledConversationRow | null
-}
-
-export interface ScheduledMessageWithConversation extends ScheduledMessage {
-  conversation?: {
-    title: string | null
-    participant?: {
-      display_name: string
-    }
-  }
-}
 
 export interface CreateScheduledMessageParams {
   conversationId: string
@@ -48,254 +26,80 @@ export interface ScheduledMessageResult {
   error?: string
 }
 
-/**
- * Create a scheduled message
- */
+const scheduledMessageSchema = z.object({
+  conversationId: uuidSchema,
+  content: messageContentSchema,
+  contentType: z.enum(['text', 'image', 'video', 'audio', 'file']).default('text'),
+  mediaUrl: z.string().max(1_024).nullable().optional(),
+  mediaThumbnailUrl: z.string().max(1_024).nullable().optional(),
+  mediaName: z.string().max(255).nullable().optional(),
+  mediaSize: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(50 * 1024 * 1024)
+    .nullable()
+    .optional(),
+  mediaMimeType: z.string().max(100).nullable().optional(),
+  replyTo: uuidSchema.nullable().optional(),
+  scheduledAt: z.date(),
+})
+
 export async function createScheduledMessage(
   params: CreateScheduledMessageParams
 ): Promise<ScheduledMessageResult> {
+  const input = parseInput(scheduledMessageSchema, params)
   const supabase = await createClient()
-
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
+
+  if (!user) return { success: false, error: 'Not authenticated' }
+
+  const scheduledTime = input.scheduledAt.getTime()
+  if (scheduledTime <= Date.now() || scheduledTime > Date.now() + 365 * 24 * 60 * 60 * 1000) {
+    return { success: false, error: 'Scheduled time must be within the next year' }
   }
 
-  // Verify user is participant of the conversation
   const { data: participation } = await supabase
     .from('conversation_participants')
     .select('user_id')
-    .eq('conversation_id', params.conversationId)
+    .eq('conversation_id', input.conversationId)
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!participation) {
     return { success: false, error: 'Not authorized to send messages to this conversation' }
   }
 
-  // Validate scheduled time is in the future
-  if (new Date(params.scheduledAt) <= new Date()) {
-    return { success: false, error: 'Scheduled time must be in the future' }
+  if (input.replyTo) {
+    const { data: reply } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('id', input.replyTo)
+      .eq('conversation_id', input.conversationId)
+      .maybeSingle()
+    if (!reply) return { success: false, error: 'Reply message is invalid' }
   }
 
   const { data, error } = await supabase
     .from('scheduled_messages')
     .insert({
-      conversation_id: params.conversationId,
+      conversation_id: input.conversationId,
       sender_id: user.id,
-      content: params.content,
-      content_type: params.contentType || 'text',
-      media_url: params.mediaUrl || null,
-      media_thumbnail_url: params.mediaThumbnailUrl || null,
-      media_name: params.mediaName || null,
-      media_size: params.mediaSize || null,
-      media_mime_type: params.mediaMimeType || null,
-      reply_to: params.replyTo || null,
-      scheduled_at: params.scheduledAt.toISOString(),
+      content: input.content,
+      content_type: input.contentType,
+      media_url: input.mediaUrl ?? null,
+      media_thumbnail_url: input.mediaThumbnailUrl ?? null,
+      media_name: input.mediaName ?? null,
+      media_size: input.mediaSize ?? null,
+      media_mime_type: input.mediaMimeType ?? null,
+      reply_to: input.replyTo ?? null,
+      scheduled_at: input.scheduledAt.toISOString(),
       status: 'pending',
     })
     .select()
     .single()
 
-  if (error) {
-    console.error('Failed to create scheduled message:', error)
-    return { success: false, error: error.message }
-  }
-
-  return { success: true, message: data }
-}
-
-/**
- * Cancel a scheduled message
- */
-export async function cancelScheduledMessage(
-  messageId: string
-): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  // Verify ownership
-  const { data: existing } = await supabase
-    .from('scheduled_messages')
-    .select('id, sender_id')
-    .eq('id', messageId)
-    .single()
-
-  if (!existing) {
-    return { success: false, error: 'Scheduled message not found' }
-  }
-
-  if (existing.sender_id !== user.id) {
-    return { success: false, error: 'Not authorized to cancel this scheduled message' }
-  }
-
-  if (existing.sender_id !== user.id) {
-    return { success: false, error: 'Not authorized to cancel this message' }
-  }
-
-  const { error } = await supabase
-    .from('scheduled_messages')
-    .update({
-      status: 'cancelled',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', messageId)
-
-  if (error) {
-    console.error('Failed to cancel scheduled message:', error)
-    return { success: false, error: error.message }
-  }
-
-  return { success: true }
-}
-
-/**
- * Get all scheduled messages for the current user
- */
-export async function getScheduledMessages(): Promise<{
-  success: boolean
-  messages?: ScheduledMessageWithConversation[]
-  error?: string
-}> {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  const { data, error } = await supabase
-    .from('scheduled_messages')
-    .select(
-      `
-      *,
-      conversation:conversations(
-        id,
-        title,
-        type,
-        conversation_participants(
-          user_id,
-          profile:profiles(display_name)
-        )
-      )
-    `
-    )
-    .eq('sender_id', user.id)
-    .in('status', ['pending', 'sent'])
-    .order('scheduled_at', { ascending: true })
-
-  if (error) {
-    console.error('Failed to fetch scheduled messages:', error)
-    return { success: false, error: error.message }
-  }
-
-  // Transform the data to include conversation info
-  const rows = (data || []) as unknown as ScheduledMessageQueryRow[]
-  const messages: ScheduledMessageWithConversation[] = rows.map((msg) => {
-    const conversation = Array.isArray(msg.conversation) ? msg.conversation[0] : msg.conversation
-
-    // Get the other participant for direct messages
-    const otherParticipant = conversation?.conversation_participants.find(
-      (participant) => participant.user_id !== user.id
-    )
-    const participantProfile = Array.isArray(otherParticipant?.profile)
-      ? otherParticipant.profile[0]
-      : otherParticipant?.profile
-
-    return {
-      ...msg,
-      conversation: {
-        title: conversation?.title || participantProfile?.display_name || 'Unknown',
-        participant: participantProfile ?? undefined,
-      },
-    }
-  })
-
-  return { success: true, messages }
-}
-
-/**
- * Get scheduled messages for a specific conversation
- */
-export async function getScheduledMessagesForConversation(conversationId: string): Promise<{
-  success: boolean
-  messages?: ScheduledMessage[]
-  error?: string
-}> {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  const { data, error } = await supabase
-    .from('scheduled_messages')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .eq('sender_id', user.id)
-    .eq('status', 'pending')
-    .order('scheduled_at', { ascending: true })
-
-  if (error) {
-    console.error('Failed to fetch scheduled messages:', error)
-    return { success: false, error: error.message }
-  }
-
-  return { success: true, messages: data || [] }
-}
-
-/**
- * Send a scheduled message immediately (triggers the database function)
- */
-export async function sendScheduledMessageNow(
-  messageId: string
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  // Verify ownership
-  const { data: existing } = await supabase
-    .from('scheduled_messages')
-    .select('id, sender_id')
-    .eq('id', messageId)
-    .single()
-
-  if (!existing) {
-    return { success: false, error: 'Scheduled message not found' }
-  }
-
-  if (existing.sender_id !== user.id) {
-    return { success: false, error: 'Not authorized to send this message' }
-  }
-
-  // Call the database function to send the message
-  const { data, error } = await supabase.rpc('send_scheduled_message', {
-    scheduled_message_id: messageId,
-  })
-
-  if (error) {
-    console.error('Failed to send scheduled message:', error)
-    return { success: false, error: error.message }
-  }
-
-  return { success: true, messageId: data }
+  return error ? { success: false, error: error.message } : { success: true, message: data }
 }

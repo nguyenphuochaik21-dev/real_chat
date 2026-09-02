@@ -3,16 +3,8 @@
 import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { usePathname } from 'next/navigation'
-import {
-  MessageSquare,
-  Users,
-  Phone,
-  Settings,
-  Search,
-  MessageCircle,
-  ShieldCheck,
-} from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { MessageSquare, Users, Phone, Settings, Search, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { createClient } from '@/lib/supabase/client'
@@ -25,6 +17,7 @@ import {
 import { useNotificationStore } from '@/stores/notification-store'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
+import { parseConversationSummaries } from '@/lib/conversation-summary'
 
 const SearchModal = dynamic(() =>
   import('@/components/chat/search-modal').then((module) => module.SearchModal)
@@ -34,7 +27,6 @@ const navItems = [
   { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
   { href: '/contacts', icon: Users, labelKey: 'nav.contacts' },
   { href: '/calls', icon: Phone, labelKey: 'nav.calls' },
-  { href: '/starred', icon: MessageCircle, labelKey: 'nav.starred' },
   { href: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 
@@ -43,8 +35,8 @@ interface Profile {
   username: string
   display_name: string
   avatar_url: string | null
-  status?: 'online' | 'offline' | 'away' | 'busy'
-  role?: 'user' | 'admin'
+  status?: 'online' | 'offline' | 'away' | 'busy' | null
+  role?: string
 }
 
 async function setUserOnline(supabase: ReturnType<typeof createClient>) {
@@ -66,6 +58,7 @@ async function setUserOffline(supabase: ReturnType<typeof createClient>) {
 export function Sidebar() {
   const { t } = useI18n()
   const pathname = usePathname()
+  const router = useRouter()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -80,8 +73,6 @@ export function Sidebar() {
   }, [pathname])
 
   // Notification store
-  const notificationUnreadCount = useNotificationStore((s) => s.unreadCount)
-
   // Initialize presence tracking for current user
   const {} = usePresence(profile?.id || null)
 
@@ -97,7 +88,7 @@ export function Sidebar() {
 
     const addNotification = useNotificationStore.getState().addNotification
 
-    const setupNotificationSubscription = (userId: string) => {
+    const setupNotificationSubscription = (userId: string, username: string) => {
       if (notificationChannel) {
         supabase.removeChannel(notificationChannel)
         notificationChannel = null
@@ -167,9 +158,19 @@ export function Sidebar() {
               .eq('id', newMsg.sender_id)
               .single()
 
+            const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            const wasMentioned = Boolean(
+              escapedUsername &&
+              new RegExp(`(^|\\s)@${escapedUsername}(?=\\s|$)`, 'i').test(newMsg.content)
+            )
+
             addNotification({
               type: 'message',
-              title: sender?.display_name || 'New message',
+              title: wasMentioned
+                ? t('notifications.mentioned', {
+                    name: sender?.display_name || t('common.user'),
+                  })
+                : sender?.display_name || t('notifications.newMessage'),
               body: newMsg.content.slice(0, 100) + (newMsg.content.length > 100 ? '...' : ''),
               conversationId: newMsg.conversation_id,
               senderId: newMsg.sender_id,
@@ -181,31 +182,12 @@ export function Sidebar() {
         .subscribe()
     }
 
-    const fetchUnreadCount = async (userId: string) => {
-      // Get conversations with their participants' last_read_at
-      const { data: participations } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id, last_read_at')
-        .eq('user_id', userId)
-
-      if (!participations || participations.length === 0) {
-        setUnreadCount(0)
-        return
-      }
-
-      let totalUnread = 0
-      for (const part of participations) {
-        const cutoff = part.last_read_at || '1970-01-01T00:00:00Z'
-        const { count } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('conversation_id', part.conversation_id)
-          .neq('sender_id', userId)
-          .gt('created_at', cutoff)
-
-        totalUnread += count || 0
-      }
-
+    const fetchUnreadCount = async () => {
+      const { data, error } = await supabase.rpc('get_conversation_summaries')
+      if (error) return
+      const totalUnread = parseConversationSummaries(data)
+        .filter((conversation) => !conversation.is_archived)
+        .reduce((total, conversation) => total + conversation.unread_count, 0)
       setUnreadCount(totalUnread)
     }
 
@@ -235,6 +217,7 @@ export function Sidebar() {
               created_at?: string
             }
             if (newMsg.sender_id !== userId) {
+              if (pathnameRef.current === `/chats/${newMsg.conversation_id}`) return
               const part = await supabase
                 .from('conversation_participants')
                 .select('last_read_at')
@@ -260,7 +243,7 @@ export function Sidebar() {
             filter: `user_id=eq.${userId}`,
           },
           () => {
-            fetchUnreadCount(userId)
+            fetchUnreadCount()
           }
         )
       unreadChannel = channel
@@ -273,7 +256,11 @@ export function Sidebar() {
       } = await supabase.auth.getUser()
 
       if (user && mounted) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url, status, role')
+          .eq('id', user.id)
+          .single()
 
         if (mounted) {
           setProfile(data)
@@ -282,9 +269,9 @@ export function Sidebar() {
           await setUserOnline(supabase)
 
           // Now fetch unread count and setup subscription with userId available
-          await fetchUnreadCount(user.id)
+          await fetchUnreadCount()
           setupUnreadSubscription(user.id)
-          setupNotificationSubscription(user.id)
+          setupNotificationSubscription(user.id, data?.username || '')
         }
       } else if (mounted) {
         setLoading(false)
@@ -299,7 +286,7 @@ export function Sidebar() {
       if (notificationChannel) void supabase.removeChannel(notificationChannel)
       if (currentUserId) void setUserOffline(supabase)
     }
-  }, [])
+  }, [t])
 
   const userForAvatar = profile || {
     id: 'unknown',
@@ -403,7 +390,7 @@ export function Sidebar() {
         currentUserId={profile?.id || ''}
         onSelectMessage={(result, conversationId) => {
           // Navigate to conversation and scroll to the specific message
-          window.location.href = `/chats/${conversationId}?scrollTo=${result.id}`
+          router.push(`/chats/${conversationId}?scrollTo=${result.id}`)
         }}
         onSelectContact={(contact) => {
           console.log('Selected contact:', contact)

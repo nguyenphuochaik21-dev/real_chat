@@ -23,6 +23,14 @@ export interface CallHistoryItem {
   }
 }
 
+const HISTORY_STATUSES = new Set<CallHistoryItem['status']>([
+  'answered',
+  'declined',
+  'missed',
+  'ended',
+  'failed',
+])
+
 export function useCallHistory(userId: string, limit: number = 50) {
   const [calls, setCalls] = useState<CallHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,13 +78,31 @@ export function useCallHistory(userId: string, limit: number = 50) {
 
       // Combine data
       const enrichedHistory =
-        history?.map((call) => {
-          const otherUserId = call.caller_id === userId ? call.callee_id : call.caller_id
-          return {
-            ...call,
-            direction: call.caller_id === userId ? ('outgoing' as const) : ('incoming' as const),
-            other_user: profilesMap.get(otherUserId),
+        history?.flatMap((call): CallHistoryItem[] => {
+          if (
+            !call.call_type ||
+            !call.status ||
+            !HISTORY_STATUSES.has(call.status as CallHistoryItem['status'])
+          ) {
+            return []
           }
+
+          const otherUserId = call.caller_id === userId ? call.callee_id : call.caller_id
+          const startedAt = call.started_at ?? call.created_at
+          if (!startedAt) return []
+
+          return [
+            {
+              ...call,
+              call_type: call.call_type,
+              status: call.status as CallHistoryItem['status'],
+              duration_seconds: call.duration_seconds ?? 0,
+              started_at: startedAt,
+              created_at: call.created_at ?? startedAt,
+              direction: call.caller_id === userId ? ('outgoing' as const) : ('incoming' as const),
+              other_user: profilesMap.get(otherUserId),
+            },
+          ]
         }) || []
 
       setCalls(enrichedHistory)

@@ -15,12 +15,9 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useSearch, type SearchResult } from '@/hooks/use-search'
+import { useSearch, type Profile, type SearchResult } from '@/hooks/use-search'
 import { Avatar } from '@/components/ui/avatar'
-import type { Tables } from '@/types'
 import { useI18n } from '@/lib/i18n'
-
-type Profile = Tables<'profiles'>
 
 interface SearchModalProps {
   isOpen: boolean
@@ -293,7 +290,7 @@ export function SearchModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 sm:pt-20">
       <div
-        className="h-full w-full overflow-hidden bg-[var(--bg-panel)] shadow-2xl sm:mx-4 sm:h-auto sm:max-w-2xl sm:rounded-2xl"
+        className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-panel)] shadow-2xl sm:mx-4 sm:h-auto sm:max-h-[calc(100dvh-10rem)] sm:max-w-2xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -359,8 +356,9 @@ export function SearchModal({
         )}
 
         {/* Results */}
-        <ScrollArea className="h-[calc(100%-9.5rem)] sm:h-auto sm:max-h-96">
-          {state.loading && !state.results.length ? (
+        <ScrollArea className="min-h-0 flex-1 sm:max-h-96">
+          {state.loading &&
+          !(activeTab === 'messages' ? state.results.length : state.contacts.length) ? (
             <div className="flex items-center justify-center py-8">
               <div className="border-primary-500 h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
             </div>

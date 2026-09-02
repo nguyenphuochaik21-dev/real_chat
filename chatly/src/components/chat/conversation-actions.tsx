@@ -13,13 +13,13 @@ import {
   Tag,
   ImageIcon,
   Search,
+  Ban,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
   archiveConversation,
   deleteConversation,
-  clearConversationHistory,
   togglePinned,
   toggleMuted,
 } from '@/lib/actions/conversations'
@@ -31,7 +31,6 @@ import { useI18n } from '@/lib/i18n'
 interface ConversationActionsProps {
   conversationId: string
   conversationTitle: string
-  userId: string
   isPinned: boolean
   isMuted: boolean
   isArchived?: boolean
@@ -39,6 +38,7 @@ interface ConversationActionsProps {
   onSearch?: () => void
   onOpenMedia?: () => void
   onDeleted?: () => void
+  onBlock?: () => void
   onAction?: (
     updates: Partial<{ is_pinned: boolean; is_muted: boolean; is_archived: boolean }>
   ) => void
@@ -47,7 +47,6 @@ interface ConversationActionsProps {
 export function ConversationActions({
   conversationId,
   conversationTitle,
-  userId,
   isPinned: initialPinned,
   isMuted: initialMuted,
   isArchived: initialArchived = false,
@@ -55,6 +54,7 @@ export function ConversationActions({
   onSearch,
   onOpenMedia,
   onDeleted,
+  onBlock,
   onAction,
 }: ConversationActionsProps) {
   const { t } = useI18n()
@@ -87,7 +87,7 @@ export function ConversationActions({
     setLoading('pin')
     try {
       const newValue = !isPinned
-      await togglePinned(conversationId, userId, newValue)
+      await togglePinned(conversationId, newValue)
       setIsPinned(newValue)
       addToast({
         type: 'system',
@@ -110,7 +110,8 @@ export function ConversationActions({
     setLoading('mute')
     try {
       const newValue = !isMuted
-      await toggleMuted(conversationId, userId, newValue)
+      const result = await toggleMuted(conversationId, newValue)
+      if (!result.success) throw new Error(result.error)
       setIsMuted(newValue)
       addToast({
         type: 'system',
@@ -141,7 +142,8 @@ export function ConversationActions({
         setLoading(null)
         return
       }
-      await archiveConversation(conversationId, userId, newValue)
+      const result = await archiveConversation(conversationId, newValue)
+      if (!result.success) throw new Error(result.error)
       setIsArchived(newValue)
       addToast({
         type: 'system',
@@ -149,38 +151,6 @@ export function ConversationActions({
         body: newValue ? t('actions.archivedBody') : t('actions.unarchivedBody'),
       })
       onAction?.({ is_archived: newValue })
-    } catch (err) {
-      addToast({
-        type: 'system',
-        title: t('common.failed'),
-        body: err instanceof Error ? err.message : t('common.unknownError'),
-      })
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const handleClearHistory = async () => {
-    if (!confirm(t('actions.clearConfirm'))) return
-    setLoading('clear')
-    try {
-      const result = await clearConversationHistory(conversationId, userId)
-      if (result.success) {
-        addToast({
-          type: 'system',
-          title: t('actions.historyCleared'),
-          body: result.deletedCount
-            ? t('actions.messagesDeleted', { count: result.deletedCount })
-            : t('actions.noMessagesToDelete'),
-        })
-        onAction?.({})
-      } else {
-        addToast({
-          type: 'system',
-          title: t('common.failed'),
-          body: result.error || t('common.unknownError'),
-        })
-      }
     } catch (err) {
       addToast({
         type: 'system',
@@ -352,15 +322,18 @@ export function ConversationActions({
 
           <Separator className="my-1" />
 
-          {/* Clear History */}
-          <button
-            onClick={handleClearHistory}
-            disabled={loading === 'clear'}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
-          >
-            <Trash2 className="h-4 w-4 text-[var(--text-muted)]" />
-            <span className="text-[var(--text-primary)]">{t('actions.clearHistory')}</span>
-          </button>
+          {onBlock && (
+            <button
+              onClick={() => {
+                onClose()
+                onBlock()
+              }}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-500 hover:bg-red-500/10"
+            >
+              <Ban className="h-4 w-4" />
+              <span>{t('message.block')}</span>
+            </button>
+          )}
 
           {/* Delete */}
           <button

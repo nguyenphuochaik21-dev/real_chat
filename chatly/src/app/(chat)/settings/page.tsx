@@ -4,18 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   User,
-  Bell,
   Palette,
-  MessageSquare,
-  Database,
-  HelpCircle,
-  Share2,
   Moon,
   Sun,
   ChevronRight,
-  Shield,
-  Lock,
-  QrCode,
   LogOut,
   Languages,
   ShieldCheck,
@@ -29,8 +21,12 @@ import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
 import type { Tables } from '@/types'
 import { useI18n, type Locale } from '@/lib/i18n'
+import { removeCurrentPushSubscription } from '@/lib/push'
 
-type Profile = Tables<'profiles'>
+type Profile = Pick<
+  Tables<'profiles'>,
+  'id' | 'username' | 'display_name' | 'avatar_url' | 'bio' | 'role'
+>
 
 interface SettingsSectionProps {
   title: string
@@ -69,7 +65,11 @@ function SettingsSection({ title, items }: SettingsSectionProps) {
                   <p className="text-xs text-[var(--text-muted)]">{item.description}</p>
                 )}
               </div>
-              {item.rightElement || <ChevronRight className="h-5 w-5 text-[var(--text-muted)]" />}
+              {item.rightElement !== undefined ? (
+                item.rightElement
+              ) : (
+                <ChevronRight className="h-5 w-5 text-[var(--text-muted)]" />
+              )}
             </div>
             {index < items.length - 1 && <Separator />}
           </div>
@@ -83,7 +83,6 @@ export default function SettingsPage() {
   const { locale, setLocale, t } = useI18n()
   const router = useRouter()
   const { theme, setTheme } = useTheme()
-  const [notifications, setNotifications] = useState(true)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -94,7 +93,11 @@ export default function SettingsPage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (user) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url, bio, role')
+          .eq('id', user.id)
+          .single()
         setProfile(data)
       }
       setLoading(false)
@@ -103,6 +106,7 @@ export default function SettingsPage() {
   }, [supabase])
 
   const handleSignOut = async () => {
+    await removeCurrentPushSubscription().catch(() => undefined)
     await supabase.auth.signOut()
     router.push('/login')
   }
@@ -152,9 +156,6 @@ export default function SettingsPage() {
                   {t('settings.editProfile')}
                 </Button>
               </div>
-              <Button variant="ghost" size="icon">
-                <QrCode className="h-5 w-5" />
-              </Button>
             </div>
           </div>
 
@@ -168,18 +169,6 @@ export default function SettingsPage() {
                 description: t('settings.profileHint'),
                 href: '/settings/profile',
               },
-              {
-                icon: Shield,
-                title: t('settings.privacy'),
-                description: t('settings.privacyHint'),
-                href: '/settings/privacy',
-              },
-              {
-                icon: Lock,
-                title: t('settings.security'),
-                description: t('settings.securityHint'),
-                href: '/settings/security',
-              },
               ...(profile?.role === 'admin'
                 ? [
                     {
@@ -190,33 +179,6 @@ export default function SettingsPage() {
                     },
                   ]
                 : []),
-            ]}
-          />
-
-          <SettingsSection
-            title={t('settings.notifications')}
-            items={[
-              {
-                icon: Bell,
-                title: t('settings.notifications'),
-                description: t('settings.notificationsHint'),
-                rightElement: (
-                  <button
-                    onClick={() => setNotifications(!notifications)}
-                    className={cn(
-                      'relative h-6 w-11 rounded-full transition-colors',
-                      notifications ? 'bg-primary-500' : 'bg-[var(--border-strong)]'
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
-                        notifications ? 'left-[22px]' : 'left-0.5'
-                      )}
-                    />
-                  </button>
-                ),
-              },
             ]}
           />
 
@@ -234,7 +196,7 @@ export default function SettingsPage() {
                 icon: Palette,
                 title: t('settings.theme'),
                 description: t('settings.themeHint'),
-                href: '/settings/theme',
+                href: '/settings/appearance',
               },
               {
                 icon: Languages,
@@ -252,48 +214,6 @@ export default function SettingsPage() {
                     <option value="en">{t('settings.english')}</option>
                   </select>
                 ),
-              },
-            ]}
-          />
-
-          <SettingsSection
-            title={t('nav.chats')}
-            items={[
-              {
-                icon: MessageSquare,
-                title: t('settings.chatHistory'),
-                description: t('settings.chatHistoryHint'),
-                href: '/settings/chats',
-              },
-            ]}
-          />
-
-          <SettingsSection
-            title={t('settings.storageData')}
-            items={[
-              {
-                icon: Database,
-                title: t('settings.storage'),
-                description: t('settings.storageHint'),
-                href: '/settings/storage',
-              },
-            ]}
-          />
-
-          <SettingsSection
-            title={t('settings.help')}
-            items={[
-              {
-                icon: HelpCircle,
-                title: t('settings.helpCenter'),
-                description: t('settings.helpHint'),
-                href: '/settings/help',
-              },
-              {
-                icon: Share2,
-                title: t('settings.invite'),
-                description: t('settings.inviteHint'),
-                href: '/settings/invite',
               },
             ]}
           />

@@ -13,15 +13,6 @@ const themes = [
   { id: 'system', nameKey: 'appearance.system', icon: Monitor },
 ]
 
-const accentColors = [
-  { id: 'indigo', name: 'Indigo', color: 'bg-indigo-500' },
-  { id: 'blue', name: 'Blue', color: 'bg-blue-500' },
-  { id: 'green', name: 'Green', color: 'bg-green-500' },
-  { id: 'purple', name: 'Purple', color: 'bg-purple-500' },
-  { id: 'pink', name: 'Pink', color: 'bg-pink-500' },
-  { id: 'teal', name: 'Teal', color: 'bg-teal-500' },
-]
-
 export default function AppearancePage() {
   const { t } = useI18n()
   const { theme, setTheme } = useTheme()
@@ -79,70 +70,6 @@ export default function AppearancePage() {
                   {t(themeOption.nameKey)}
                 </span>
               </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Accent color */}
-        <div className="mb-8">
-          <h2 className="mb-4 text-sm font-medium text-[var(--text-muted)]">
-            {t('appearance.accent')}
-          </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {accentColors.map((c) => (
-              <button
-                key={c.id}
-                className={cn(
-                  'flex flex-col items-center gap-2 rounded-xl p-4 transition-all',
-                  c.id === 'indigo'
-                    ? 'ring-primary-500 bg-[var(--bg-active)] ring-2'
-                    : 'bg-[var(--bg-panel)] hover:bg-[var(--bg-hover)]'
-                )}
-              >
-                <div
-                  className={cn(
-                    'h-10 w-10 rounded-full',
-                    c.color,
-                    c.id === 'indigo' && 'ring-2 ring-[var(--bg-app)] ring-offset-2'
-                  )}
-                />
-                <span
-                  className={cn(
-                    'text-sm font-medium',
-                    c.id === 'indigo' ? 'text-primary-500' : 'text-[var(--text-secondary)]'
-                  )}
-                >
-                  {c.name}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Chat wallpaper */}
-        <div>
-          <h2 className="mb-4 text-sm font-medium text-[var(--text-muted)]">
-            {t('appearance.wallpaper')}
-          </h2>
-          <div className="grid grid-cols-4 gap-3">
-            {[
-              'bg-gradient-to-br from-indigo-500 to-purple-500',
-              'bg-gradient-to-br from-slate-900 to-slate-700',
-              'bg-[#1a1a2e]',
-              'bg-gradient-to-br from-emerald-500 to-teal-500',
-              'bg-gradient-to-br from-amber-500 to-orange-500',
-              'bg-[#0f0f23]',
-              'bg-[#1e3a5f]',
-              'bg-[#2d1b3d]',
-            ].map((wallpaper, i) => (
-              <button
-                key={i}
-                className={cn(
-                  'aspect-video rounded-lg transition-all hover:scale-105',
-                  wallpaper,
-                  i === 0 && 'ring-primary-500 ring-2 ring-offset-2'
-                )}
-              />
             ))}
           </div>
         </div>

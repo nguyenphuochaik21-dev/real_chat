@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { parseInput, uuidSchema } from '@/lib/actions/validation'
 
 export interface AdminUser {
   id: string
@@ -91,9 +92,10 @@ export async function updateAdminUser(
   role: 'user' | 'admin',
   isSuspended: boolean
 ) {
+  const id = parseInput(uuidSchema, userId)
   const { supabase } = await requireAdmin()
   const { error } = await supabase.rpc('admin_update_user', {
-    p_user_id: userId,
+    p_user_id: id,
     p_role: role,
     p_is_suspended: isSuspended,
   })

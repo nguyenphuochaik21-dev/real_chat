@@ -111,7 +111,7 @@ class PresenceManager {
 
   private notifyListeners() {
     const mapCopy = new Map(this.presenceMap)
-    this.listeners.forEach(listener => listener(mapCopy))
+    this.listeners.forEach((listener) => listener(mapCopy))
   }
 
   subscribe(listener: PresenceListener): () => void {
@@ -214,20 +214,29 @@ export function usePresence(userId: string | null) {
   }, [userId])
 
   // Get status for a specific user
-  const getUserStatus = useCallback((targetUserId: string): 'online' | 'offline' | 'away' | 'busy' => {
-    return presenceMap.get(targetUserId)?.status || 'offline'
-  }, [presenceMap])
+  const getUserStatus = useCallback(
+    (targetUserId: string): 'online' | 'offline' | 'away' | 'busy' => {
+      return presenceMap.get(targetUserId)?.status || 'offline'
+    },
+    [presenceMap]
+  )
 
   // Check if user is online
-  const isOnline = useCallback((targetUserId: string): boolean => {
-    const status = presenceMap.get(targetUserId)?.status
-    return status === 'online'
-  }, [presenceMap])
+  const isOnline = useCallback(
+    (targetUserId: string): boolean => {
+      const status = presenceMap.get(targetUserId)?.status
+      return status === 'online'
+    },
+    [presenceMap]
+  )
 
   // Get full presence info
-  const getPresence = useCallback((targetUserId: string): UserPresence | null => {
-    return presenceMap.get(targetUserId) || null
-  }, [presenceMap])
+  const getPresence = useCallback(
+    (targetUserId: string): UserPresence | null => {
+      return presenceMap.get(targetUserId) || null
+    },
+    [presenceMap]
+  )
 
   return {
     presenceMap,
@@ -235,77 +244,4 @@ export function usePresence(userId: string | null) {
     getUserStatus,
     getPresence,
   }
-}
-
-// Hook to fetch presence for multiple users at once
-export function useMultiplePresence(userIds: string[]) {
-  const [presenceMap, setPresenceMap] = useState<Map<string, UserPresence>>(new Map())
-  const supabase = createClient()
-
-  useEffect(() => {
-    if (userIds.length === 0) return
-
-    // Fetch presence data from database
-    const fetchPresence = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, status, last_seen')
-        .in('id', userIds)
-
-      if (data) {
-        const newMap = new Map<string, UserPresence>()
-        data.forEach(profile => {
-          newMap.set(profile.id, {
-            userId: profile.id,
-            status: (profile.status || 'offline') as UserPresence['status'],
-            lastSeen: profile.last_seen,
-          })
-        })
-        setPresenceMap(newMap)
-      }
-    }
-
-    fetchPresence()
-
-    // Subscribe to updates
-    const channel = supabase
-      .channel('multi-presence')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'profiles',
-        },
-        (payload) => {
-          const updated = payload.new as { id: string; status: string; last_seen: string }
-          if (userIds.includes(updated.id)) {
-            setPresenceMap(prev => {
-              const next = new Map(prev)
-              next.set(updated.id, {
-                userId: updated.id,
-                status: (updated.status || 'offline') as UserPresence['status'],
-                lastSeen: updated.last_seen,
-              })
-              return next
-            })
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [userIds.join(','), supabase])
-
-  const isOnline = useCallback((userId: string): boolean => {
-    return presenceMap.get(userId)?.status === 'online'
-  }, [presenceMap])
-
-  const getStatus = useCallback((userId: string): 'online' | 'offline' | 'away' | 'busy' => {
-    return presenceMap.get(userId)?.status || 'offline'
-  }, [presenceMap])
-
-  return { presenceMap, isOnline, getStatus }
 }

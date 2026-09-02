@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
 import { createClient } from '@/lib/supabase/client'
+import { removeCurrentPushSubscription } from '@/lib/push'
 
 export default function SuspendedPage() {
   const { t } = useI18n()
   const router = useRouter()
 
   const signOut = async () => {
+    await removeCurrentPushSubscription().catch(() => undefined)
     await createClient().auth.signOut()
     router.replace('/login')
     router.refresh()

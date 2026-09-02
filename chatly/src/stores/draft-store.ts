@@ -29,10 +29,13 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   },
 
   setDraft: (conversationId: string, content: string) => {
-    const { drafts, pendingSaves, _saveDrafts } = get()
+    const { pendingSaves, _saveDrafts } = get()
+
+    const existingTimeout = pendingSaves.get(conversationId)
+    if (existingTimeout) clearTimeout(existingTimeout)
 
     // Update state immediately
-    set(state => {
+    set((state) => {
       const newDrafts = new Map(state.drafts)
       if (content.trim()) {
         newDrafts.set(conversationId, content)
@@ -42,23 +45,28 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
       return { drafts: newDrafts }
     })
 
-    // Clear existing pending save for this conversation
-    const existingTimeout = pendingSaves.get(conversationId)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
+    // Removing all text must also remove the persisted draft immediately.
+    if (!content.trim()) {
+      _saveDrafts()
+      set((state) => {
+        const newPending = new Map(state.pendingSaves)
+        newPending.delete(conversationId)
+        return { pendingSaves: newPending }
+      })
+      return
     }
 
     // Schedule a debounced save
     const timeoutId = setTimeout(() => {
       _saveDrafts()
-      set(state => {
+      set((state) => {
         const newPending = new Map(state.pendingSaves)
         newPending.delete(conversationId)
         return { pendingSaves: newPending }
       })
     }, DRAFT_SAVE_INTERVAL)
 
-    set(state => {
+    set((state) => {
       const newPending = new Map(state.pendingSaves)
       newPending.set(conversationId, timeoutId)
       return { pendingSaves: newPending }
@@ -80,7 +88,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     }
 
     // Remove from state
-    set(state => {
+    set((state) => {
       const newDrafts = new Map(state.drafts)
       newDrafts.delete(conversationId)
       return { drafts: newDrafts }
@@ -89,7 +97,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     // Save immediately
     _saveDrafts()
 
-    set(state => {
+    set((state) => {
       const newPending = new Map(state.pendingSaves)
       newPending.delete(conversationId)
       return { pendingSaves: newPending }
@@ -100,7 +108,7 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     const { pendingSaves } = get()
 
     // Clear all pending saves
-    pendingSaves.forEach(timeoutId => clearTimeout(timeoutId))
+    pendingSaves.forEach((timeoutId) => clearTimeout(timeoutId))
 
     set({
       drafts: new Map(),

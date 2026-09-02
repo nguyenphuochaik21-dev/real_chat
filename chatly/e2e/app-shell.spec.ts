@@ -38,6 +38,24 @@ test.describe('public application shell', () => {
     expect(iconResponse.headers()['content-type']).toContain('image/png')
   })
 
+  test('responses include browser security headers', async ({ request }) => {
+    const response = await request.get('/login')
+    const headers = response.headers()
+
+    expect(headers['content-security-policy']).toContain("object-src 'none'")
+    expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
+    expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
+    expect(headers['x-content-type-options']).toBe('nosniff')
+    expect(headers['x-frame-options']).toBe('DENY')
+  })
+
+  test('protected settings redirect anonymous visitors to login', async ({ request }) => {
+    const response = await request.get('/settings', { maxRedirects: 0 })
+
+    expect([307, 308]).toContain(response.status())
+    expect(response.headers().location).toContain('/login')
+  })
+
   test('offline fallback is readable on a narrow screen', async ({ page }) => {
     await page.goto('/offline')
     await expect(page.getByRole('heading', { name: 'Bạn đang ngoại tuyến' })).toBeVisible()

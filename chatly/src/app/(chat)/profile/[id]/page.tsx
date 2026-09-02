@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { PublicProfileView } from '@/components/profile/public-profile-view'
 import { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types'
+import { getPublicProfile } from '@/lib/actions/profile'
 
 export default async function PublicProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -12,12 +13,8 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
 
   if (!user) redirect('/login')
 
-  const [{ data: profile }, { data: friendship }] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id, username, display_name, avatar_url, bio, phone, status, last_seen, created_at')
-      .eq('id', id)
-      .maybeSingle(),
+  const [profile, { data: friendship }] = await Promise.all([
+    getPublicProfile(id),
     supabase
       .from('friendships')
       .select('*')

@@ -8,13 +8,11 @@ import { Avatar } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { blockUser, unblockUser, getBlockedUsersWithProfiles } from '@/lib/actions/block'
 import { useNotificationStore } from '@/stores/notification-store'
-import type { Tables } from '@/types'
+import type { PublicProfile } from '@/types'
 import { useI18n } from '@/lib/i18n'
 
-type Profile = Tables<'profiles'>
-
-interface BlockedUserWithDate extends Profile {
-  blocked_at: string
+interface BlockedUserWithDate extends PublicProfile {
+  blocked_at: string | null
 }
 
 interface BlockUserModalProps {

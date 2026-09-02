@@ -29,7 +29,7 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun2.l.google.com:19302' },
 ]
 
-export function getIceServers(): RTCIceServer[] {
+function getIceServers(): RTCIceServer[] {
   const turnUrl = process.env.NEXT_PUBLIC_TURN_URL
 
   if (turnUrl) {
