@@ -15,15 +15,23 @@ interface CreateGroupModalProps {
   isOpen: boolean
   onClose: () => void
   onCreated: (conversationId: string) => void
+  initialMemberId?: string
 }
 
-export function CreateGroupModal({ isOpen, onClose, onCreated }: CreateGroupModalProps) {
+export function CreateGroupModal({
+  isOpen,
+  onClose,
+  onCreated,
+  initialMemberId,
+}: CreateGroupModalProps) {
   const { t } = useI18n()
   const titleId = useId()
   const [title, setTitle] = useState('')
   const [query, setQuery] = useState('')
   const [friends, setFriends] = useState<FriendshipItem[]>([])
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(initialMemberId ? [initialMemberId] : [])
+  )
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,9 +49,7 @@ export function CreateGroupModal({ isOpen, onClose, onCreated }: CreateGroupModa
         })
         .catch((loadError: unknown) => {
           if (!cancelled) {
-            setError(
-              loadError instanceof Error ? loadError.message : t('group.loadFriendsFailed')
-            )
+            setError(loadError instanceof Error ? loadError.message : t('group.loadFriendsFailed'))
           }
         })
         .finally(() => {

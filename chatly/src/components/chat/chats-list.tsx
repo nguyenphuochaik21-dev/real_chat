@@ -2,20 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import dynamic from 'next/dynamic'
 import { useRouter, usePathname } from 'next/navigation'
-import {
-  Search,
-  Pin,
-  BellOff,
-  MessageSquare,
-  Archive,
-  Tag,
-  ChevronDown,
-  User,
-  Plus,
-  UsersRound,
-} from 'lucide-react'
+import { Search, Pin, BellOff, MessageSquare, Archive, Tag, ChevronDown, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { GroupAvatar } from '@/components/ui/group-avatar'
@@ -38,11 +26,6 @@ import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { createConversation } from '@/lib/actions/conversations'
 
 type Profile = PublicProfile
-
-const CreateGroupModal = dynamic(
-  () => import('@/components/groups/create-group-modal').then((module) => module.CreateGroupModal),
-  { ssr: false }
-)
 
 function formatMessageTime(dateStr: string | null, dateLocale: string, yesterday: string): string {
   if (!dateStr) return ''
@@ -218,8 +201,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('all')
-  const [createGroupOpen, setCreateGroupOpen] = useState(false)
-
   // Use store-backed state — persists across navigation, no remount flash
   const conversations = useChatsListStore((s) => s.conversations)
   const archivedConversations = useChatsListStore((s) => s.archivedConversations)
@@ -634,16 +615,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             {t('chatList.title')}
           </h1>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setCreateGroupOpen(true)}
-              aria-label={t('group.new')}
-              title={t('group.new')}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <UsersRound className="h-4 w-4" />
-            </Button>
             {labels.length > 0 && (
               <Button
                 variant="ghost"
@@ -889,15 +860,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           )}
         </div>
       </ScrollArea>
-      <CreateGroupModal
-        isOpen={createGroupOpen}
-        onClose={() => setCreateGroupOpen(false)}
-        onCreated={(conversationId) => {
-          setCreateGroupOpen(false)
-          void fetchConversations()
-          router.push(`/chats/${conversationId}`)
-        }}
-      />
     </div>
   )
 }

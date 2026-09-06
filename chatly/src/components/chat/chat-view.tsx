@@ -58,6 +58,10 @@ const GroupDetailsPanel = dynamic(
     import('@/components/groups/group-details-panel').then((module) => module.GroupDetailsPanel),
   { ssr: false }
 )
+const CreateGroupModal = dynamic(
+  () => import('@/components/groups/create-group-modal').then((module) => module.CreateGroupModal),
+  { ssr: false }
+)
 const MediaGalleryViewer = dynamic(() =>
   import('./media-gallery').then((module) => module.MediaGalleryViewer)
 )
@@ -464,6 +468,7 @@ export function ChatView({
   const [memberProfiles, setMemberProfiles] = useState<Map<string, Profile>>(new Map())
   const [memberCount, setMemberCount] = useState(0)
   const [showGroupDetails, setShowGroupDetails] = useState(false)
+  const [showCreateGroup, setShowCreateGroup] = useState(false)
   const [inputValue, setInputValue] = useState(() =>
     conversationId ? getInput(conversationId) : ''
   )
@@ -1633,7 +1638,7 @@ export function ChatView({
               setShowConversationActions(false)
               setShowProfilePanel(true)
             }}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg sm:gap-3"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left sm:gap-3"
           >
             {/* Avatar with dynamic status */}
             <div className="relative shrink-0">
@@ -2013,6 +2018,7 @@ export function ChatView({
               onClose={() => setShowConversationActions(false)}
               onSearch={() => setShowSearch(true)}
               onOpenMedia={() => setShowMediaGallery(true)}
+              onCreateGroup={() => setShowCreateGroup(true)}
               onDeleted={() => {
                 useChatsListStore.getState().removeConversation(conversationId)
                 useChatCacheStore.getState().clearCache(conversationId)
@@ -2041,6 +2047,19 @@ export function ChatView({
           onClose={() => setShowGroupDetails(false)}
           onLeft={handleGroupLeft}
           onUpdated={handleGroupUpdated}
+        />
+      )}
+
+      {showCreateGroup && participant && !isGroup && (
+        <CreateGroupModal
+          isOpen
+          initialMemberId={participant.id}
+          onClose={() => setShowCreateGroup(false)}
+          onCreated={(newConversationId) => {
+            setShowCreateGroup(false)
+            router.push(`/chats/${newConversationId}`)
+            router.refresh()
+          }}
         />
       )}
 

@@ -14,6 +14,7 @@ import {
   ImageIcon,
   Search,
   Ban,
+  UsersRound,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -37,6 +38,7 @@ interface ConversationActionsProps {
   onClose: () => void
   onSearch?: () => void
   onOpenMedia?: () => void
+  onCreateGroup?: () => void
   onDeleted?: () => void
   onBlock?: () => void
   onAction?: (
@@ -53,6 +55,7 @@ export function ConversationActions({
   onClose,
   onSearch,
   onOpenMedia,
+  onCreateGroup,
   onDeleted,
   onBlock,
   onAction,
@@ -239,7 +242,20 @@ export function ConversationActions({
             </button>
           )}
 
-          {(onSearch || onOpenMedia) && <Separator className="my-1" />}
+          {onCreateGroup && (
+            <button
+              onClick={() => {
+                onClose()
+                onCreateGroup()
+              }}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
+            >
+              <UsersRound className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('group.create')}</span>
+            </button>
+          )}
+
+          {(onSearch || onOpenMedia || onCreateGroup) && <Separator className="my-1" />}
 
           {/* Pin/Unpin */}
           <button
