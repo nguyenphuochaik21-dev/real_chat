@@ -4,14 +4,32 @@ import { useCallback, useEffect, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { useFriendshipStore } from '@/stores/friendship-store'
+import { getFriendshipOverview } from '@/lib/actions/friendships'
 
 const RECONCILE_INTERVAL_MS = 30_000
+const OVERVIEW_CACHE_STALE_MS = 60_000
 
 export function useFriendshipsRealtime(userId: string | null) {
   const [supabase] = useState(() => createClient())
   const setIncomingCount = useFriendshipStore((state) => state.setIncomingCount)
   const signalChange = useFriendshipStore((state) => state.signalChange)
   const reset = useFriendshipStore((state) => state.reset)
+
+  const preloadOverview = useCallback(async (force = false) => {
+    const store = useFriendshipStore.getState()
+    if (
+      !force &&
+      store.overview &&
+      Date.now() - store.overviewFetchedAt < OVERVIEW_CACHE_STALE_MS
+    ) {
+      return
+    }
+    try {
+      store.setOverview(await getFriendshipOverview())
+    } catch {
+      // The contacts page can retry and surface an error if preloading fails.
+    }
+  }, [])
 
   const refreshIncomingCount = useCallback(async () => {
     if (!userId) return
@@ -37,10 +55,11 @@ export function useFriendshipsRealtime(userId: string | null) {
       if (!mounted) return
       signalChange()
       void refreshIncomingCount()
+      void preloadOverview(true)
     }
 
     const setup = async () => {
-      await refreshIncomingCount()
+      await Promise.all([refreshIncomingCount(), preloadOverview()])
       const {
         data: { session },
       } = await supabase.auth.getSession()
@@ -69,5 +88,5 @@ export function useFriendshipsRealtime(userId: string | null) {
       document.removeEventListener('visibilitychange', reconcile)
       if (channel) void supabase.removeChannel(channel)
     }
-  }, [refreshIncomingCount, reset, signalChange, supabase, userId])
+  }, [preloadOverview, refreshIncomingCount, reset, signalChange, supabase, userId])
 }

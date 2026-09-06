@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Check, Clock3, MessageSquare, Search, UserMinus, UserPlus, Users, X } from 'lucide-react'
@@ -21,6 +21,9 @@ import {
 } from '@/lib/actions/friendships'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
+
+const FRIEND_CACHE_STALE_MS = 60_000
+const FRIEND_PAGE_SIZE = 50
 
 function matchesSearch(profile: FriendProfile, search: string) {
   const query = search.trim().toLocaleLowerCase()
@@ -61,31 +64,39 @@ export default function ContactsPage() {
   const { t } = useI18n()
   const router = useRouter()
   const friendshipRevision = useFriendshipStore((state) => state.revision)
-  const [overview, setOverview] = useState<FriendshipOverview | null>(null)
+  const cachedOverview = useFriendshipStore((state) => state.overview)
+  const overviewFetchedAt = useFriendshipStore((state) => state.overviewFetchedAt)
+  const setCachedOverview = useFriendshipStore((state) => state.setOverview)
+  const [overview, setOverview] = useState<FriendshipOverview | null>(cachedOverview)
   const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [visibleFriendCount, setVisibleFriendCount] = useState(FRIEND_PAGE_SIZE)
+  const [loading, setLoading] = useState(!cachedOverview)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const handledRevisionRef = useRef(friendshipRevision)
 
   const refresh = useCallback(async () => {
     try {
       const nextOverview = await getFriendshipOverview()
       setOverview(nextOverview)
+      setCachedOverview(nextOverview)
       setError(null)
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : t('common.unknownError'))
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [setCachedOverview, t])
 
   useEffect(() => {
+    if (overview && Date.now() - overviewFetchedAt < FRIEND_CACHE_STALE_MS) return
     const timeoutId = window.setTimeout(() => void refresh(), 0)
     return () => window.clearTimeout(timeoutId)
-  }, [refresh])
+  }, [overview, overviewFetchedAt, refresh])
 
   useEffect(() => {
-    if (friendshipRevision <= 0) return
+    if (friendshipRevision === handledRevisionRef.current) return
+    handledRevisionRef.current = friendshipRevision
     const timeoutId = window.setTimeout(() => void refresh(), 0)
     return () => window.clearTimeout(timeoutId)
   }, [friendshipRevision, refresh])
@@ -150,7 +161,10 @@ export default function ContactsPage() {
             type="search"
             placeholder={t('friends.search')}
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setVisibleFriendCount(FRIEND_PAGE_SIZE)
+            }}
             className="pl-10"
           />
         </div>
@@ -202,7 +216,7 @@ export default function ContactsPage() {
             </h2>
             {filtered?.friends.length ? (
               <div className="grid gap-2 lg:grid-cols-2">
-                {filtered.friends.map((item) => (
+                {filtered.friends.slice(0, visibleFriendCount).map((item) => (
                   <ContactRow key={item.id} profile={item.profile}>
                     <Button
                       variant="ghost"
@@ -235,6 +249,15 @@ export default function ContactsPage() {
               <p className="rounded-xl border border-dashed border-[var(--border-default)] p-6 text-center text-sm text-[var(--text-muted)]">
                 {t('friends.none')}
               </p>
+            )}
+            {filtered && filtered.friends.length > visibleFriendCount && (
+              <Button
+                variant="outline"
+                className="mt-3 w-full"
+                onClick={() => setVisibleFriendCount((count) => count + FRIEND_PAGE_SIZE)}
+              >
+                {t('friends.loadMore')}
+              </Button>
             )}
           </section>
 

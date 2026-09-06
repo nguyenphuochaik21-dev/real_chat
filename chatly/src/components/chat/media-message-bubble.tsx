@@ -15,6 +15,7 @@ interface MediaMessageBubbleProps {
   message: Message
   isFromMe: boolean
   compact?: boolean
+  onOpenMedia?: (messageId: string) => void
 }
 
 function formatFileSize(bytes: number | null): string {
@@ -28,6 +29,7 @@ export function MediaMessageBubble({
   message,
   isFromMe,
   compact = false,
+  onOpenMedia,
 }: MediaMessageBubbleProps) {
   const { t } = useI18n()
   const mediaPath = message.media_url
@@ -75,9 +77,11 @@ export function MediaMessageBubble({
   // Image message
   if (isImage(mimeType)) {
     return (
-      <div
+      <button
+        type="button"
+        onClick={() => onOpenMedia?.(message.id)}
         className={cn(
-          'overflow-hidden',
+          'block overflow-hidden text-left',
           compact ? 'h-full w-full rounded-lg' : 'rounded-2xl',
           !compact && (isFromMe ? 'rounded-br-md' : 'rounded-bl-md')
         )}
@@ -95,12 +99,11 @@ export function MediaMessageBubble({
             !imageLoaded && 'blur-sm'
           )}
           onLoad={() => setImageLoaded(true)}
-          onClick={() => window.open(signedUrl, '_blank')}
         />
         {message.content && message.content !== fileName && (
           <p className="px-3 py-2 text-sm">{message.content}</p>
         )}
-      </div>
+      </button>
     )
   }
 
@@ -110,9 +113,25 @@ export function MediaMessageBubble({
       <div
         className={cn('overflow-hidden rounded-2xl', isFromMe ? 'rounded-br-md' : 'rounded-bl-md')}
       >
-        <div className="relative max-w-[280px]">
-          <video src={signedUrl} className="max-h-[200px] max-w-[280px] object-cover" controls />
-        </div>
+        <button
+          type="button"
+          onClick={() => onOpenMedia?.(message.id)}
+          className="group relative block max-w-[280px]"
+          aria-label={t('gallery.videos')}
+        >
+          <video
+            src={signedUrl}
+            className="max-h-[200px] max-w-[280px] object-cover"
+            muted
+            playsInline
+            preload="metadata"
+          />
+          <span className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors group-hover:bg-black/25">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white shadow-lg">
+              <Play className="ml-0.5 h-6 w-6" />
+            </span>
+          </span>
+        </button>
         {message.content && message.content !== fileName && (
           <p className="px-3 py-2 text-sm">{message.content}</p>
         )}

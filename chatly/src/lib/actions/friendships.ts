@@ -29,6 +29,13 @@ interface FriendshipRow {
   status: 'pending' | 'accepted' | 'declined'
 }
 
+interface FriendshipRowWithProfiles extends FriendshipRow {
+  requester: FriendProfile | FriendProfile[] | null
+  addressee: FriendProfile | FriendProfile[] | null
+}
+
+const PROFILE_COLUMNS = 'id, username, display_name, avatar_url, bio, status, last_seen, created_at'
+
 async function getAuthenticatedUser() {
   const supabase = await createClient()
   const {
@@ -42,49 +49,30 @@ async function getAuthenticatedUser() {
 export async function getFriendshipOverview(): Promise<FriendshipOverview> {
   const { supabase, user } = await getAuthenticatedUser()
 
-  const relationsResult = await supabase
-    .from('friendships')
-    .select('id, requester_id, addressee_id, status')
-    .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-
-  if (relationsResult.error) throw new Error(relationsResult.error.message)
-
-  const relations = (relationsResult.data ?? []) as FriendshipRow[]
-  const relatedIds = Array.from(
-    new Set(
-      relations.map((relation) =>
-        relation.requester_id === user.id ? relation.addressee_id : relation.requester_id
+  const [relationsResult, discoveryResult] = await Promise.all([
+    supabase
+      .from('friendships')
+      .select(
+        `id, requester_id, addressee_id, status, requester:profiles!friendships_requester_id_fkey(${PROFILE_COLUMNS}), addressee:profiles!friendships_addressee_id_fkey(${PROFILE_COLUMNS})`
       )
-    )
-  )
-
-  const relatedProfilesPromise = relatedIds.length
-    ? supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
-        .in('id', relatedIds)
-    : Promise.resolve({ data: [] as FriendProfile[], error: null })
-
-  const [relatedProfilesResult, discoveryResult] = await Promise.all([
-    relatedProfilesPromise,
+      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
     supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
+      .select(PROFILE_COLUMNS)
       .neq('id', user.id)
       .order('display_name')
       .limit(200),
   ])
 
-  if (relatedProfilesResult.error) throw new Error(relatedProfilesResult.error.message)
+  if (relationsResult.error) throw new Error(relationsResult.error.message)
   if (discoveryResult.error) throw new Error(discoveryResult.error.message)
 
-  const relatedProfiles = (relatedProfilesResult.data ?? []) as FriendProfile[]
-  const profileMap = new Map(relatedProfiles.map((profile) => [profile.id, profile]))
+  const relations = (relationsResult.data ?? []) as unknown as FriendshipRowWithProfiles[]
 
-  const toItem = (relation: FriendshipRow): FriendshipItem | null => {
-    const otherId =
-      relation.requester_id === user.id ? relation.addressee_id : relation.requester_id
-    const profile = profileMap.get(otherId)
+  const toItem = (relation: FriendshipRowWithProfiles): FriendshipItem | null => {
+    const relatedProfile =
+      relation.requester_id === user.id ? relation.addressee : relation.requester
+    const profile = Array.isArray(relatedProfile) ? relatedProfile[0] : relatedProfile
     if (!profile) return null
     return {
       id: relation.id,

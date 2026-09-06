@@ -1,13 +1,20 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Phone, Video, PhoneOff } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { useCallStore } from '@/stores/call-store'
 import { useI18n } from '@/lib/i18n'
+import { startIncomingCallAlert } from '@/lib/notification-sounds'
 
 export function IncomingCallModal() {
   const { t } = useI18n()
   const { status, type, remoteUser } = useCallStore()
+
+  useEffect(() => {
+    if (status !== 'ringing') return
+    return startIncomingCallAlert()
+  }, [status])
 
   if (status !== 'ringing') return null
 

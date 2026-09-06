@@ -27,57 +27,58 @@ export function useConversationMedia({ conversationId, limit = 6 }: UseConversat
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
-  const fetchMedia = useCallback(async () => {
-    if (!conversationId) {
-      setMediaItems([])
-      setTotalCount(0)
-      setLoading(false)
-      return
-    }
+  const fetchMedia = useCallback(
+    async (requestedLimit = limit) => {
+      if (!conversationId) {
+        setMediaItems([])
+        setTotalCount(0)
+        setLoading(false)
+        return
+      }
 
-    setLoading(true)
-    try {
-      // Get total count first
-      const { count } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('conversation_id', conversationId)
-        .neq('content_type', 'text')
+      setLoading(true)
+      try {
+        const [{ count }, { data, error }] = await Promise.all([
+          supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('conversation_id', conversationId)
+            .neq('content_type', 'text'),
+          supabase
+            .from('messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .neq('content_type', 'text')
+            .order('created_at', { ascending: false })
+            .limit(requestedLimit),
+        ])
 
-      setTotalCount(count || 0)
+        if (error) throw error
+        setTotalCount(count || 0)
 
-      // Fetch media messages, newest first
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .neq('content_type', 'text')
-        .order('created_at', { ascending: false })
-        .limit(limit)
+        const items: MediaItem[] = (data || []).map((msg: Message) => ({
+          id: msg.id,
+          url: msg.media_url || '',
+          thumbnailUrl: msg.media_thumbnail_url,
+          type: (msg.content_type || 'file') as MediaItem['type'],
+          name: msg.media_name,
+          size: msg.media_size,
+          mimeType: msg.media_mime_type,
+          createdAt: msg.created_at || '',
+          senderId: msg.sender_id,
+        }))
 
-      if (error) throw error
-
-      const items: MediaItem[] = (data || []).map((msg: Message) => ({
-        id: msg.id,
-        url: msg.media_url || '',
-        thumbnailUrl: msg.media_thumbnail_url,
-        type: (msg.content_type || 'file') as MediaItem['type'],
-        name: msg.media_name,
-        size: msg.media_size,
-        mimeType: msg.media_mime_type,
-        createdAt: msg.created_at || '',
-        senderId: msg.sender_id,
-      }))
-
-      setMediaItems(items)
-    } catch (err) {
-      console.error('Failed to fetch media:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [conversationId, limit, supabase])
+        setMediaItems(items)
+      } catch (err) {
+        console.error('Failed to fetch media:', err)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [conversationId, limit, supabase]
+  )
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchMedia(), 0)

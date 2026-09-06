@@ -15,6 +15,7 @@ import {
   Pencil,
   Clock,
   UsersRound,
+  Ban,
 } from 'lucide-react'
 import { cn, getCompactDisplayName } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -42,6 +43,7 @@ import { useChatsListStore } from '@/stores/chats-list-store'
 import { resolvePresence, type PresenceStatus } from '@/lib/presence'
 import { useI18n } from '@/lib/i18n'
 import { queuePushNotification } from '@/lib/push'
+import { getBlockedUsers, unblockUser } from '@/lib/actions/block'
 import type { PublicProfile, Tables } from '@/types'
 import { ConversationProfilePanel } from './conversation-profile-panel'
 
@@ -64,6 +66,9 @@ const CreateGroupModal = dynamic(
 )
 const MediaGalleryViewer = dynamic(() =>
   import('./media-gallery').then((module) => module.MediaGalleryViewer)
+)
+const MediaLightbox = dynamic(() =>
+  import('./media-gallery').then((module) => module.MediaLightbox)
 )
 const ForwardModal = dynamic(() => import('./forward-modal').then((module) => module.ForwardModal))
 const BlockUserModal = dynamic(() =>
@@ -158,6 +163,7 @@ interface MessageBubbleProps {
   replyToMessage?: Message | null
   replyToAuthor?: MessageAuthor | null
   onReplyClick?: (messageId: string) => void
+  onOpenMedia?: (messageId: string) => void
   showSenderName?: boolean
 }
 
@@ -174,6 +180,7 @@ function MessageBubble({
   replyToMessage,
   replyToAuthor,
   onReplyClick,
+  onOpenMedia,
   showSenderName = false,
 }: MessageBubbleProps) {
   const { t, dateLocale } = useI18n()
@@ -280,9 +287,11 @@ function MessageBubble({
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className={cn('flex max-w-[75%] gap-2', isFromMe && 'flex-row-reverse')}>
-          <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
-            {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
-          </div>
+          {!isFromMe && (
+            <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+              <Avatar user={participant} size="sm" showStatus={false} />
+            </div>
+          )}
           <div>
             {showSenderName && !isFromMe && (
               <p className="mb-1 ml-1 text-xs font-medium text-[var(--text-secondary)]">
@@ -320,9 +329,11 @@ function MessageBubble({
         >
           <div className={cn('flex max-w-full gap-2', isFromMe && 'flex-row-reverse')}>
             {/* Avatar */}
-            <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
-              {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
-            </div>
+            {!isFromMe && (
+              <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+                <Avatar user={participant} size="sm" showStatus={false} />
+              </div>
+            )}
 
             {/* Media Bubble */}
             <div>
@@ -352,16 +363,22 @@ function MessageBubble({
                         message={groupedMessage}
                         isFromMe={isFromMe}
                         compact
+                        onOpenMedia={onOpenMedia}
                       />
                     ))}
                   </div>
                 ) : (
-                  <MediaMessageBubble message={message} isFromMe={isFromMe} />
+                  <MediaMessageBubble
+                    message={message}
+                    isFromMe={isFromMe}
+                    onOpenMedia={onOpenMedia}
+                  />
                 )}
                 <MessageReactions
                   reactions={reactions}
                   onToggleReaction={onToggleReaction || (() => {})}
                   showAddButton={isHovered}
+                  align={isFromMe ? 'end' : 'start'}
                 />
               </div>
               {renderTimeAndStatus()}
@@ -385,9 +402,11 @@ function MessageBubble({
       >
         <div className={cn('flex max-w-full gap-2', isFromMe && 'flex-row-reverse')}>
           {/* Avatar */}
-          <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
-            {!isFromMe && <Avatar user={participant} size="sm" showStatus={false} />}
-          </div>
+          {!isFromMe && (
+            <div className={cn('w-8 shrink-0', !showAvatar && 'invisible')}>
+              <Avatar user={participant} size="sm" showStatus={false} />
+            </div>
+          )}
 
           {/* Bubble */}
           <div>
@@ -425,6 +444,7 @@ function MessageBubble({
                 reactions={reactions}
                 onToggleReaction={onToggleReaction || (() => {})}
                 showAddButton={isHovered}
+                align={isFromMe ? 'end' : 'start'}
               />
             </div>
             {renderTimeAndStatus()}
@@ -488,6 +508,7 @@ export function ChatView({
   const participantStatus = resolvePresence(participantStatusRaw)
   const isGroup = conversation?.type === 'group'
   const [showMediaGallery, setShowMediaGallery] = useState(false)
+  const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   // Track realtime status for messages
@@ -540,6 +561,7 @@ export function ChatView({
 
   // Block user modal
   const [blockModalOpen, setBlockModalOpen] = useState(false)
+  const [isParticipantBlocked, setIsParticipantBlocked] = useState(false)
   const [userToBlock, setUserToBlock] = useState<{
     id: string
     display_name: string
@@ -556,6 +578,19 @@ export function ChatView({
     is_muted: false,
     is_archived: false,
   })
+
+  useEffect(() => {
+    let cancelled = false
+    const participantId = isGroup ? null : participant?.id
+    const blockedUsersPromise = participantId ? getBlockedUsers() : Promise.resolve([])
+    void blockedUsersPromise.then((blockedIds) => {
+      if (!cancelled)
+        setIsParticipantBlocked(Boolean(participantId && blockedIds.includes(participantId)))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isGroup, participant?.id])
 
   // Sync current state into cache so navigating away/back is instant
   useEffect(() => {
@@ -599,7 +634,30 @@ export function ChatView({
   const { markAsRead } = useReadReceipts(conversationId, currentUserId)
 
   // Media gallery
-  const { mediaItems } = useConversationMedia({ conversationId })
+  const { mediaItems, refetch: refetchMedia } = useConversationMedia({ conversationId })
+  const previewMediaItems = useMemo(
+    () =>
+      messages.flatMap((message) => {
+        if (
+          message.deleted_at ||
+          !message.media_url ||
+          (message.content_type !== 'image' && message.content_type !== 'video')
+        ) {
+          return []
+        }
+        return [
+          {
+            id: message.id,
+            url: message.media_url,
+            type: message.content_type,
+            name: message.media_name,
+            size: message.media_size,
+            mimeType: message.media_mime_type,
+          },
+        ]
+      }),
+    [messages]
+  )
 
   // Fetch participant info and their status
   useEffect(() => {
@@ -1303,6 +1361,11 @@ export function ChatView({
         console.error('Failed to send message:', err)
         setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id))
         if (contentOverride === undefined) setInputValue(content)
+        addToast({
+          type: 'system',
+          title: t('chat.sendFailed'),
+          body: err instanceof Error ? err.message : t('common.unknownError'),
+        })
       } finally {
         setSending(false)
       }
@@ -1319,6 +1382,8 @@ export function ChatView({
       replyToMessage,
       clearReply,
       clearDraft,
+      addToast,
+      t,
     ]
   )
 
@@ -1560,6 +1625,29 @@ export function ChatView({
     [conversationId]
   )
 
+  const handleUnblockParticipant = useCallback(async () => {
+    if (!participant || !isParticipantBlocked) return
+    const result = await unblockUser(participant.id)
+    if (!result.success) {
+      addToast({
+        type: 'system',
+        title: t('block.unblockFailed'),
+        body: result.error || t('common.unknownError'),
+      })
+      return
+    }
+
+    setIsParticipantBlocked(false)
+    const blockedIds = new Set(useChatsListStore.getState().blockedUserIds)
+    blockedIds.delete(participant.id)
+    useChatsListStore.getState().setBlockedUserIds(blockedIds)
+    addToast({
+      type: 'system',
+      title: t('block.unblocked'),
+      body: t('block.unblockedBody', { name: participant.display_name }),
+    })
+  }, [addToast, isParticipantBlocked, participant, t])
+
   if (!conversationId) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)] text-[var(--text-muted)]">
@@ -1679,6 +1767,7 @@ export function ChatView({
                 size="icon"
                 className="h-9 w-9 sm:h-10 sm:w-10"
                 aria-label={t('chat.voiceCall')}
+                disabled={isParticipantBlocked}
                 onClick={() => {
                   if (conversationId && participant) {
                     window.dispatchEvent(
@@ -1704,6 +1793,7 @@ export function ChatView({
                 size="icon"
                 className="h-9 w-9 sm:h-10 sm:w-10"
                 aria-label={t('chat.videoCall')}
+                disabled={isParticipantBlocked}
                 onClick={() => {
                   if (conversationId && participant) {
                     window.dispatchEvent(
@@ -1813,6 +1903,7 @@ export function ChatView({
                   realtimeStatus={realtimeStatus}
                   reactions={messageReactions.get(message.id) || []}
                   onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
+                  onOpenMedia={setActiveMediaId}
                   replyToMessage={
                     message.reply_to ? (messagesById.get(message.reply_to) ?? null) : null
                   }
@@ -1839,115 +1930,127 @@ export function ChatView({
       </ScrollArea>
 
       {/* Input */}
-      <div className="border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-2 sm:p-3">
-        <div className="flex min-w-0 items-end gap-0.5 sm:gap-2">
-          <div className="relative shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowEmojiPicker((open) => !open)}
-              data-emoji-trigger
-              className="h-9 w-9 sm:h-10 sm:w-10"
-              aria-label={t('chat.emojiSticker')}
-            >
-              <Smile className="h-5 w-5 text-[var(--text-muted)]" />
-            </Button>
-            {showEmojiPicker && (
-              <EmojiPicker
-                onSelect={(emoji) => {
-                  setInputValue((current) => `${current}${emoji}`)
-                  inputRef.current?.focus()
-                }}
-                onSelectSticker={(sticker) => {
-                  setShowEmojiPicker(false)
-                  void handleSend(sticker)
-                }}
-                onClose={() => setShowEmojiPicker(false)}
-              />
-            )}
-          </div>
-
-          <MediaAttachmentButton
-            conversationId={conversationId}
-            userId={currentUserId}
-            onUploadComplete={(msg) => {
-              // Add new message to list
-              setMessages((prev) => {
-                if (prev.some((m) => m.id === msg.id)) return prev
-                return [...prev, msg]
-              })
-            }}
-          />
-
-          <div className="relative min-w-0 flex-1">
-            {mentionOptions.length > 0 && (
-              <div className="absolute right-0 bottom-full left-0 z-50 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-panel)] p-1 shadow-xl">
-                {mentionOptions.map((profile) => (
-                  <button
-                    key={profile.id}
-                    type="button"
-                    onClick={() => insertMention(profile)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-[var(--bg-hover)]"
-                  >
-                    <Avatar user={profile} size="sm" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-[var(--text-primary)]">
-                        {profile.display_name}
-                      </span>
-                      <span className="block truncate text-xs text-[var(--text-muted)]">
-                        @{profile.username}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <textarea
-              ref={inputRef}
-              rows={1}
-              maxLength={10000}
-              placeholder={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
-              value={inputValue}
-              onChange={(e) => {
-                handleInputChange(e)
-                if (conversationId) setDraft(conversationId, e.target.value)
-              }}
-              onKeyDown={handleKeyDown}
-              className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={sending}
-              aria-label={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
-            />
-          </div>
-
-          {/* Schedule button */}
-          {inputValue.trim() && !editingMessage && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowSchedulePicker(true)}
-              title={t('chat.schedule')}
-              aria-label={t('chat.schedule')}
-              className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
-            >
-              <Clock className="h-5 w-5 text-[var(--text-muted)]" />
-            </Button>
-          )}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleSend()}
-            disabled={!inputValue.trim() || sending}
-            className={cn(
-              'h-9 w-9 shrink-0 transition-all sm:h-10 sm:w-10',
-              inputValue.trim() && !sending && 'bg-primary-500 hover:bg-primary-600 text-white'
-            )}
-            aria-label={t('chat.send')}
-          >
-            {editingMessage ? <Pencil className="h-5 w-5" /> : <Send className="h-5 w-5" />}
+      {isParticipantBlocked && participant && !isGroup ? (
+        <div className="flex items-center gap-3 border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-3 sm:px-4">
+          <Ban className="h-5 w-5 shrink-0 text-[var(--text-muted)]" />
+          <p className="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
+            {t('block.chatBlocked', { name: participant.display_name })}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => void handleUnblockParticipant()}>
+            {t('block.unblock')}
           </Button>
         </div>
-      </div>
+      ) : (
+        <div className="border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-2 sm:p-3">
+          <div className="flex min-w-0 items-end gap-0.5 sm:gap-2">
+            <div className="relative shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowEmojiPicker((open) => !open)}
+                data-emoji-trigger
+                className="h-9 w-9 sm:h-10 sm:w-10"
+                aria-label={t('chat.emojiSticker')}
+              >
+                <Smile className="h-5 w-5 text-[var(--text-muted)]" />
+              </Button>
+              {showEmojiPicker && (
+                <EmojiPicker
+                  onSelect={(emoji) => {
+                    setInputValue((current) => `${current}${emoji}`)
+                    inputRef.current?.focus()
+                  }}
+                  onSelectSticker={(sticker) => {
+                    setShowEmojiPicker(false)
+                    void handleSend(sticker)
+                  }}
+                  onClose={() => setShowEmojiPicker(false)}
+                />
+              )}
+            </div>
+
+            <MediaAttachmentButton
+              conversationId={conversationId}
+              userId={currentUserId}
+              onUploadComplete={(msg) => {
+                // Add new message to list
+                setMessages((prev) => {
+                  if (prev.some((m) => m.id === msg.id)) return prev
+                  return [...prev, msg]
+                })
+              }}
+            />
+
+            <div className="relative min-w-0 flex-1">
+              {mentionOptions.length > 0 && (
+                <div className="absolute right-0 bottom-full left-0 z-50 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-panel)] p-1 shadow-xl">
+                  {mentionOptions.map((profile) => (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      onClick={() => insertMention(profile)}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-[var(--bg-hover)]"
+                    >
+                      <Avatar user={profile} size="sm" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-[var(--text-primary)]">
+                          {profile.display_name}
+                        </span>
+                        <span className="block truncate text-xs text-[var(--text-muted)]">
+                          @{profile.username}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={inputRef}
+                rows={1}
+                maxLength={10000}
+                placeholder={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
+                value={inputValue}
+                onChange={(e) => {
+                  handleInputChange(e)
+                  if (conversationId) setDraft(conversationId, e.target.value)
+                }}
+                onKeyDown={handleKeyDown}
+                className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={sending}
+                aria-label={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
+              />
+            </div>
+
+            {/* Schedule button */}
+            {inputValue.trim() && !editingMessage && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowSchedulePicker(true)}
+                title={t('chat.schedule')}
+                aria-label={t('chat.schedule')}
+                className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
+              >
+                <Clock className="h-5 w-5 text-[var(--text-muted)]" />
+              </Button>
+            )}
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleSend()}
+              disabled={!inputValue.trim() || sending}
+              className={cn(
+                'h-9 w-9 shrink-0 transition-all sm:h-10 sm:w-10',
+                inputValue.trim() && !sending && 'bg-primary-500 hover:bg-primary-600 text-white'
+              )}
+              aria-label={t('chat.send')}
+            >
+              {editingMessage ? <Pencil className="h-5 w-5" /> : <Send className="h-5 w-5" />}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Reply Preview */}
       <ReplyPreview
@@ -1970,6 +2073,15 @@ export function ChatView({
             mimeType: item.mimeType,
           }))}
           onClose={() => setShowMediaGallery(false)}
+        />
+      )}
+
+      {activeMediaId && (
+        <MediaLightbox
+          items={previewMediaItems}
+          activeId={activeMediaId}
+          onSelect={setActiveMediaId}
+          onClose={() => setActiveMediaId(null)}
         />
       )}
 
@@ -1997,7 +2109,12 @@ export function ChatView({
         onClose={() => setBlockModalOpen(false)}
         userToBlock={userToBlock}
         onBlocked={() => {
-          // Refresh conversations list
+          if (!userToBlock) return
+          setIsParticipantBlocked(true)
+          clearReply()
+          const blockedIds = new Set(useChatsListStore.getState().blockedUserIds)
+          blockedIds.add(userToBlock.id)
+          useChatsListStore.getState().setBlockedUserIds(blockedIds)
         }}
       />
 
@@ -2017,7 +2134,10 @@ export function ChatView({
               isArchived={conversationFlags.is_archived}
               onClose={() => setShowConversationActions(false)}
               onSearch={() => setShowSearch(true)}
-              onOpenMedia={() => setShowMediaGallery(true)}
+              onOpenMedia={() => {
+                setShowMediaGallery(true)
+                void refetchMedia(200)
+              }}
               onCreateGroup={() => setShowCreateGroup(true)}
               onDeleted={() => {
                 useChatsListStore.getState().removeConversation(conversationId)
@@ -2025,10 +2145,14 @@ export function ChatView({
                 router.replace('/chats')
                 router.refresh()
               }}
-              onBlock={() => {
-                setUserToBlock(participant)
-                setBlockModalOpen(true)
-              }}
+              onBlock={
+                isParticipantBlocked
+                  ? undefined
+                  : () => {
+                      setUserToBlock(participant)
+                      setBlockModalOpen(true)
+                    }
+              }
               onAction={(updates) => {
                 setConversationFlags((prev) => ({
                   ...prev,

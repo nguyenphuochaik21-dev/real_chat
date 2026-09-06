@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { Download, WifiOff, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
+import { ensurePushSubscription } from '@/lib/push'
+import { unlockNotificationAudio } from '@/lib/notification-sounds'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -19,10 +21,20 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onlineStatusTimeout = window.setTimeout(() => setOnline(navigator.onLine), 0)
     if ('serviceWorker' in navigator) {
-      void navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
-        console.error('[PWA] Service worker registration failed:', error)
-      })
+      void navigator.serviceWorker
+        .register('/sw.js')
+        .then(async (registration) => {
+          await registration.update()
+          if ('Notification' in window && Notification.permission === 'granted') {
+            await ensurePushSubscription()
+          }
+        })
+        .catch((error: unknown) => {
+          console.error('[PWA] Service worker registration failed:', error)
+        })
     }
+
+    const unlockAudio = () => unlockNotificationAudio()
 
     const handleInstallPrompt = (event: Event) => {
       event.preventDefault()
@@ -36,6 +48,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('appinstalled', handleInstalled)
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('keydown', unlockAudio, { once: true })
 
     return () => {
       window.clearTimeout(onlineStatusTimeout)
@@ -43,6 +57,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('appinstalled', handleInstalled)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('pointerdown', unlockAudio)
+      window.removeEventListener('keydown', unlockAudio)
     }
   }, [])
 

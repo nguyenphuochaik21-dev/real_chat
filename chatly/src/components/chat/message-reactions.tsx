@@ -18,12 +18,14 @@ interface MessageReactionsProps {
   reactions: MessageReaction[]
   onToggleReaction: (emoji: string) => void
   showAddButton?: boolean
+  align?: 'start' | 'end'
 }
 
 export function MessageReactions({
   reactions,
   onToggleReaction,
   showAddButton = true,
+  align = 'end',
 }: MessageReactionsProps) {
   const [showPicker, setShowPicker] = useState(false)
   const [pickerPosition, setPickerPosition] = useState({ left: 8, top: 8 })
@@ -47,10 +49,8 @@ export function MessageReactions({
     if (!showPicker && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
       const pickerWidth = 244
-      const left = Math.max(
-        8,
-        Math.min(rect.right - pickerWidth, window.innerWidth - pickerWidth - 8)
-      )
+      const preferredLeft = align === 'start' ? rect.left : rect.right - pickerWidth
+      const left = Math.max(8, Math.min(preferredLeft, window.innerWidth - pickerWidth - 8))
       const top = rect.top >= 58 ? rect.top - 50 : rect.bottom + 8
       setPickerPosition({ left, top })
     }

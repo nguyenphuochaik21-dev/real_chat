@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { WebRTCService, type CallType, isWebRTCSupported } from '@/lib/webrtc'
 import { useCallStore } from '@/stores/call-store'
+import { queueCallPushNotification } from '@/lib/push'
 
 const CALL_RING_TIMEOUT_MS = 60_000
 
@@ -323,6 +324,7 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         if (!sessionId) throw new Error('No session id returned')
 
         useCallStore.getState().initiateCall(conversationId, sessionId, remoteUser, type)
+        queueCallPushNotification(sessionId)
         window.setTimeout(() => {
           const current = useCallStore.getState()
           if (current.sessionId !== sessionId || current.status !== 'calling') return

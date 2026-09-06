@@ -8,6 +8,8 @@ import { MobileNav } from '@/components/layout/mobile-nav'
 import { ConversationLabelsProvider } from '@/hooks/use-conversation-labels'
 import { useFriendshipsRealtime } from '@/hooks/use-friendships-realtime'
 import { CallProvider } from '@/components/calls'
+import { RealtimeNotifications } from '@/components/notifications/realtime-notifications'
+import { NotificationToastContainer } from '@/components/notifications'
 import type { User } from '@supabase/supabase-js'
 import { cn } from '@/lib/utils'
 
@@ -50,7 +52,11 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
           </div>
         ) : user ? (
           <ConversationLabelsProvider userId={user.id}>
-            <CallProvider userId={user.id}>{children}</CallProvider>
+            <CallProvider userId={user.id}>
+              <RealtimeNotifications userId={user.id} />
+              {children}
+              <NotificationToastContainer />
+            </CallProvider>
           </ConversationLabelsProvider>
         ) : (
           children

@@ -4,46 +4,7 @@ import { useEffect, useState } from 'react'
 import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
-
-function decodeVapidPublicKey(value: string) {
-  const padding = '='.repeat((4 - (value.length % 4)) % 4)
-  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const bytes = window.atob(base64)
-  return Uint8Array.from(bytes, (character) => character.charCodeAt(0))
-}
-
-async function subscribeToPush() {
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-  if (!publicKey || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-    console.warn('[Push] VAPID or PushManager is unavailable')
-    return
-  }
-
-  const registration = await navigator.serviceWorker.ready
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: decodeVapidPublicKey(publicKey),
-    }))
-  const serialized = subscription.toJSON()
-  if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys.auth) return
-
-  const response = await fetch('/api/push/subscription', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({
-      endpoint: serialized.endpoint,
-      p256dh: serialized.keys.p256dh,
-      auth: serialized.keys.auth,
-    }),
-  })
-  if (!response.ok) {
-    await subscription.unsubscribe()
-    throw new Error('Could not save push subscription')
-  }
-}
+import { ensurePushSubscription } from '@/lib/push'
 
 export function NotificationPermission() {
   const { t } = useI18n()
@@ -56,7 +17,7 @@ export function NotificationPermission() {
       if ('Notification' in window) {
         setPermission(Notification.permission)
         if (Notification.permission === 'granted') {
-          void subscribeToPush().catch((error: unknown) => {
+          void ensurePushSubscription().catch((error: unknown) => {
             console.warn('[Push] Could not save subscription:', error)
           })
         }
@@ -74,7 +35,7 @@ export function NotificationPermission() {
     try {
       const result = await Notification.requestPermission()
       setPermission(result)
-      if (result === 'granted') await subscribeToPush()
+      if (result === 'granted') await ensurePushSubscription()
     } catch (error) {
       console.warn('Failed to enable push notifications:', error)
     }

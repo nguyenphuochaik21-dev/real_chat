@@ -1,0 +1,102 @@
+'use client'
+
+import { useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { useI18n } from '@/lib/i18n'
+import { useNotificationStore } from '@/stores/notification-store'
+
+interface RealtimeNotificationsProps {
+  userId: string
+}
+
+export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
+  const { t } = useI18n()
+  const pathname = usePathname()
+  const pathnameRef = useRef(pathname)
+
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
+
+  useEffect(() => {
+    if (!userId) return
+    let active = true
+    const supabase = createClient()
+    const addNotification = useNotificationStore.getState().addNotification
+
+    const channel = supabase
+      .channel(`notifications:${userId}:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        async (payload) => {
+          if (!active) return
+          const message = payload.new as {
+            sender_id: string
+            conversation_id: string
+            content: string
+            content_type: string | null
+          }
+          if (message.sender_id === userId) return
+          if (pathnameRef.current === `/chats/${message.conversation_id}`) return
+
+          const [{ data: participation }, { data: block }, { data: sender }, { data: profile }] =
+            await Promise.all([
+              supabase
+                .from('conversation_participants')
+                .select('is_muted, is_archived')
+                .eq('conversation_id', message.conversation_id)
+                .eq('user_id', userId)
+                .maybeSingle(),
+              supabase
+                .from('user_blocks')
+                .select('id')
+                .eq('blocker_id', userId)
+                .eq('blocked_id', message.sender_id)
+                .maybeSingle(),
+              supabase
+                .from('profiles')
+                .select('display_name, avatar_url')
+                .eq('id', message.sender_id)
+                .maybeSingle(),
+              supabase.from('profiles').select('username').eq('id', userId).maybeSingle(),
+            ])
+
+          if (!active || !participation || participation.is_muted || participation.is_archived)
+            return
+          if (block) return
+
+          const username = profile?.username || ''
+          const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const mentioned = Boolean(
+            escapedUsername &&
+            new RegExp(`(^|\\s)@${escapedUsername}(?=\\s|$)`, 'i').test(message.content)
+          )
+          const senderName = sender?.display_name || t('common.user')
+          const body =
+            message.content_type === 'text'
+              ? message.content.slice(0, 100)
+              : t('notifications.attachment', { name: senderName })
+
+          addNotification({
+            type: mentioned ? 'mention' : 'message',
+            title: mentioned ? t('notifications.mentioned', { name: senderName }) : senderName,
+            body,
+            conversationId: message.conversation_id,
+            senderId: message.sender_id,
+            senderName,
+            senderAvatar: sender?.avatar_url,
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      void supabase.removeChannel(channel)
+    }
+  }, [t, userId])
+
+  return null
+}

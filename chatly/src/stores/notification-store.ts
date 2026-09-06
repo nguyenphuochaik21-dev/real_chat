@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { playMessageTone } from '@/lib/notification-sounds'
 
 export type NotificationType = 'message' | 'call' | 'mention' | 'system'
 
@@ -16,7 +17,7 @@ export interface Notification {
 }
 
 // Show browser/system notification
-const showBrowserNotification = (notification: Notification) => {
+const showBrowserNotification = async (notification: Notification) => {
   if (typeof window === 'undefined') return
 
   // Check if browser notifications are supported and permitted
@@ -39,14 +40,23 @@ const showBrowserNotification = (notification: Notification) => {
   try {
     const notificationOptions: NotificationOptions = {
       body: notification.body,
-      icon: notification.senderAvatar || '/icons/icon-192.png',
-      tag: notification.conversationId || notification.id,
+      icon: notification.senderAvatar || '/pwa-icon/192',
+      badge: '/pwa-icon/192',
+      tag: notification.conversationId
+        ? `conversation-${notification.conversationId}`
+        : notification.id,
       data: {
         conversationId: notification.conversationId,
         senderId: notification.senderId,
       },
       requireInteraction: false,
       silent: false,
+    }
+
+    const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.ready : null
+    if (registration) {
+      await registration.showNotification(notification.title, notificationOptions)
+      return
     }
 
     const browserNotification = new Notification(notification.title, notificationOptions)
@@ -111,7 +121,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     get().addToast(newNotification)
 
     // Also show browser notification (works even when tab is not visible)
-    showBrowserNotification(newNotification)
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      playMessageTone()
+    }
+    void showBrowserNotification(newNotification)
   },
 
   markAsRead: (id) => {

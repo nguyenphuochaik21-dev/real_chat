@@ -9,12 +9,7 @@ import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { createClient } from '@/lib/supabase/client'
 import { usePresence } from '@/hooks/use-presence'
-import {
-  NotificationBell,
-  NotificationToastContainer,
-  NotificationCenter,
-} from '@/components/notifications'
-import { useNotificationStore } from '@/stores/notification-store'
+import { NotificationBell, NotificationCenter } from '@/components/notifications'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
@@ -80,107 +75,10 @@ export function Sidebar() {
   useEffect(() => {
     let mounted = true
     let unreadChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
-    let notificationChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
     let currentUserId: string | null = null
 
     const supabase = supabaseRef.current
     const subscriptionId = crypto.randomUUID()
-
-    const addNotification = useNotificationStore.getState().addNotification
-
-    const setupNotificationSubscription = (userId: string, username: string) => {
-      if (notificationChannel) {
-        supabase.removeChannel(notificationChannel)
-        notificationChannel = null
-      }
-      notificationChannel = supabase
-        .channel(`notifications:${userId}:${subscriptionId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-          },
-          async (payload) => {
-            if (!mounted) return
-
-            const newMsg = payload.new as {
-              id: string
-              sender_id: string
-              conversation_id: string
-              content: string
-              created_at: string
-            }
-
-            // Skip if from current user
-            if (newMsg.sender_id === userId) return
-
-            // Skip if we're viewing this conversation
-            if (pathnameRef.current === `/chats/${newMsg.conversation_id}`) return
-
-            // Check conversation participation flags (muted / archived)
-            const { data: participation } = await supabase
-              .from('conversation_participants')
-              .select('is_muted, is_archived')
-              .eq('conversation_id', newMsg.conversation_id)
-              .eq('user_id', userId)
-              .single()
-
-            if (participation?.is_archived) {
-              console.log('[Sidebar Notifications] Skipped: conversation is archived')
-              return
-            }
-
-            if (participation?.is_muted) {
-              console.log('[Sidebar Notifications] Skipped: conversation is muted')
-              return
-            }
-
-            // Check block status
-            const { data: blockCheck } = await supabase
-              .from('user_blocks')
-              .select('id')
-              .or(
-                `and(blocker_id.eq.${userId},blocked_id.eq.${newMsg.sender_id}),and(blocker_id.eq.${newMsg.sender_id},blocked_id.eq.${userId})`
-              )
-              .limit(1)
-
-            if (blockCheck?.length) {
-              console.log('[Sidebar Notifications] Skipped: user is blocked')
-              return
-            }
-
-            // Fetch sender info
-            const { data: sender } = await supabase
-              .from('profiles')
-              .select('display_name, avatar_url')
-              .eq('id', newMsg.sender_id)
-              .single()
-
-            const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            const wasMentioned = Boolean(
-              escapedUsername &&
-              new RegExp(`(^|\\s)@${escapedUsername}(?=\\s|$)`, 'i').test(newMsg.content)
-            )
-
-            addNotification({
-              type: 'message',
-              title: wasMentioned
-                ? t('notifications.mentioned', {
-                    name: sender?.display_name || t('common.user'),
-                  })
-                : sender?.display_name || t('notifications.newMessage'),
-              body: newMsg.content.slice(0, 100) + (newMsg.content.length > 100 ? '...' : ''),
-              conversationId: newMsg.conversation_id,
-              senderId: newMsg.sender_id,
-              senderName: sender?.display_name,
-              senderAvatar: sender?.avatar_url,
-            })
-          }
-        )
-        .subscribe()
-    }
 
     const fetchUnreadCount = async () => {
       const { data, error } = await supabase.rpc('get_conversation_summaries')
@@ -271,7 +169,6 @@ export function Sidebar() {
           // Now fetch unread count and setup subscription with userId available
           await fetchUnreadCount()
           setupUnreadSubscription(user.id)
-          setupNotificationSubscription(user.id, data?.username || '')
         }
       } else if (mounted) {
         setLoading(false)
@@ -283,7 +180,6 @@ export function Sidebar() {
     return () => {
       mounted = false
       if (unreadChannel) void supabase.removeChannel(unreadChannel)
-      if (notificationChannel) void supabase.removeChannel(notificationChannel)
       if (currentUserId) void setUserOffline(supabase)
     }
   }, [t])
@@ -396,9 +292,6 @@ export function Sidebar() {
           console.log('Selected contact:', contact)
         }}
       />
-
-      {/* Toast notifications */}
-      <NotificationToastContainer />
 
       {/* Notification center */}
       <NotificationCenter isOpen={showNotifications} onClose={() => setShowNotifications(false)} />

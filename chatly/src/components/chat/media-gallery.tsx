@@ -1,13 +1,23 @@
 'use client'
 
 import Image from 'next/image'
-import { useState } from 'react'
-import { Image as ImageIcon, Film, Music, FileText, Download, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Image as ImageIcon,
+  Film,
+  Music,
+  FileText,
+  Download,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSignedUrl } from '@/hooks/use-signed-url'
 import { useI18n } from '@/lib/i18n'
 
-interface MediaItem {
+export interface MediaItem {
   id: string
   url: string
   type: 'image' | 'video' | 'audio' | 'file'
@@ -46,6 +56,7 @@ function getFileColor(type: string): string {
 
 export function MediaGallery({ mediaItems, totalCount, onShowAll, className }: MediaGalleryProps) {
   const { t } = useI18n()
+  const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
   if (mediaItems.length === 0) {
     return (
       <div className={cn('py-4', className)}>
@@ -68,22 +79,30 @@ export function MediaGallery({ mediaItems, totalCount, onShowAll, className }: M
 
       <div className="grid grid-cols-3 gap-2">
         {mediaItems.slice(0, 6).map((item) => (
-          <MediaGalleryItem key={item.id} item={item} />
+          <MediaGalleryItem key={item.id} item={item} onOpen={setActiveMediaId} />
         ))}
       </div>
+      {activeMediaId && (
+        <MediaLightbox
+          items={mediaItems}
+          activeId={activeMediaId}
+          onSelect={setActiveMediaId}
+          onClose={() => setActiveMediaId(null)}
+        />
+      )}
     </div>
   )
 }
 
 // Individual gallery item that resolves signed URL
-function MediaGalleryItem({ item }: { item: MediaItem }) {
+function MediaGalleryItem({ item, onOpen }: { item: MediaItem; onOpen: (id: string) => void }) {
   const { t } = useI18n()
   const { signedUrl } = useSignedUrl(item.url)
 
   if (item.type === 'image' && signedUrl) {
     return (
       <button
-        onClick={() => signedUrl && window.open(signedUrl, '_blank')}
+        onClick={() => onOpen(item.id)}
         className="relative aspect-square overflow-hidden rounded-lg transition-opacity hover:opacity-80"
         title={item.name || t('gallery.images')}
       >
@@ -102,7 +121,9 @@ function MediaGalleryItem({ item }: { item: MediaItem }) {
   const color = getFileColor(item.type)
   return (
     <button
-      onClick={() => signedUrl && window.open(signedUrl, '_blank')}
+      onClick={() => {
+        if (item.type === 'video') onOpen(item.id)
+      }}
       className={cn(
         'flex aspect-square items-center justify-center rounded-lg text-white transition-opacity hover:opacity-80',
         color
@@ -125,6 +146,7 @@ type FilterType = 'all' | 'image' | 'video' | 'audio' | 'file'
 export function MediaGalleryViewer({ items, onClose }: MediaGalleryViewerProps) {
   const { t } = useI18n()
   const [filter, setFilter] = useState<FilterType>('all')
+  const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
 
   if (items.length === 0) return null
 
@@ -195,24 +217,32 @@ export function MediaGalleryViewer({ items, onClose }: MediaGalleryViewerProps) 
             // Image grid view
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {filteredItems.map((item) => (
-                <GalleryImageItem key={item.id} item={item} />
+                <GalleryImageItem key={item.id} item={item} onOpen={setActiveMediaId} />
               ))}
             </div>
           ) : (
             // File list view for videos/audio/files
             <div className="space-y-2">
               {filteredItems.map((item) => (
-                <GalleryFileItem key={item.id} item={item} />
+                <GalleryFileItem key={item.id} item={item} onOpen={setActiveMediaId} />
               ))}
             </div>
           )}
         </div>
       </div>
+      {activeMediaId && (
+        <MediaLightbox
+          items={items}
+          activeId={activeMediaId}
+          onSelect={setActiveMediaId}
+          onClose={() => setActiveMediaId(null)}
+        />
+      )}
     </div>
   )
 }
 
-function GalleryImageItem({ item }: { item: MediaItem }) {
+function GalleryImageItem({ item, onOpen }: { item: MediaItem; onOpen: (id: string) => void }) {
   const { t } = useI18n()
   const { signedUrl } = useSignedUrl(item.url)
 
@@ -225,7 +255,7 @@ function GalleryImageItem({ item }: { item: MediaItem }) {
           fill
           sizes="(max-width: 640px) 50vw, 33vw"
           className="h-full w-full cursor-pointer object-cover transition-transform hover:scale-105"
-          onClick={() => signedUrl && window.open(signedUrl, '_blank')}
+          onClick={() => onOpen(item.id)}
         />
       ) : (
         <div className="h-full w-full animate-pulse" />
@@ -234,7 +264,7 @@ function GalleryImageItem({ item }: { item: MediaItem }) {
   )
 }
 
-function GalleryFileItem({ item }: { item: MediaItem }) {
+function GalleryFileItem({ item, onOpen }: { item: MediaItem; onOpen: (id: string) => void }) {
   const { t } = useI18n()
   const { signedUrl } = useSignedUrl(item.url)
   const color = getFileColor(item.type)
@@ -253,6 +283,20 @@ function GalleryFileItem({ item }: { item: MediaItem }) {
           {item.mimeType && ` · ${item.mimeType.split('/').pop()?.toUpperCase()}`}
         </p>
       </div>
+      {(item.type === 'image' || item.type === 'video') && signedUrl && (
+        <button
+          type="button"
+          onClick={() => onOpen(item.id)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[var(--bg-active)]"
+          aria-label={item.type === 'video' ? t('gallery.videos') : t('gallery.images')}
+        >
+          {item.type === 'video' ? (
+            <Play className="h-4 w-4 text-[var(--text-secondary)]" />
+          ) : (
+            <ImageIcon className="h-4 w-4 text-[var(--text-secondary)]" />
+          )}
+        </button>
+      )}
       {signedUrl && (
         <a
           href={signedUrl}
@@ -264,6 +308,122 @@ function GalleryFileItem({ item }: { item: MediaItem }) {
           <Download className="h-4 w-4 text-[var(--text-secondary)]" />
         </a>
       )}
+    </div>
+  )
+}
+
+interface MediaLightboxProps {
+  items: MediaItem[]
+  activeId: string
+  onSelect: (id: string) => void
+  onClose: () => void
+}
+
+export function MediaLightbox({ items, activeId, onSelect, onClose }: MediaLightboxProps) {
+  const { t } = useI18n()
+  const previewItems = useMemo(
+    () => items.filter((item) => item.type === 'image' || item.type === 'video'),
+    [items]
+  )
+  const activeIndex = Math.max(
+    0,
+    previewItems.findIndex((item) => item.id === activeId)
+  )
+  const activeItem = previewItems[activeIndex]
+  const { signedUrl, loading } = useSignedUrl(activeItem?.url)
+
+  const selectOffset = useCallback(
+    (offset: number) => {
+      if (previewItems.length < 2) return
+      const nextIndex = (activeIndex + offset + previewItems.length) % previewItems.length
+      onSelect(previewItems[nextIndex].id)
+    },
+    [activeIndex, onSelect, previewItems]
+  )
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+      if (event.key === 'ArrowLeft') selectOffset(-1)
+      if (event.key === 'ArrowRight') selectOffset(1)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, selectOffset])
+
+  if (!activeItem) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-2 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={activeItem.name || t('gallery.title')}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="relative flex h-full w-full max-w-6xl items-center justify-center">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-2 right-2 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+          aria-label={t('common.close')}
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {previewItems.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => selectOffset(-1)}
+              className="absolute left-2 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 sm:left-4"
+              aria-label={t('common.previous')}
+            >
+              <ChevronLeft className="h-7 w-7" />
+            </button>
+            <button
+              type="button"
+              onClick={() => selectOffset(1)}
+              className="absolute right-2 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 sm:right-4"
+              aria-label={t('common.next')}
+            >
+              <ChevronRight className="h-7 w-7" />
+            </button>
+          </>
+        )}
+
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 py-14">
+          {loading || !signedUrl ? (
+            <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          ) : activeItem.type === 'video' ? (
+            <video
+              key={activeItem.id}
+              src={signedUrl}
+              className="max-h-full max-w-full rounded-lg object-contain"
+              controls
+              autoPlay
+              playsInline
+            />
+          ) : (
+            <div className="relative h-full w-full">
+              <Image
+                src={signedUrl}
+                alt={activeItem.name || t('gallery.images')}
+                fill
+                sizes="100vw"
+                className="object-contain"
+                priority
+              />
+            </div>
+          )}
+          <p className="max-w-full truncate px-16 text-sm text-white/80">
+            {activeItem.name ? `${activeItem.name} · ` : ''}
+            {activeIndex + 1}/{previewItems.length}
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

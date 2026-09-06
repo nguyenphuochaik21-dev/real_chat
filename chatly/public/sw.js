@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chatly-shell-v3'
+const CACHE_NAME = 'chatly-shell-v4'
 const SHELL_ASSETS = ['/offline', '/manifest.webmanifest', '/pwa-icon/192', '/pwa-icon/512']
 
 self.addEventListener('install', (event) => {
@@ -86,7 +86,10 @@ self.addEventListener('push', (event) => {
         badge: data.badge,
         tag: data.tag,
         data: data.data,
-        vibrate: [200, 100, 200],
+        renotify: true,
+        requireInteraction: data.data?.type === 'call',
+        silent: false,
+        vibrate: data.data?.type === 'call' ? [800, 300, 800, 300, 800] : [200, 100, 200],
         actions: [
           { action: 'open', title: 'Mở Chatly' },
           { action: 'dismiss', title: 'Đóng' },
