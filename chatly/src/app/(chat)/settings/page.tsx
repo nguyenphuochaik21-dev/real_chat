@@ -11,6 +11,7 @@ import {
   LogOut,
   Languages,
   ShieldCheck,
+  LifeBuoy,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -214,6 +215,18 @@ export default function SettingsPage() {
                     <option value="en">{t('settings.english')}</option>
                   </select>
                 ),
+              },
+            ]}
+          />
+
+          <SettingsSection
+            title={t('settings.help')}
+            items={[
+              {
+                icon: LifeBuoy,
+                title: t('settings.support'),
+                description: t('settings.supportHint'),
+                href: '/settings/support',
               },
             ]}
           />

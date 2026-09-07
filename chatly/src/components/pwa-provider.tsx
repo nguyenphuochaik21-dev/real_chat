@@ -43,6 +43,12 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     const handleInstalled = () => setInstallPrompt(null)
     const handleOnline = () => setOnline(true)
     const handleOffline = () => setOnline(false)
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      const value = event.data as { type?: string; url?: string } | null
+      if (value?.type !== 'CHATLY_NAVIGATE' || !value.url) return
+      const target = new URL(value.url, window.location.origin)
+      if (target.origin === window.location.origin) window.location.assign(target.href)
+    }
 
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
@@ -50,6 +56,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('offline', handleOffline)
     window.addEventListener('pointerdown', unlockAudio, { once: true })
     window.addEventListener('keydown', unlockAudio, { once: true })
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
 
     return () => {
       window.clearTimeout(onlineStatusTimeout)
@@ -59,6 +66,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('pointerdown', unlockAudio)
       window.removeEventListener('keydown', unlockAudio)
+      navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
     }
   }, [])
 

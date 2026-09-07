@@ -10,4 +10,4 @@ export type UpdateOf<T extends keyof Database['public']['Tables']> =
 export type PublicProfile = Pick<
   Tables<'profiles'>,
   'id' | 'username' | 'display_name' | 'avatar_url' | 'bio' | 'status' | 'last_seen' | 'created_at'
->
+> & { is_verified?: boolean }

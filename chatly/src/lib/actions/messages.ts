@@ -233,67 +233,6 @@ export interface MessageReaction {
 /**
  * Add a reaction to a message
  */
-async function addReaction(
-  messageId: string,
-  emoji: string
-): Promise<{ success: boolean; error?: string }> {
-  const id = parseInput(uuidSchema, messageId)
-  const reaction = parseInput(emojiSchema, emoji)
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  const { error } = await supabase.from('message_reactions').insert({
-    message_id: id,
-    user_id: user.id,
-    emoji: reaction,
-  })
-
-  // Ignore unique constraint violation (already reacted)
-  if (error && error.code !== '23505') {
-    return { success: false, error: error.message }
-  }
-
-  return { success: true }
-}
-
-/**
- * Remove a reaction from a message
- */
-async function removeReaction(
-  messageId: string,
-  emoji: string
-): Promise<{ success: boolean; error?: string }> {
-  const id = parseInput(uuidSchema, messageId)
-  const reaction = parseInput(emojiSchema, emoji)
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { success: false, error: 'Not authenticated' }
-  }
-
-  const { error } = await supabase
-    .from('message_reactions')
-    .delete()
-    .eq('message_id', id)
-    .eq('user_id', user.id)
-    .eq('emoji', reaction)
-
-  if (error) {
-    return { success: false, error: error.message }
-  }
-
-  return { success: true }
-}
-
 /**
  * Toggle a reaction on a message
  */
@@ -312,22 +251,12 @@ export async function toggleReaction(
     return { success: false, added: false, error: 'Not authenticated' }
   }
 
-  // Check if reaction exists
-  const { data: existing } = await supabase
-    .from('message_reactions')
-    .select('id')
-    .eq('message_id', id)
-    .eq('user_id', user.id)
-    .eq('emoji', reaction)
-    .single()
-
-  if (existing) {
-    const result = await removeReaction(id, reaction)
-    return { ...result, added: false }
-  } else {
-    const result = await addReaction(id, reaction)
-    return { ...result, added: true }
-  }
+  const { data: added, error } = await supabase.rpc('toggle_message_reaction', {
+    p_message_id: id,
+    p_emoji: reaction,
+  })
+  if (error) return { success: false, added: false, error: error.message }
+  return { success: true, added }
 }
 
 /**

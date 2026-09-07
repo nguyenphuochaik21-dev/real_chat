@@ -16,6 +16,7 @@ import {
   Clock,
   UsersRound,
   Ban,
+  BadgeCheck,
 } from 'lucide-react'
 import { cn, getCompactDisplayName } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -29,6 +30,7 @@ import { useConversationMedia } from '@/hooks/use-conversation-media'
 import { useMediaUpload } from '@/hooks/use-media-upload'
 import { isValidMediaFile } from '@/lib/supabase/storage'
 import { MediaMessageBubble } from './media-message-bubble'
+import { LinkPreview } from './link-preview'
 import { MediaAttachmentButton } from './media-attachment-button'
 import { PendingAttachments, type PendingAttachment } from './pending-attachments'
 import { MessageContextMenu } from './message-context-menu'
@@ -53,7 +55,7 @@ import { ConversationProfilePanel } from './conversation-profile-panel'
 type Message = Tables<'messages'>
 type Profile = PublicProfile
 type Conversation = Tables<'conversations'>
-type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
+type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'is_verified'>
 type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
 
 const MESSAGE_PAGE_SIZE = 50
@@ -271,7 +273,7 @@ function MessageBubble({
       {message.edited_at && <span className="italic">({t('chat.edited')})</span>}
       <span>{message.created_at ? formatMessageTime(message.created_at, dateLocale) : ''}</span>
       {isFromMe && (
-        <span className="flex">
+        <span className="flex items-center gap-1">
           {messageStatus === 'read' ? (
             <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
           ) : messageStatus === 'delivered' ? (
@@ -279,6 +281,11 @@ function MessageBubble({
           ) : messageStatus === 'sent' || messageStatus === 'sending' ? (
             <Check className="h-3.5 w-3.5" />
           ) : null}
+          {(messageStatus === 'sent' || messageStatus === 'sending') && (
+            <span>{t('chat.status.sent')}</span>
+          )}
+          {messageStatus === 'delivered' && <span>{t('chat.status.delivered')}</span>}
+          {messageStatus === 'read' && <span>{t('chat.status.read')}</span>}
         </span>
       )}
     </div>
@@ -360,7 +367,7 @@ function MessageBubble({
                 {mediaGroup && mediaGroup.length > 1 ? (
                   <div
                     className={cn(
-                      'max-w-[360px] overflow-hidden rounded-2xl',
+                      'max-w-[360px] overflow-hidden rounded-2xl border border-black/5 shadow-sm',
                       isFromMe
                         ? 'bg-primary-500 rounded-br-md text-white'
                         : 'rounded-bl-md bg-[var(--bg-message-in)]'
@@ -368,7 +375,7 @@ function MessageBubble({
                   >
                     <div
                       className={cn(
-                        'grid gap-1 overflow-hidden',
+                        'grid gap-0.5 overflow-hidden bg-[var(--border-default)]',
                         mediaGroup.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
                       )}
                     >
@@ -383,7 +390,7 @@ function MessageBubble({
                       ))}
                     </div>
                     {mediaCaption && (
-                      <p className="px-3 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap">
+                      <p className="border-t border-black/10 px-3.5 py-2.5 text-sm leading-5 [overflow-wrap:anywhere] whitespace-pre-wrap">
                         <MessageText content={mediaCaption} />
                       </p>
                     )}
@@ -460,6 +467,7 @@ function MessageBubble({
                 >
                   {isSticker ? message.content : <MessageText content={message.content} />}
                 </p>
+                {!isSticker && <LinkPreview content={message.content} />}
               </div>
               <MessageReactions
                 reactions={reactions}
@@ -731,7 +739,7 @@ export function ChatView({
           supabase
             .from('conversation_participants')
             .select(
-              'user_id, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at)'
+              'user_id, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified)'
             )
             .eq('conversation_id', conversationId),
         ])
@@ -818,7 +826,7 @@ export function ChatView({
         supabase
           .from('conversation_participants')
           .select(
-            'user_id, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at)'
+            'user_id, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified)'
           )
           .eq('conversation_id', conversationId),
       ])
@@ -999,7 +1007,9 @@ export function ChatView({
     let cancelled = false
     void supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
+      .select(
+        'id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified'
+      )
       .in('id', missingSenderIds)
       .then(({ data }) => {
         if (cancelled || !data) return
@@ -1617,31 +1627,32 @@ export function ChatView({
     setMessageReactions((prev) => {
       const next = new Map(prev)
       const existing = next.get(messageId) || []
-      const emojiIndex = existing.findIndex((r) => r.emoji === emoji)
+      const targetWasMine = existing.some(
+        (reaction) => reaction.emoji === emoji && reaction.userReacted
+      )
+      const cleared = existing.flatMap((reaction) => {
+        if (!reaction.userReacted) return [reaction]
+        return reaction.count > 1
+          ? [{ ...reaction, count: reaction.count - 1, userReacted: false }]
+          : []
+      })
 
-      if (emojiIndex >= 0) {
-        const updated = [...existing]
-        const currentReaction = updated[emojiIndex]
-        if (currentReaction.userReacted) {
-          if (currentReaction.count <= 1) {
-            updated.splice(emojiIndex, 1)
-          } else {
-            updated[emojiIndex] = {
-              ...currentReaction,
-              count: currentReaction.count - 1,
-              userReacted: false,
-            }
-          }
-        } else {
+      if (targetWasMine) {
+        if (cleared.length) next.set(messageId, cleared)
+        else next.delete(messageId)
+      } else {
+        const emojiIndex = cleared.findIndex((reaction) => reaction.emoji === emoji)
+        if (emojiIndex >= 0) {
+          const updated = [...cleared]
           updated[emojiIndex] = {
-            ...currentReaction,
-            count: currentReaction.count + 1,
+            ...updated[emojiIndex],
+            count: updated[emojiIndex].count + 1,
             userReacted: true,
           }
+          next.set(messageId, updated)
+        } else {
+          next.set(messageId, [...cleared, { emoji, count: 1, userReacted: true }])
         }
-        next.set(messageId, updated)
-      } else {
-        next.set(messageId, [...existing, { emoji, count: 1, userReacted: true }])
       }
       return next
     })
@@ -1907,9 +1918,17 @@ export function ChatView({
               />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="truncate font-semibold text-[var(--text-primary)]">
-                {getCompactDisplayName(participant.display_name)}
-              </h2>
+              <div className="flex items-center gap-1">
+                <h2 className="truncate font-semibold text-[var(--text-primary)]">
+                  {getCompactDisplayName(participant.display_name)}
+                </h2>
+                {participant.is_verified && (
+                  <BadgeCheck
+                    className="h-4 w-4 shrink-0 fill-sky-500 text-white"
+                    aria-label={t('verified.label')}
+                  />
+                )}
+              </div>
               <p
                 className={cn(
                   'truncate text-xs',

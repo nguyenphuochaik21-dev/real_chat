@@ -7,6 +7,7 @@ import {
   MoreVertical,
   Pencil,
   Search,
+  Share2,
   Shield,
   Trash2,
   UserMinus,
@@ -23,6 +24,8 @@ import {
   inviteGroupMembers,
   leaveGroup,
   removeGroupMember,
+  resolveGroupJoinRequest,
+  setGroupJoinApproval,
   setGroupMemberRole,
   updateGroupDetails,
   type GroupDetails,
@@ -55,6 +58,7 @@ export function GroupDetailsPanel({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [editingName, setEditingName] = useState(false)
   const [name, setName] = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -208,6 +212,22 @@ export function GroupDetailsPanel({
     }
   }
 
+  const handleShare = async () => {
+    if (!details?.conversation.share_token) return
+    const url = `${window.location.origin}/join/${details.conversation.share_token}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: details.conversation.title ?? t('group.tab'), url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        setNotice(t('share.copied'))
+      }
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === 'AbortError') return
+      setError(t('common.unknownError'))
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[65] bg-black/45" onMouseDown={onClose}>
       <aside
@@ -280,7 +300,89 @@ export function GroupDetailsPanel({
                   <p className="mt-1 text-sm text-[var(--text-muted)]">
                     {t('group.membersCount', { count: details.members.length })}
                   </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => void handleShare()}
+                  >
+                    <Share2 className="h-4 w-4" />
+                    {t('share.group')}
+                  </Button>
+                  {notice && <p className="mt-2 text-xs text-emerald-500">{notice}</p>}
                 </section>
+
+                {details.currentUserRole === 'owner' && (
+                  <section className="rounded-xl border border-[var(--border-default)] p-3">
+                    <label className="flex cursor-pointer items-center justify-between gap-4">
+                      <span>
+                        <span className="block text-sm font-medium text-[var(--text-primary)]">
+                          {t('group.joinApproval')}
+                        </span>
+                        <span className="block text-xs text-[var(--text-muted)]">
+                          {t('group.joinApprovalHint')}
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={details.conversation.join_requires_approval}
+                        disabled={busy === 'join-approval'}
+                        onChange={(event) =>
+                          void runMutation('join-approval', () =>
+                            setGroupJoinApproval(conversationId, event.target.checked).then(
+                              () => undefined
+                            )
+                          )
+                        }
+                        className="accent-primary-500 h-5 w-5"
+                      />
+                    </label>
+                  </section>
+                )}
+
+                {canManage && details.joinRequests.length > 0 && (
+                  <section>
+                    <h3 className="mb-2 font-medium text-[var(--text-primary)]">
+                      {t('group.joinRequests')} ({details.joinRequests.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {details.joinRequests.map((request) => (
+                        <div
+                          key={request.id}
+                          className="flex items-center gap-3 rounded-xl bg-[var(--bg-app)] p-3"
+                        >
+                          <Avatar user={request.profile} size="sm" />
+                          <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {request.profile.display_name}
+                          </p>
+                          <Button
+                            size="sm"
+                            disabled={busy === `join-${request.id}`}
+                            onClick={() =>
+                              void runMutation(`join-${request.id}`, () =>
+                                resolveGroupJoinRequest(request.id, true)
+                              )
+                            }
+                          >
+                            {t('group.approve')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy === `join-${request.id}`}
+                            onClick={() =>
+                              void runMutation(`join-${request.id}`, () =>
+                                resolveGroupJoinRequest(request.id, false)
+                              )
+                            }
+                          >
+                            {t('group.decline')}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
 
                 <section>
                   <div className="mb-3 flex items-center justify-between">

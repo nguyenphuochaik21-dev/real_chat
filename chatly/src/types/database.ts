@@ -62,7 +62,9 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string
+          join_requires_approval: boolean
           last_message_at: string | null
+          share_token: string | null
           title: string | null
           type: Database['public']['Enums']['conversation_type'] | null
           updated_at: string | null
@@ -72,7 +74,9 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           id?: string
+          join_requires_approval?: boolean
           last_message_at?: string | null
+          share_token?: string | null
           title?: string | null
           type?: Database['public']['Enums']['conversation_type'] | null
           updated_at?: string | null
@@ -82,7 +86,9 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           id?: string
+          join_requires_approval?: boolean
           last_message_at?: string | null
+          share_token?: string | null
           title?: string | null
           type?: Database['public']['Enums']['conversation_type'] | null
           updated_at?: string | null
@@ -189,6 +195,7 @@ export type Database = {
           display_name: string
           id: string
           is_suspended: boolean
+          is_verified: boolean
           last_seen: string | null
           phone: string | null
           phone_visibility: 'public' | 'private'
@@ -207,6 +214,7 @@ export type Database = {
           display_name: string
           id: string
           is_suspended?: boolean
+          is_verified?: boolean
           last_seen?: string | null
           phone?: string | null
           phone_visibility?: 'public' | 'private'
@@ -225,6 +233,7 @@ export type Database = {
           display_name?: string
           id?: string
           is_suspended?: boolean
+          is_verified?: boolean
           last_seen?: string | null
           phone?: string | null
           phone_visibility?: 'public' | 'private'
@@ -235,6 +244,98 @@ export type Database = {
           username?: string
         }
         Relationships: []
+      }
+      group_join_requests: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          status: 'pending' | 'approved' | 'declined'
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: 'pending' | 'approved' | 'declined'
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: 'pending' | 'approved' | 'declined'
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'group_join_requests_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'group_join_requests_conversation_id_fkey'
+            columns: ['conversation_id']
+            isOneToOne: false
+            referencedRelation: 'conversations'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      support_requests: {
+        Row: {
+          admin_response: string | null
+          category: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
+          content: string
+          created_at: string
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          status: 'open' | 'in_progress' | 'resolved'
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_response?: string | null
+          category: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
+          content: string
+          created_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: 'open' | 'in_progress' | 'resolved'
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_response?: string | null
+          category?: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
+          content?: string
+          created_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: 'open' | 'in_progress' | 'resolved'
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'support_requests_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
+        ]
       }
       friendships: {
         Row: {
@@ -807,6 +908,7 @@ export type Database = {
           friend_count: number
           id: string
           is_suspended: boolean
+          is_verified: boolean
           last_seen: string | null
           role: string
           status: string | null
@@ -816,6 +918,10 @@ export type Database = {
       }
       admin_update_user: {
         Args: { p_is_suspended: boolean; p_role: string; p_user_id: string }
+        Returns: boolean
+      }
+      admin_set_user_verified: {
+        Args: { p_user_id: string; p_verified: boolean }
         Returns: boolean
       }
       bootstrap_chatly_admin: {
@@ -913,6 +1019,10 @@ export type Database = {
         Args: { p_avatar_url?: string; p_conversation_id: string; p_title: string }
         Returns: boolean
       }
+      toggle_message_reaction: {
+        Args: { p_emoji: string; p_message_id: string }
+        Returns: boolean
+      }
       get_call_history: {
         Args: { p_user_id?: string; p_limit?: number }
         Returns: unknown
@@ -923,6 +1033,26 @@ export type Database = {
       }
       get_or_create_direct_conversation: {
         Args: { p_other_user_id: string }
+        Returns: string
+      }
+      get_support_admin_profile: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      get_group_share_info: {
+        Args: { p_share_token: string }
+        Returns: Json
+      }
+      join_group_from_share: {
+        Args: { p_share_token: string }
+        Returns: string
+      }
+      resolve_group_join_request: {
+        Args: { p_approve: boolean; p_request_id: string }
+        Returns: boolean
+      }
+      set_group_join_approval: {
+        Args: { p_conversation_id: string; p_enabled: boolean }
         Returns: string
       }
       get_my_profile: {

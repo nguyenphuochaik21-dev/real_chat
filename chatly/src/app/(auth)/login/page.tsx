@@ -18,7 +18,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [magicLinkSent, setMagicLinkSent] = useState(false)
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -57,43 +56,6 @@ export default function LoginPage() {
       setError(error.message)
       setIsLoading(false)
     }
-  }
-
-  const handleMagicLink = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError('')
-
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/callback`,
-      },
-    })
-
-    if (error) {
-      setError(error.message)
-    } else {
-      setMagicLinkSent(true)
-    }
-    setIsLoading(false)
-  }
-
-  if (magicLinkSent) {
-    return (
-      <div className="text-center">
-        <div className="bg-primary-100 dark:bg-primary-900/30 mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full">
-          <MessageSquare className="text-primary-600 dark:text-primary-400 h-8 w-8" />
-        </div>
-        <h2 className="text-2xl font-bold text-[var(--text-primary)]">{t('auth.checkEmail')}</h2>
-        <p className="mt-2 text-[var(--text-secondary)]">{t('auth.magicSent', { email })}</p>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">{t('auth.magicHint')}</p>
-        <Button variant="outline" className="mt-6" onClick={() => setMagicLinkSent(false)}>
-          {t('auth.differentEmail')}
-        </Button>
-      </div>
-    )
   }
 
   return (
@@ -182,14 +144,9 @@ export default function LoginPage() {
             >
               {t('auth.password')}
             </label>
-            <button
-              type="button"
-              onClick={handleMagicLink}
-              disabled={!email || isLoading}
-              className="text-primary-500 text-sm hover:underline disabled:opacity-50"
-            >
+            <Link href="/forgot-password" className="text-primary-500 text-sm hover:underline">
               {t('auth.forgotPassword')}
-            </button>
+            </Link>
           </div>
           <div className="relative mt-1">
             <Input

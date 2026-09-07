@@ -17,6 +17,23 @@ export interface GroupDetails {
   conversation: Tables<'conversations'>
   currentUserRole: GroupMemberRole
   members: GroupMember[]
+  joinRequests: GroupJoinRequest[]
+}
+
+export interface GroupJoinRequest {
+  id: string
+  createdAt: string
+  profile: PublicProfile
+}
+
+export interface GroupShareInfo {
+  id: string
+  title: string
+  avatar_url: string | null
+  join_requires_approval: boolean
+  member_count: number
+  is_member: boolean
+  request_pending: boolean
 }
 
 async function getAuthenticatedClient() {
@@ -76,11 +93,84 @@ export async function getGroupDetails(conversationId: string): Promise<GroupDeta
 
   if (!currentUserRole) throw new Error('You are not a member of this group')
 
+  let joinRequests: GroupJoinRequest[] = []
+  if (currentUserRole === 'owner' || currentUserRole === 'admin') {
+    const { data: requests, error: requestsError } = await supabase
+      .from('group_join_requests')
+      .select(
+        'id, created_at, profile:profiles!group_join_requests_user_id_fkey(id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified)'
+      )
+      .eq('conversation_id', id)
+      .eq('status', 'pending')
+      .order('created_at')
+      .limit(100)
+    if (requestsError) throw new Error(requestsError.message)
+    joinRequests = (requests ?? []).flatMap((request) => {
+      const profile = Array.isArray(request.profile) ? request.profile[0] : request.profile
+      return profile
+        ? [{ id: request.id, createdAt: request.created_at, profile: profile as PublicProfile }]
+        : []
+    })
+  }
+
   return {
     conversation: conversationResult.data,
     currentUserRole,
     members,
+    joinRequests,
   }
+}
+
+export async function setGroupJoinApproval(conversationId: string, enabled: boolean) {
+  const id = parseInput(uuidSchema, conversationId)
+  const { supabase } = await getAuthenticatedClient()
+  const { data, error } = await supabase.rpc('set_group_join_approval', {
+    p_conversation_id: id,
+    p_enabled: enabled,
+  })
+  if (error) throw new Error(error.message)
+  return data
+}
+
+export async function resolveGroupJoinRequest(requestId: string, approve: boolean) {
+  const id = parseInput(uuidSchema, requestId)
+  const { supabase } = await getAuthenticatedClient()
+  const { error } = await supabase.rpc('resolve_group_join_request', {
+    p_request_id: id,
+    p_approve: approve,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function getGroupShareInfo(token: string): Promise<GroupShareInfo | null> {
+  const shareToken = parseInput(uuidSchema, token)
+  const { supabase } = await getAuthenticatedClient()
+  const { data, error } = await supabase.rpc('get_group_share_info', {
+    p_share_token: shareToken,
+  })
+  if (error) throw new Error(error.message)
+  if (!data || typeof data !== 'object' || Array.isArray(data) || typeof data.id !== 'string') {
+    return null
+  }
+  return {
+    id: data.id,
+    title: typeof data.title === 'string' ? data.title : 'Group',
+    avatar_url: typeof data.avatar_url === 'string' ? data.avatar_url : null,
+    join_requires_approval: data.join_requires_approval === true,
+    member_count: typeof data.member_count === 'number' ? data.member_count : 0,
+    is_member: data.is_member === true,
+    request_pending: data.request_pending === true,
+  }
+}
+
+export async function joinGroupFromShare(token: string) {
+  const shareToken = parseInput(uuidSchema, token)
+  const { supabase } = await getAuthenticatedClient()
+  const { data, error } = await supabase.rpc('join_group_from_share', {
+    p_share_token: shareToken,
+  })
+  if (error) throw new Error(error.message)
+  return data === 'pending' ? 'pending' : 'joined'
 }
 
 export async function inviteGroupMembers(conversationId: string, userIds: string[]) {

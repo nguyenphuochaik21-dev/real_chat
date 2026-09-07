@@ -83,6 +83,7 @@ function parsePublicProfile(value: Json | null): PublicProfileDetails | null {
         : null,
     last_seen: stringValue(profile.last_seen),
     created_at: stringValue(profile.created_at),
+    is_verified: profile.is_verified === true,
     phone: stringValue(profile.phone),
     birth_date: stringValue(profile.birth_date),
     social_links: socialLinksValue(profile.social_links),
@@ -106,7 +107,9 @@ export async function getPublicProfile(profileId: string): Promise<PublicProfile
 
   const { data: fallback, error: fallbackError } = await supabase
     .from('profiles')
-    .select('id, username, display_name, avatar_url, bio, status, last_seen, created_at')
+    .select(
+      'id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified'
+    )
     .eq('id', id)
     .maybeSingle()
   if (fallbackError || !fallback) return null
@@ -143,7 +146,7 @@ export async function getMyProfile(): Promise<MyProfileDetails | null> {
   const { data: fallback, error: fallbackError } = await supabase
     .from('profiles')
     .select(
-      'id, username, display_name, avatar_url, bio, phone, status, last_seen, created_at, updated_at, role, is_suspended'
+      'id, username, display_name, avatar_url, bio, phone, status, last_seen, created_at, updated_at, role, is_suspended, is_verified'
     )
     .eq('id', user.id)
     .single()

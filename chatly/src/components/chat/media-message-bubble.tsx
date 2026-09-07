@@ -83,7 +83,7 @@ export function MediaMessageBubble({
         onClick={() => onOpenMedia?.(message.id)}
         className={cn(
           'block overflow-hidden text-left',
-          compact ? 'h-full w-full rounded-lg' : 'rounded-2xl',
+          compact ? 'h-full w-full' : 'rounded-2xl border border-black/5 shadow-sm',
           !compact && (isFromMe ? 'rounded-br-md' : 'rounded-bl-md'),
           !compact &&
             hasCaption &&
@@ -104,7 +104,11 @@ export function MediaMessageBubble({
           )}
           onLoad={() => setImageLoaded(true)}
         />
-        {!compact && hasCaption && <p className="px-3 py-2 text-sm">{message.content}</p>}
+        {!compact && hasCaption && (
+          <p className="border-t border-black/10 px-3.5 py-2.5 text-sm leading-5 whitespace-pre-wrap">
+            {message.content}
+          </p>
+        )}
       </button>
     )
   }

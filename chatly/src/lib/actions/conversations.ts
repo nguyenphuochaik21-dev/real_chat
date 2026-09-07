@@ -61,16 +61,6 @@ async function createConversationLegacy(
   )
   if (existing) return existing.id
 
-  const { data: friendship } = await supabase
-    .from('friendships')
-    .select('id')
-    .eq('status', 'accepted')
-    .or(
-      `and(requester_id.eq.${currentUserId},addressee_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},addressee_id.eq.${currentUserId})`
-    )
-    .maybeSingle()
-  if (!friendship) throw new Error('Only accepted friends can start a conversation')
-
   const { data: block } = await supabase
     .from('user_blocks')
     .select('id')

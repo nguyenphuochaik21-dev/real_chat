@@ -294,6 +294,15 @@ export default function ContactsPage() {
                 {filtered.discover.map((profile) => (
                   <ContactRow key={profile.id} profile={profile}>
                     <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => void startChat(profile.id)}
+                      disabled={busyId === profile.id}
+                      aria-label={t('friends.message')}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </Button>
+                    <Button
                       variant="outline"
                       size="sm"
                       onClick={() =>

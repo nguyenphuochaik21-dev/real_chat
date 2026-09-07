@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chatly-shell-v5'
+const CACHE_NAME = 'chatly-shell-v6'
 const SHELL_ASSETS = [
   '/offline',
   '/manifest.webmanifest',
@@ -85,7 +85,10 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      if (clients.some((client) => client.visibilityState === 'visible')) return undefined
+      const isIncomingCall = data.data?.type === 'call'
+      if (!isIncomingCall && clients.some((client) => client.visibilityState === 'visible')) {
+        return undefined
+      }
       return self.registration.showNotification(data.title, {
         body: data.body,
         icon: data.icon,
@@ -123,10 +126,16 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if ('navigate' in client && 'focus' in client) {
-          return client.navigate(targetUrl).then(() => client.focus())
+          client.postMessage({ type: 'CHATLY_NAVIGATE', url: targetUrl })
+          return client
+            .navigate(targetUrl)
+            .catch(() => client)
+            .then(() => client.focus())
         }
       }
-      return self.clients.openWindow ? self.clients.openWindow(targetUrl) : undefined
+      return self.clients.openWindow
+        ? self.clients.openWindow(targetUrl).then((client) => client?.focus())
+        : undefined
     })
   )
 })

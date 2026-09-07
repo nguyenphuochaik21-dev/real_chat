@@ -86,15 +86,14 @@ export async function searchMessages(
 
     if (error) {
       console.error('Search error:', error)
-      // Fallback to basic search if function not available
-      return fallbackSearch(supabase, user.id, searchQuery, safeFilters, safeLimit, safeOffset)
+      const functionMissing = error.code === 'PGRST202' || error.message.includes('search_messages')
+      if (functionMissing) {
+        return fallbackSearch(supabase, user.id, searchQuery, safeFilters, safeLimit, safeOffset)
+      }
+      throw error
     }
 
-    if (!data?.length) {
-      return fallbackSearch(supabase, user.id, searchQuery, safeFilters, safeLimit, safeOffset)
-    }
-
-    return { results: data, total: data.length, query: searchQuery }
+    return { results: data ?? [], total: data?.length ?? 0, query: searchQuery }
   } catch (err) {
     console.error('Search error:', err)
     throw err
@@ -115,6 +114,7 @@ async function fallbackSearch(
     .from('conversation_participants')
     .select('conversation_id')
     .eq('user_id', userId)
+    .limit(500)
 
   const conversationIds = participations?.map((p) => p.conversation_id) || []
 

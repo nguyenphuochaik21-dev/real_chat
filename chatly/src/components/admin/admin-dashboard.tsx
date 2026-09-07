@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Ban,
+  BadgeCheck,
   CheckCircle2,
   KeyRound,
+  LifeBuoy,
   MessageSquare,
   Phone,
   Search,
@@ -20,7 +22,10 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   getAdminUsersPage,
+  getAdminSupportRequests,
+  setAdminUserVerified,
   updateAdminUser,
+  updateSupportRequest,
   type AdminDashboardData,
   type AdminUser,
 } from '@/lib/actions/admin'
@@ -36,6 +41,9 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
   const [users, setUsers] = useState(data.users)
   const [totalUsers, setTotalUsers] = useState(data.totalUsers)
   const [stats, setStats] = useState(data.stats)
+  const [supportRequests, setSupportRequests] = useState(data.supportRequests)
+  const [totalSupportRequests, setTotalSupportRequests] = useState(data.totalSupportRequests)
+  const [supportResponses, setSupportResponses] = useState<Record<string, string>>({})
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -121,6 +129,62 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
     }
   }
 
+  const toggleVerification = async (user: AdminUser) => {
+    setBusyId(user.id)
+    setError(null)
+    try {
+      await setAdminUserVerified(user.id, !user.is_verified)
+      setUsers((current) =>
+        current.map((managedUser) =>
+          managedUser.id === user.id
+            ? { ...managedUser, is_verified: user.role === 'admin' || !user.is_verified }
+            : managedUser
+        )
+      )
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : t('common.unknownError'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const resolveSupport = async (requestId: string, status: 'open' | 'in_progress' | 'resolved') => {
+    setBusyId(requestId)
+    setError(null)
+    try {
+      const response =
+        supportResponses[requestId] ??
+        supportRequests.find((request) => request.id === requestId)?.admin_response ??
+        ''
+      await updateSupportRequest(requestId, status, response)
+      setSupportRequests((current) =>
+        current.map((request) =>
+          request.id === requestId
+            ? { ...request, status, admin_response: response || null }
+            : request
+        )
+      )
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : t('common.unknownError'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const loadMoreSupport = async () => {
+    if (loadingUsers || supportRequests.length >= totalSupportRequests) return
+    setLoadingUsers(true)
+    try {
+      const page = await getAdminSupportRequests(supportRequests.length, 30)
+      setSupportRequests((current) => [...current, ...page.requests])
+      setTotalSupportRequests(page.total)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
+    } finally {
+      setLoadingUsers(false)
+    }
+  }
+
   const statCards = [
     { label: t('admin.users'), value: stats.users, icon: Users },
     { label: t('admin.conversations'), value: stats.conversations, icon: MessageSquare },
@@ -190,6 +254,12 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                             Admin
                           </Badge>
                         )}
+                        {user.is_verified && (
+                          <BadgeCheck
+                            className="h-4 w-4 fill-sky-500 text-white"
+                            aria-label={t('verified.label')}
+                          />
+                        )}
                         {user.is_suspended && (
                           <Badge className="bg-red-500/10 text-red-500" size="sm">
                             {t('admin.suspended')}
@@ -207,6 +277,15 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                   </Link>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === user.id || user.role === 'admin'}
+                      onClick={() => void toggleVerification(user)}
+                    >
+                      <BadgeCheck className="h-4 w-4" />
+                      {user.is_verified ? t('admin.unverify') : t('admin.verify')}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -255,6 +334,83 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                 </Button>
               )}
             </div>
+          </section>
+
+          <section className="rounded-xl bg-[var(--bg-panel)] shadow-sm">
+            <div className="flex items-center gap-2 border-b border-[var(--border-default)] p-4">
+              <LifeBuoy className="text-primary-500 h-5 w-5" />
+              <h2 className="font-semibold text-[var(--text-primary)]">
+                {t('admin.supportQueue')}
+              </h2>
+              <Badge variant="secondary">{totalSupportRequests}</Badge>
+            </div>
+            <div className="divide-y divide-[var(--border-default)]">
+              {supportRequests.map((request) => (
+                <article key={request.id} className="list-render-row space-y-3 p-4">
+                  <div className="flex items-start gap-3">
+                    {request.user && <Avatar user={request.user} size="sm" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-[var(--text-primary)]">
+                        {request.user?.display_name ?? t('common.user')}
+                      </p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {t(`support.${request.category}`)} ·{' '}
+                        {new Date(request.created_at).toLocaleString(dateLocale)}
+                      </p>
+                    </div>
+                    <Badge variant={request.status === 'resolved' ? 'primary' : 'secondary'}>
+                      {t(`support.${request.status}`)}
+                    </Badge>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap text-[var(--text-secondary)]">
+                    {request.content}
+                  </p>
+                  <textarea
+                    value={supportResponses[request.id] ?? request.admin_response ?? ''}
+                    onChange={(event) =>
+                      setSupportResponses((current) => ({
+                        ...current,
+                        [request.id]: event.target.value,
+                      }))
+                    }
+                    maxLength={4000}
+                    rows={2}
+                    className="focus:ring-primary-500 w-full resize-y rounded-lg border border-[var(--border-default)] bg-[var(--bg-app)] px-3 py-2 text-sm focus:ring-2 focus:outline-none"
+                    placeholder={t('support.adminResponse')}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === request.id}
+                      onClick={() => void resolveSupport(request.id, 'in_progress')}
+                    >
+                      {t('support.in_progress')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busyId === request.id}
+                      onClick={() => void resolveSupport(request.id, 'resolved')}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      {t('support.resolved')}
+                    </Button>
+                  </div>
+                </article>
+              ))}
+              {!supportRequests.length && (
+                <p className="p-6 text-center text-sm text-[var(--text-muted)]">
+                  {t('support.empty')}
+                </p>
+              )}
+            </div>
+            {supportRequests.length < totalSupportRequests && (
+              <div className="border-t border-[var(--border-default)] p-4 text-right">
+                <Button variant="outline" size="sm" onClick={() => void loadMoreSupport()}>
+                  {t('admin.loadMore')}
+                </Button>
+              </div>
+            )}
           </section>
         </main>
       </ScrollArea>

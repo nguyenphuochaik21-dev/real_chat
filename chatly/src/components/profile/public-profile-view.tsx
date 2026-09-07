@@ -8,11 +8,13 @@ import {
   CalendarDays,
   Cake,
   Check,
+  CheckCircle2,
   Clock3,
   Edit3,
   MessageSquare,
   Globe2,
   Phone,
+  Share2,
   UserMinus,
   UserPlus,
   X,
@@ -80,6 +82,18 @@ export function PublicProfileView({
     }
   }
 
+  const shareProfile = async () => {
+    const url = `${window.location.origin}/profile/${profile.id}`
+    try {
+      if (navigator.share) await navigator.share({ title: profile.display_name, url })
+      else await navigator.clipboard.writeText(url)
+    } catch (shareError) {
+      if (!(shareError instanceof DOMException && shareError.name === 'AbortError')) {
+        setError(t('common.unknownError'))
+      }
+    }
+  }
+
   const renderActions = () => {
     if (isSelf) {
       return (
@@ -115,6 +129,10 @@ export function PublicProfileView({
     if (initialFriendship?.status === 'pending' && isIncoming) {
       return (
         <>
+          <Button onClick={() => void startChat()} disabled={busy}>
+            <MessageSquare className="h-4 w-4" />
+            {t('friends.message')}
+          </Button>
           <Button
             onClick={() => void runAction(() => respondFriendRequest(initialFriendship.id, true))}
             disabled={busy}
@@ -136,22 +154,38 @@ export function PublicProfileView({
 
     if (initialFriendship?.status === 'pending') {
       return (
-        <Button
-          variant="outline"
-          onClick={() => void runAction(() => removeFriendship(initialFriendship.id))}
-          disabled={busy}
-        >
-          <Clock3 className="h-4 w-4" />
-          {t('friends.cancel')}
-        </Button>
+        <>
+          <Button onClick={() => void startChat()} disabled={busy}>
+            <MessageSquare className="h-4 w-4" />
+            {t('friends.message')}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void runAction(() => removeFriendship(initialFriendship.id))}
+            disabled={busy}
+          >
+            <Clock3 className="h-4 w-4" />
+            {t('friends.cancel')}
+          </Button>
+        </>
       )
     }
 
     return (
-      <Button onClick={() => void runAction(() => sendFriendRequest(profile.id))} disabled={busy}>
-        <UserPlus className="h-4 w-4" />
-        {t('friends.add')}
-      </Button>
+      <>
+        <Button onClick={() => void startChat()} disabled={busy}>
+          <MessageSquare className="h-4 w-4" />
+          {t('friends.message')}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => void runAction(() => sendFriendRequest(profile.id))}
+          disabled={busy}
+        >
+          <UserPlus className="h-4 w-4" />
+          {t('friends.add')}
+        </Button>
+      </>
     )
   }
 
@@ -179,6 +213,12 @@ export function PublicProfileView({
               <h2 className="text-2xl font-bold text-[var(--text-primary)]">
                 {profile.display_name}
               </h2>
+              {profile.is_verified && (
+                <CheckCircle2
+                  className="h-5 w-5 fill-sky-500 text-white"
+                  aria-label={t('verified.label')}
+                />
+              )}
               {initialFriendship?.status === 'accepted' && (
                 <Badge variant="secondary">{t('publicProfile.friend')}</Badge>
               )}
@@ -187,7 +227,13 @@ export function PublicProfileView({
             <p className="mt-4 max-w-lg text-sm leading-6 text-[var(--text-secondary)]">
               {profile.bio || t('publicProfile.noBio')}
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">{renderActions()}</div>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {renderActions()}
+              <Button variant="outline" onClick={() => void shareProfile()}>
+                <Share2 className="h-4 w-4" />
+                {t('share.profile')}
+              </Button>
+            </div>
             {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
           </div>
 
