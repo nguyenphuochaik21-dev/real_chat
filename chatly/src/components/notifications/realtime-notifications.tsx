@@ -14,6 +14,7 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
   const { t } = useI18n()
   const pathname = usePathname()
   const pathnameRef = useRef(pathname)
+  const mediaGroupVersionsRef = useRef(new Map<string, number>())
 
   useEffect(() => {
     pathnameRef.current = pathname
@@ -22,6 +23,7 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
   useEffect(() => {
     if (!userId) return
     let active = true
+    const mediaGroupVersions = mediaGroupVersionsRef.current
     const supabase = createClient()
     const addNotification = useNotificationStore.getState().addNotification
 
@@ -37,9 +39,20 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
             conversation_id: string
             content: string
             content_type: string | null
+            media_group_id: string | null
           }
           if (message.sender_id === userId) return
           if (pathnameRef.current === `/chats/${message.conversation_id}`) return
+
+          if (message.media_group_id) {
+            const version = (mediaGroupVersions.get(message.media_group_id) ?? 0) + 1
+            mediaGroupVersions.set(message.media_group_id, version)
+            await new Promise((resolve) => window.setTimeout(resolve, 350))
+            if (!active || mediaGroupVersions.get(message.media_group_id) !== version) {
+              return
+            }
+            mediaGroupVersions.delete(message.media_group_id)
+          }
 
           const [{ data: participation }, { data: block }, { data: sender }, { data: profile }] =
             await Promise.all([
@@ -94,6 +107,7 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
 
     return () => {
       active = false
+      mediaGroupVersions.clear()
       void supabase.removeChannel(channel)
     }
   }, [t, userId])

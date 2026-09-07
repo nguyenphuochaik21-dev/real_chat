@@ -26,8 +26,11 @@ import { createClient } from '@/lib/supabase/client'
 import { useTyping } from '@/hooks/use-typing'
 import { useReadReceipts } from '@/hooks/use-read-receipts'
 import { useConversationMedia } from '@/hooks/use-conversation-media'
+import { useMediaUpload } from '@/hooks/use-media-upload'
+import { isValidMediaFile } from '@/lib/supabase/storage'
 import { MediaMessageBubble } from './media-message-bubble'
 import { MediaAttachmentButton } from './media-attachment-button'
+import { PendingAttachments, type PendingAttachment } from './pending-attachments'
 import { MessageContextMenu } from './message-context-menu'
 import { ReplyPreview } from './reply-preview'
 import { MessageReactions } from './message-reactions'
@@ -54,6 +57,7 @@ type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url'>
 type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
 
 const MESSAGE_PAGE_SIZE = 50
+const MAX_PENDING_ATTACHMENTS = 12
 
 const GroupDetailsPanel = dynamic(
   () =>
@@ -190,6 +194,9 @@ function MessageBubble({
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
   const isDeleted = !!message.deleted_at
+  const mediaCaption = (mediaGroup ?? [message]).find(
+    (item) => item.content?.trim() && item.content !== item.media_name
+  )?.content
   const isSticker =
     contentType === 'text' &&
     !!message.content?.trim() &&
@@ -353,19 +360,33 @@ function MessageBubble({
                 {mediaGroup && mediaGroup.length > 1 ? (
                   <div
                     className={cn(
-                      'grid max-w-[360px] gap-1 overflow-hidden rounded-2xl',
-                      mediaGroup.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
+                      'max-w-[360px] overflow-hidden rounded-2xl',
+                      isFromMe
+                        ? 'bg-primary-500 rounded-br-md text-white'
+                        : 'rounded-bl-md bg-[var(--bg-message-in)]'
                     )}
                   >
-                    {mediaGroup.map((groupedMessage) => (
-                      <MediaMessageBubble
-                        key={groupedMessage.id}
-                        message={groupedMessage}
-                        isFromMe={isFromMe}
-                        compact
-                        onOpenMedia={onOpenMedia}
-                      />
-                    ))}
+                    <div
+                      className={cn(
+                        'grid gap-1 overflow-hidden',
+                        mediaGroup.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
+                      )}
+                    >
+                      {mediaGroup.map((groupedMessage) => (
+                        <MediaMessageBubble
+                          key={groupedMessage.id}
+                          message={groupedMessage}
+                          isFromMe={isFromMe}
+                          compact
+                          onOpenMedia={onOpenMedia}
+                        />
+                      ))}
+                    </div>
+                    {mediaCaption && (
+                      <p className="px-3 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap">
+                        <MessageText content={mediaCaption} />
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <MediaMessageBubble
@@ -496,6 +517,7 @@ export function ChatView({
   // Show loading only if we don't have cached data
   const [loading, setLoading] = useState(!cached)
   const [sending, setSending] = useState(false)
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   // Track the raw status + last_seen from realtime so we can recompute the
   // *effective* status (a stale "online" should show as offline).
   const [participantStatusRaw, setParticipantStatusRaw] = useState<{
@@ -527,6 +549,23 @@ export function ChatView({
   // Store hooks
   const { replyToMessage, clearReply } = useMessageActionsStore()
   const addToast = useNotificationStore((state) => state.addToast)
+
+  const handleUploadComplete = useCallback((message: Message) => {
+    setMessages((current) => {
+      if (current.some((item) => item.id === message.id)) return current
+      return [...current, message]
+    })
+  }, [])
+  const {
+    uploadBatch,
+    uploading,
+    progress: uploadProgress,
+  } = useMediaUpload({
+    conversationId: conversationId || '',
+    userId: currentUserId,
+    onUploadComplete: handleUploadComplete,
+    onError: (uploadError) => console.error('Upload error:', uploadError),
+  })
 
   // Draft messages
   const { getDraft, setDraft, clearDraft } = useDraftStore()
@@ -625,7 +664,21 @@ export function ChatView({
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const loadedMessageIdsRef = useRef<Set<string>>(new Set())
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([])
   const supabase = createClient()
+
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments
+  }, [pendingAttachments])
+
+  useEffect(
+    () => () => {
+      pendingAttachmentsRef.current.forEach((attachment) => {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+      })
+    },
+    []
+  )
 
   // Typing indicators
   const { typingUserIds, onType, stopTyping } = useTyping(conversationId, currentUserId)
@@ -1290,6 +1343,67 @@ export function ChatView({
   // ============================================================================
   // Send Message Handler (supports reply)
   // ============================================================================
+  const addPendingAttachments = useCallback(
+    (files: File[]) => {
+      const validFiles = files.filter((file) => {
+        const validation = isValidMediaFile(file)
+        if (!validation.valid) {
+          addToast({
+            type: 'system',
+            title: t('attachment.invalid'),
+            body: validation.error || t('common.unknownError'),
+          })
+        }
+        return validation.valid
+      })
+
+      setPendingAttachments((current) => {
+        const availableSlots = Math.max(0, MAX_PENDING_ATTACHMENTS - current.length)
+        const acceptedFiles = validFiles.slice(0, availableSlots)
+        const additions = acceptedFiles.map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        }))
+
+        return [...current, ...additions]
+      })
+
+      if (pendingAttachmentsRef.current.length + validFiles.length > MAX_PENDING_ATTACHMENTS) {
+        addToast({
+          type: 'system',
+          title: t('attachment.limitTitle'),
+          body: t('attachment.limitBody', { count: MAX_PENDING_ATTACHMENTS }),
+        })
+      }
+    },
+    [addToast, t]
+  )
+
+  const removePendingAttachment = useCallback((id: string) => {
+    setPendingAttachments((current) => {
+      const removed = current.find((attachment) => attachment.id === id)
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+      return current.filter((attachment) => attachment.id !== id)
+    })
+  }, [])
+
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const imageFiles = Array.from(event.clipboardData.items).flatMap((item) => {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) return []
+        const file = item.getAsFile()
+        return file ? [file] : []
+      })
+      if (imageFiles.length === 0) return
+
+      event.preventDefault()
+      addPendingAttachments(imageFiles)
+      window.setTimeout(() => inputRef.current?.focus(), 0)
+    },
+    [addPendingAttachments]
+  )
+
   const handleSend = useCallback(
     async (contentOverride?: string) => {
       // If editing, handle edit instead
@@ -1299,12 +1413,61 @@ export function ChatView({
       }
 
       const pendingContent = contentOverride ?? inputValue
-      if (!pendingContent.trim() || !conversationId || sending) return
+      const attachments = contentOverride === undefined ? pendingAttachments : []
+      if ((!pendingContent.trim() && attachments.length === 0) || !conversationId || sending) return
 
       stopTyping()
       setSending(true)
       const content = pendingContent.trim()
       if (contentOverride === undefined) setInputValue('')
+
+      if (attachments.length > 0) {
+        const allImages = attachments.every((attachment) =>
+          attachment.file.type.startsWith('image/')
+        )
+        const mediaGroupId = allImages && attachments.length > 1 ? crypto.randomUUID() : undefined
+
+        try {
+          const uploadedMessages = await uploadBatch(
+            attachments.map((attachment) => attachment.file),
+            {
+              mediaGroupId,
+              content,
+              replyTo: replyToMessage?.id,
+            }
+          )
+          if (uploadedMessages.length !== attachments.length) {
+            throw new Error(t('attachment.uploadFailed'))
+          }
+
+          const lastUploadedMessage = uploadedMessages.at(-1)
+          if (lastUploadedMessage) queuePushNotification(lastUploadedMessage.id)
+          attachments.forEach((attachment) => {
+            if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+          })
+          setPendingAttachments((current) =>
+            current.filter(
+              (attachment) => !attachments.some((uploaded) => uploaded.id === attachment.id)
+            )
+          )
+          clearReply()
+          clearDraft(conversationId)
+          await supabase
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString() })
+            .eq('id', conversationId)
+        } catch (err) {
+          if (content) setInputValue(content)
+          addToast({
+            type: 'system',
+            title: t('chat.sendFailed'),
+            body: err instanceof Error ? err.message : t('common.unknownError'),
+          })
+        } finally {
+          setSending(false)
+        }
+        return
+      }
 
       // Optimistic update
       const optimisticMessage: Message = {
@@ -1372,6 +1535,7 @@ export function ChatView({
     },
     [
       inputValue,
+      pendingAttachments,
       conversationId,
       currentUserId,
       sending,
@@ -1384,6 +1548,7 @@ export function ChatView({
       clearDraft,
       addToast,
       t,
+      uploadBatch,
     ]
   )
 
@@ -1428,7 +1593,10 @@ export function ChatView({
       setMentionQuery(null)
       return
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+    const usesMobileKeyboard =
+      typeof window !== 'undefined' &&
+      (window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768)
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !usesMobileKeyboard) {
       e.preventDefault()
       if (mentionOptions[0]) {
         insertMention(mentionOptions[0])
@@ -1942,6 +2110,11 @@ export function ChatView({
         </div>
       ) : (
         <div className="border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-2 sm:p-3">
+          <PendingAttachments
+            attachments={pendingAttachments}
+            onRemove={removePendingAttachment}
+            disabled={sending || uploading}
+          />
           <div className="flex min-w-0 items-end gap-0.5 sm:gap-2">
             <div className="relative shrink-0">
               <Button
@@ -1970,15 +2143,8 @@ export function ChatView({
             </div>
 
             <MediaAttachmentButton
-              conversationId={conversationId}
-              userId={currentUserId}
-              onUploadComplete={(msg) => {
-                // Add new message to list
-                setMessages((prev) => {
-                  if (prev.some((m) => m.id === msg.id)) return prev
-                  return [...prev, msg]
-                })
-              }}
+              onFilesSelected={addPendingAttachments}
+              disabled={sending || uploading || !!editingMessage}
             />
 
             <div className="relative min-w-0 flex-1">
@@ -2008,21 +2174,29 @@ export function ChatView({
                 ref={inputRef}
                 rows={1}
                 maxLength={10000}
-                placeholder={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
+                placeholder={
+                  editingMessage
+                    ? t('chat.editMessage')
+                    : pendingAttachments.length > 0
+                      ? t('attachment.caption')
+                      : t('chat.typeMessage')
+                }
                 value={inputValue}
                 onChange={(e) => {
                   handleInputChange(e)
                   if (conversationId) setDraft(conversationId, e.target.value)
                 }}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                enterKeyHint="enter"
                 className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={sending}
+                disabled={sending || uploading}
                 aria-label={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
               />
             </div>
 
             {/* Schedule button */}
-            {inputValue.trim() && !editingMessage && (
+            {inputValue.trim() && !editingMessage && pendingAttachments.length === 0 && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -2039,16 +2213,26 @@ export function ChatView({
               variant="ghost"
               size="icon"
               onClick={() => handleSend()}
-              disabled={!inputValue.trim() || sending}
+              disabled={
+                (!inputValue.trim() && pendingAttachments.length === 0) || sending || uploading
+              }
               className={cn(
                 'h-9 w-9 shrink-0 transition-all sm:h-10 sm:w-10',
-                inputValue.trim() && !sending && 'bg-primary-500 hover:bg-primary-600 text-white'
+                (inputValue.trim() || pendingAttachments.length > 0) &&
+                  !sending &&
+                  !uploading &&
+                  'bg-primary-500 hover:bg-primary-600 text-white'
               )}
               aria-label={t('chat.send')}
             >
               {editingMessage ? <Pencil className="h-5 w-5" /> : <Send className="h-5 w-5" />}
             </Button>
           </div>
+          {uploading && (
+            <p className="mt-1 text-center text-xs text-[var(--text-muted)]">
+              {t('attachment.uploading', { progress: uploadProgress })}
+            </p>
+          )}
         </div>
       )}
 
@@ -2089,6 +2273,12 @@ export function ChatView({
       <MessageContextMenu
         currentUserId={currentUserId}
         onEdit={(message) => {
+          setPendingAttachments((current) => {
+            current.forEach((attachment) => {
+              if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+            })
+            return []
+          })
           setEditingMessage(message)
           setInputValue(message.content || '')
         }}

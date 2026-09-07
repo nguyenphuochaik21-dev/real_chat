@@ -36,6 +36,7 @@ export function MediaMessageBubble({
   const mimeType = message.media_mime_type
   const fileName = message.media_name || t('gallery.files')
   const fileSize = message.media_size
+  const hasCaption = Boolean(message.content && message.content !== fileName)
 
   const { signedUrl, loading, error } = useSignedUrl(mediaPath)
   const [playing, setPlaying] = useState(false)
@@ -83,7 +84,10 @@ export function MediaMessageBubble({
         className={cn(
           'block overflow-hidden text-left',
           compact ? 'h-full w-full rounded-lg' : 'rounded-2xl',
-          !compact && (isFromMe ? 'rounded-br-md' : 'rounded-bl-md')
+          !compact && (isFromMe ? 'rounded-br-md' : 'rounded-bl-md'),
+          !compact &&
+            hasCaption &&
+            (isFromMe ? 'bg-primary-500 text-white' : 'bg-[var(--bg-message-in)]')
         )}
       >
         <Image
@@ -100,9 +104,7 @@ export function MediaMessageBubble({
           )}
           onLoad={() => setImageLoaded(true)}
         />
-        {message.content && message.content !== fileName && (
-          <p className="px-3 py-2 text-sm">{message.content}</p>
-        )}
+        {!compact && hasCaption && <p className="px-3 py-2 text-sm">{message.content}</p>}
       </button>
     )
   }
@@ -111,7 +113,11 @@ export function MediaMessageBubble({
   if (isVideo(mimeType)) {
     return (
       <div
-        className={cn('overflow-hidden rounded-2xl', isFromMe ? 'rounded-br-md' : 'rounded-bl-md')}
+        className={cn(
+          'overflow-hidden rounded-2xl',
+          isFromMe ? 'rounded-br-md' : 'rounded-bl-md',
+          hasCaption && (isFromMe ? 'bg-primary-500 text-white' : 'bg-[var(--bg-message-in)]')
+        )}
       >
         <button
           type="button"
@@ -132,9 +138,7 @@ export function MediaMessageBubble({
             </span>
           </span>
         </button>
-        {message.content && message.content !== fileName && (
-          <p className="px-3 py-2 text-sm">{message.content}</p>
-        )}
+        {hasCaption && <p className="px-3 py-2 text-sm">{message.content}</p>}
       </div>
     )
   }

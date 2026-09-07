@@ -171,7 +171,10 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
 
             <div className="divide-y divide-[var(--border-default)]">
               {users.map((user) => (
-                <div key={user.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
+                <div
+                  key={user.id}
+                  className="list-render-row flex flex-col gap-3 p-4 lg:flex-row lg:items-center"
+                >
                   <Link
                     href={`/profile/${user.id}`}
                     className="flex min-w-0 flex-1 items-center gap-3"

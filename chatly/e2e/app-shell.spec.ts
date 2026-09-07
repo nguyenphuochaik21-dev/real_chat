@@ -24,7 +24,7 @@ test.describe('public application shell', () => {
     const manifest = (await manifestResponse.json()) as {
       display?: string
       start_url?: string
-      icons?: Array<{ sizes?: string }>
+      icons?: Array<{ sizes?: string; src?: string; purpose?: string }>
     }
 
     expect(manifest.display).toBe('standalone')
@@ -32,10 +32,21 @@ test.describe('public application shell', () => {
     expect(manifest.icons?.map((icon) => icon.sizes)).toEqual(
       expect.arrayContaining(['192x192', '512x512'])
     )
+    expect(manifest.icons?.map((icon) => icon.src)).toEqual(
+      expect.arrayContaining([
+        '/icons/chatly-192.png',
+        '/icons/chatly-512.png',
+        '/icons/chatly-maskable-512.png',
+      ])
+    )
 
     const iconResponse = await request.get('/pwa-icon/192')
     expect(iconResponse.ok()).toBeTruthy()
     expect(iconResponse.headers()['content-type']).toContain('image/png')
+
+    const badgeResponse = await request.get('/icons/notification-badge.png')
+    expect(badgeResponse.ok()).toBeTruthy()
+    expect(badgeResponse.headers()['content-type']).toContain('image/png')
   })
 
   test('responses include browser security headers', async ({ request }) => {

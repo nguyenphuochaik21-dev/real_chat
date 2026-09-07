@@ -47,6 +47,11 @@
     content-visibility: auto;
     contain-intrinsic-size: auto 80px;
   }
+
+  .list-render-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 68px;
+  }
 }
 
 /* Animations */

@@ -15,19 +15,19 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ['social', 'productivity'],
     icons: [
       {
-        src: '/pwa-icon/192',
+        src: '/icons/chatly-192.png',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/pwa-icon/512',
+        src: '/icons/chatly-512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/pwa-icon/512',
+        src: '/icons/chatly-maskable-512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',
@@ -38,13 +38,13 @@ export default function manifest(): MetadataRoute.Manifest {
         name: 'Tin nhắn',
         short_name: 'Tin nhắn',
         url: '/chats',
-        icons: [{ src: '/pwa-icon/192', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: '/icons/chatly-192.png', sizes: '192x192', type: 'image/png' }],
       },
       {
         name: 'Bạn bè',
         short_name: 'Bạn bè',
         url: '/contacts',
-        icons: [{ src: '/pwa-icon/192', sizes: '192x192', type: 'image/png' }],
+        icons: [{ src: '/icons/chatly-192.png', sizes: '192x192', type: 'image/png' }],
       },
     ],
   }

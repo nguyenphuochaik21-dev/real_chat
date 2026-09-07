@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import {
   Phone,
@@ -98,8 +98,11 @@ export default function CallsPage() {
     getCurrentUser()
   }, [])
 
-  const { calls, loading, error, refresh } = useCallHistoryFiltered(currentUserId || '', filter)
-  const groupedCalls = groupCallsByDate(calls, dateLocale)
+  const { calls, loading, loadingMore, hasMore, error, refresh, loadMore } = useCallHistoryFiltered(
+    currentUserId || '',
+    filter
+  )
+  const groupedCalls = useMemo(() => groupCallsByDate(calls, dateLocale), [calls, dateLocale])
 
   const filters: { key: CallFilter; label: string }[] = [
     { key: 'all', label: t('calls.all') },
@@ -162,7 +165,7 @@ export default function CallsPage() {
                 </div>
 
                 {group.calls.map((call) => (
-                  <div key={call.id}>
+                  <div key={call.id} className="list-render-row">
                     <div className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-[var(--bg-hover)]">
                       <Avatar
                         user={
@@ -238,6 +241,18 @@ export default function CallsPage() {
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <Phone className="mb-3 h-12 w-12 opacity-50" />
               <p className="text-sm">{t('calls.none')}</p>
+            </div>
+          )}
+          {!loading && !error && hasMore && (
+            <div className="flex justify-center py-4">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? t('common.loading') : t('calls.loadMore')}
+              </Button>
             </div>
           )}
         </div>

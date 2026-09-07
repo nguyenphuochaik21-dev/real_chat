@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+
+export type CallHistoryFilter = 'all' | 'missed' | 'incoming' | 'outgoing'
 
 export interface CallHistoryItem {
   id: string
@@ -15,7 +17,6 @@ export interface CallHistoryItem {
   started_at: string
   ended_at: string | null
   created_at: string
-  // Joined profile data
   other_user?: {
     id: string
     display_name: string
@@ -23,6 +24,7 @@ export interface CallHistoryItem {
   }
 }
 
+const CALL_HISTORY_PAGE_SIZE = 40
 const HISTORY_STATUSES = new Set<CallHistoryItem['status']>([
   'answered',
   'declined',
@@ -31,54 +33,67 @@ const HISTORY_STATUSES = new Set<CallHistoryItem['status']>([
   'failed',
 ])
 
-export function useCallHistory(userId: string, limit: number = 50) {
+export function useCallHistory(userId: string, filter: CallHistoryFilter = 'all') {
   const [calls, setCalls] = useState<CallHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
-  const fetchCallHistory = useCallback(async () => {
-    if (!userId) return
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      // Fetch call history
-      const { data: history, error: historyError } = await supabase
-        .from('call_history')
-        .select('*')
-        .or(`caller_id.eq.${userId},callee_id.eq.${userId}`)
-        .order('started_at', { ascending: false })
-        .limit(limit)
-
-      if (historyError) throw historyError
-
-      // Get unique user IDs (other participants)
-      const otherUserIds =
-        history
-          ?.map((call) => (call.caller_id === userId ? call.callee_id : call.caller_id))
-          .filter((id, index, arr) => arr.indexOf(id) === index) || []
-
-      // Fetch other user profiles
-      const profilesMap = new Map<
-        string,
-        { id: string; display_name: string; avatar_url: string | null }
-      >()
-      if (otherUserIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, display_name, avatar_url')
-          .in('id', otherUserIds)
-
-        profiles?.forEach((profile) => {
-          profilesMap.set(profile.id, profile)
-        })
+  const fetchPage = useCallback(
+    async (offset: number, replace: boolean) => {
+      if (!userId) {
+        setCalls([])
+        setHasMore(false)
+        setLoading(false)
+        return
       }
 
-      // Combine data
-      const enrichedHistory =
-        history?.flatMap((call): CallHistoryItem[] => {
+      if (replace) setLoading(true)
+      else setLoadingMore(true)
+      setError(null)
+
+      try {
+        let query = supabase
+          .from('call_history')
+          .select(
+            'id, caller_id, callee_id, conversation_id, call_type, status, duration_seconds, started_at, ended_at, created_at'
+          )
+          .order('started_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(offset, offset + CALL_HISTORY_PAGE_SIZE)
+
+        if (filter === 'incoming') {
+          query = query.eq('callee_id', userId).neq('status', 'missed')
+        } else if (filter === 'outgoing') {
+          query = query.eq('caller_id', userId)
+        } else {
+          query = query.or(`caller_id.eq.${userId},callee_id.eq.${userId}`)
+          if (filter === 'missed') query = query.eq('status', 'missed')
+        }
+
+        const { data, error: historyError } = await query
+        if (historyError) throw historyError
+
+        const page = (data ?? []).slice(0, CALL_HISTORY_PAGE_SIZE)
+        const otherUserIds = Array.from(
+          new Set(page.map((call) => (call.caller_id === userId ? call.callee_id : call.caller_id)))
+        )
+        const profilesMap = new Map<
+          string,
+          { id: string; display_name: string; avatar_url: string | null }
+        >()
+
+        if (otherUserIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', otherUserIds)
+          profiles?.forEach((profile) => profilesMap.set(profile.id, profile))
+        }
+
+        const enrichedHistory = page.flatMap((call): CallHistoryItem[] => {
           if (
             !call.call_type ||
             !call.status ||
@@ -99,27 +114,40 @@ export function useCallHistory(userId: string, limit: number = 50) {
               duration_seconds: call.duration_seconds ?? 0,
               started_at: startedAt,
               created_at: call.created_at ?? startedAt,
-              direction: call.caller_id === userId ? ('outgoing' as const) : ('incoming' as const),
+              direction: call.caller_id === userId ? 'outgoing' : 'incoming',
               other_user: profilesMap.get(otherUserId),
             },
           ]
-        }) || []
+        })
 
-      setCalls(enrichedHistory)
-    } catch (err) {
-      console.error('Failed to fetch call history:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch call history')
-    } finally {
-      setLoading(false)
-    }
-  }, [userId, limit, supabase])
+        setHasMore((data?.length ?? 0) > CALL_HISTORY_PAGE_SIZE)
+        setCalls((current) => {
+          if (replace) return enrichedHistory
+          const existingIds = new Set(current.map((call) => call.id))
+          return [...current, ...enrichedHistory.filter((call) => !existingIds.has(call.id))]
+        })
+      } catch (fetchError) {
+        console.error('Failed to fetch call history:', fetchError)
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to fetch call history')
+      } finally {
+        setLoading(false)
+        setLoadingMore(false)
+      }
+    },
+    [filter, supabase, userId]
+  )
+
+  const refresh = useCallback(() => fetchPage(0, true), [fetchPage])
+  const loadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return Promise.resolve()
+    return fetchPage(calls.length, false)
+  }, [calls.length, fetchPage, hasMore, loading, loadingMore])
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => void fetchCallHistory(), 0)
+    const timeoutId = window.setTimeout(() => void refresh(), 0)
     return () => window.clearTimeout(timeoutId)
-  }, [fetchCallHistory])
+  }, [refresh])
 
-  // Subscribe to new call history entries
   useEffect(() => {
     if (!userId) return
 
@@ -127,56 +155,22 @@ export function useCallHistory(userId: string, limit: number = 50) {
       .channel(`call-history-${userId}`)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'call_history',
-        },
+        { event: 'INSERT', schema: 'public', table: 'call_history' },
         (payload) => {
-          const newCall = payload.new as CallHistoryItem
-          // Only add if it involves this user
-          if (newCall.caller_id === userId || newCall.callee_id === userId) {
-            fetchCallHistory() // Refresh to get full data with profile
-          }
+          const newCall = payload.new as { caller_id?: string; callee_id?: string }
+          if (newCall.caller_id === userId || newCall.callee_id === userId) void refresh()
         }
       )
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      void supabase.removeChannel(channel)
     }
-  }, [userId, supabase, fetchCallHistory])
+  }, [refresh, supabase, userId])
 
-  const refresh = useCallback(() => {
-    fetchCallHistory()
-  }, [fetchCallHistory])
-
-  return {
-    calls,
-    loading,
-    error,
-    refresh,
-  }
+  return { calls, loading, loadingMore, hasMore, error, refresh, loadMore }
 }
 
-export function useCallHistoryFiltered(
-  userId: string,
-  filter: 'all' | 'missed' | 'incoming' | 'outgoing'
-) {
-  const { calls, loading, error, refresh } = useCallHistory(userId)
-
-  const filteredCalls = calls.filter((call) => {
-    if (filter === 'all') return true
-    if (filter === 'missed') return call.status === 'missed'
-    if (filter === 'incoming') return call.direction === 'incoming' && call.status !== 'missed'
-    if (filter === 'outgoing') return call.direction === 'outgoing'
-    return true
-  })
-
-  return {
-    calls: filteredCalls,
-    loading,
-    error,
-    refresh,
-  }
+export function useCallHistoryFiltered(userId: string, filter: CallHistoryFilter) {
+  return useCallHistory(userId, filter)
 }

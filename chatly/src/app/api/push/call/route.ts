@@ -100,11 +100,13 @@ export async function POST(request: Request) {
             title: callerName,
             body: session.call_type === 'video' ? 'Cuộc gọi video đến' : 'Cuộc gọi thoại đến',
             tag: `call-${session.id}`,
-            icon: caller?.avatar_url || '/pwa-icon/192',
+            icon: caller?.avatar_url || '/icons/chatly-192.png',
+            badge: '/icons/notification-badge.png',
             data: {
               type: 'call',
               sessionId: session.id,
               conversationId: session.conversation_id,
+              url: `/chats/${session.conversation_id}?incomingCall=${session.id}`,
             },
           }),
           { TTL: 60, urgency: 'high' }

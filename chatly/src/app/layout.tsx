@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   },
   description: 'Ứng dụng nhắn tin thời gian thực cho bạn bè và nhóm.',
   applicationName: 'Chatly',
+  icons: {
+    icon: '/icons/chatly-192.png',
+    apple: '/icons/chatly-apple-180.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',

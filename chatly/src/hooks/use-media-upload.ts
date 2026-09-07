@@ -32,10 +32,14 @@ export function useMediaUpload({
     progress: 0,
     error: null,
   })
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   const upload = useCallback(
-    async (file: File, mediaGroupId?: string): Promise<Message | null> => {
+    async (
+      file: File,
+      mediaGroupId?: string,
+      options?: { content?: string; replyTo?: string | null }
+    ): Promise<Message | null> => {
       // Validate file
       const validation = isValidMediaFile(file)
       if (!validation.valid) {
@@ -69,13 +73,14 @@ export function useMediaUpload({
           .insert({
             conversation_id: conversationId,
             sender_id: userId,
-            content: file.name, // Use filename as content for non-text messages
+            content: options?.content?.trim() || file.name,
             content_type: contentType,
             media_url: path, // Store the storage path
             media_name: file.name,
             media_size: file.size,
             media_mime_type: file.type,
             media_group_id: mediaGroupId ?? null,
+            reply_to: options?.replyTo ?? null,
             status: 'sent',
           })
           .select()
@@ -91,12 +96,13 @@ export function useMediaUpload({
             .insert({
               conversation_id: conversationId,
               sender_id: userId,
-              content: file.name,
+              content: options?.content?.trim() || file.name,
               content_type: contentType,
               media_url: path,
               media_name: file.name,
               media_size: file.size,
               media_mime_type: file.type,
+              reply_to: options?.replyTo ?? null,
               status: 'sent',
             })
             .select()
@@ -122,12 +128,116 @@ export function useMediaUpload({
     [conversationId, userId, supabase, onUploadComplete, onError]
   )
 
+  const uploadBatch = useCallback(
+    async (
+      files: File[],
+      options?: {
+        mediaGroupId?: string
+        content?: string
+        replyTo?: string | null
+      }
+    ): Promise<Message[]> => {
+      if (files.length === 0) return []
+
+      for (const file of files) {
+        const validation = isValidMediaFile(file)
+        if (!validation.valid) {
+          const errorMessage = validation.error || 'Invalid file'
+          setUploadState({ uploading: false, progress: 0, error: errorMessage })
+          onError?.(errorMessage)
+          return []
+        }
+      }
+
+      setUploadState({ uploading: true, progress: 0, error: null })
+      const uploadedFiles: { file: File; path: string; contentType: MessageContentType }[] = []
+
+      try {
+        for (const [index, file] of files.entries()) {
+          const mediaType = getMediaType(file.type) as MediaType
+          const { path } = await uploadMedia(file, conversationId, userId)
+          const contentType: MessageContentType =
+            mediaType === 'image' || mediaType === 'video' || mediaType === 'audio'
+              ? mediaType
+              : 'file'
+          uploadedFiles.push({ file, path, contentType })
+          setUploadState({
+            uploading: true,
+            progress: Math.round(((index + 1) / files.length) * 90),
+            error: null,
+          })
+        }
+
+        const payloads = uploadedFiles.map(({ file, path, contentType }, index) => ({
+          conversation_id: conversationId,
+          sender_id: userId,
+          content: index === 0 ? options?.content?.trim() || file.name : file.name,
+          content_type: contentType,
+          media_url: path,
+          media_name: file.name,
+          media_size: file.size,
+          media_mime_type: file.type,
+          media_group_id: options?.mediaGroupId ?? null,
+          reply_to: index === 0 ? (options?.replyTo ?? null) : null,
+          status: 'sent' as const,
+        }))
+
+        let { data: messages, error: messageError } = await supabase
+          .from('messages')
+          .insert(payloads)
+          .select()
+
+        if (
+          messageError &&
+          options?.mediaGroupId &&
+          (messageError.code === 'PGRST204' || messageError.code === '42703')
+        ) {
+          const fallbackPayloads = payloads.map((payload) => ({
+            conversation_id: payload.conversation_id,
+            sender_id: payload.sender_id,
+            content: payload.content,
+            content_type: payload.content_type,
+            media_url: payload.media_url,
+            media_name: payload.media_name,
+            media_size: payload.media_size,
+            media_mime_type: payload.media_mime_type,
+            reply_to: payload.reply_to,
+            status: payload.status,
+          }))
+          const fallbackResult = await supabase.from('messages').insert(fallbackPayloads).select()
+          messages = fallbackResult.data
+          messageError = fallbackResult.error
+        }
+
+        if (messageError) throw messageError
+        const completedMessages = messages ?? []
+        completedMessages.forEach((message) => onUploadComplete?.(message))
+        setUploadState({ uploading: false, progress: 100, error: null })
+        return completedMessages
+      } catch (uploadError) {
+        const paths = uploadedFiles.map((item) => item.path)
+        if (paths.length > 0) {
+          await supabase.storage
+            .from('chat-media')
+            .remove(paths)
+            .catch(() => undefined)
+        }
+        const errorMessage = uploadError instanceof Error ? uploadError.message : 'Upload failed'
+        setUploadState({ uploading: false, progress: 0, error: errorMessage })
+        onError?.(errorMessage)
+        return []
+      }
+    },
+    [conversationId, onError, onUploadComplete, supabase, userId]
+  )
+
   const reset = useCallback(() => {
     setUploadState({ uploading: false, progress: 0, error: null })
   }, [])
 
   return {
     upload,
+    uploadBatch,
     reset,
     ...uploadState,
   }

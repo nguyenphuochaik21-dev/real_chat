@@ -38,18 +38,22 @@ const showBrowserNotification = async (notification: Notification) => {
   }
 
   try {
-    const notificationOptions: NotificationOptions = {
+    const notificationOptions: NotificationOptions & { renotify: boolean } = {
       body: notification.body,
-      icon: notification.senderAvatar || '/pwa-icon/192',
-      badge: '/pwa-icon/192',
+      icon: notification.senderAvatar || '/icons/chatly-192.png',
+      badge: '/icons/notification-badge.png',
       tag: notification.conversationId
         ? `conversation-${notification.conversationId}`
         : notification.id,
       data: {
         conversationId: notification.conversationId,
         senderId: notification.senderId,
+        url: notification.conversationId
+          ? `/chats/${encodeURIComponent(notification.conversationId)}`
+          : '/chats',
       },
       requireInteraction: false,
+      renotify: true,
       silent: false,
     }
 

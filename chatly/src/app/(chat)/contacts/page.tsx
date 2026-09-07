@@ -53,7 +53,7 @@ interface ContactRowProps {
 
 function ContactRow({ profile, children }: ContactRowProps) {
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-[var(--bg-panel)] p-3 shadow-sm">
+    <div className="list-render-row flex items-center gap-3 rounded-xl bg-[var(--bg-panel)] p-3 shadow-sm">
       <ProfileIdentity profile={profile} />
       <div className="flex shrink-0 items-center gap-1">{children}</div>
     </div>

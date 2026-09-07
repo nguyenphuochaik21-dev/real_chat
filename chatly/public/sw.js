@@ -1,5 +1,11 @@
-const CACHE_NAME = 'chatly-shell-v4'
-const SHELL_ASSETS = ['/offline', '/manifest.webmanifest', '/pwa-icon/192', '/pwa-icon/512']
+const CACHE_NAME = 'chatly-shell-v5'
+const SHELL_ASSETS = [
+  '/offline',
+  '/manifest.webmanifest',
+  '/icons/chatly-192.png',
+  '/icons/chatly-512.png',
+  '/icons/notification-badge.png',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -55,8 +61,8 @@ self.addEventListener('push', (event) => {
   let data = {
     title: 'Chatly',
     body: 'Bạn có tin nhắn mới',
-    icon: '/pwa-icon/192',
-    badge: '/pwa-icon/192',
+    icon: '/icons/chatly-192.png',
+    badge: '/icons/notification-badge.png',
     tag: 'chat-notification',
     data: {},
   }
@@ -86,6 +92,7 @@ self.addEventListener('push', (event) => {
         badge: data.badge,
         tag: data.tag,
         data: data.data,
+        timestamp: Date.now(),
         renotify: true,
         requireInteraction: data.data?.type === 'call',
         silent: false,
@@ -104,16 +111,22 @@ self.addEventListener('notificationclick', (event) => {
   if (event.action === 'dismiss') return
 
   const conversationId = event.notification.data?.conversationId
-  const targetPath = conversationId ? `/chats/${conversationId}` : '/chats'
+  const messageId = event.notification.data?.messageId
+  const fallbackPath = conversationId
+    ? `/chats/${encodeURIComponent(conversationId)}${
+        messageId ? `?scrollTo=${encodeURIComponent(messageId)}` : ''
+      }`
+    : '/chats'
+  const targetUrl = new URL(event.notification.data?.url || fallbackPath, self.location.origin).href
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if ('navigate' in client && 'focus' in client) {
-          return client.navigate(targetPath).then(() => client.focus())
+          return client.navigate(targetUrl).then(() => client.focus())
         }
       }
-      return self.clients.openWindow ? self.clients.openWindow(targetPath) : undefined
+      return self.clients.openWindow ? self.clients.openWindow(targetUrl) : undefined
     })
   )
 })

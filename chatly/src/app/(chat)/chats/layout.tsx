@@ -59,6 +59,7 @@ export default function ChatsLayout() {
       >
         {conversationId ? (
           <ChatView
+            key={conversationId}
             conversationId={conversationId}
             currentUserId={currentUserId}
             showBackButton

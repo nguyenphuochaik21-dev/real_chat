@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Search, Pin, BellOff, MessageSquare, Archive, Tag, ChevronDown, User } from 'lucide-react'
@@ -88,7 +88,7 @@ function ConversationItem({
     <Link
       href={`/chats/${conversation.id}`}
       className={cn(
-        'flex items-center gap-3 px-3 py-3 transition-colors',
+        'list-render-row flex items-center gap-3 px-3 py-3 transition-colors',
         isActive ? 'bg-[var(--bg-active)]' : 'hover:bg-[var(--bg-hover)]',
         conversation.unread_count > 0 && !isActive && 'bg-[var(--bg-hover)]'
       )}
@@ -191,6 +191,7 @@ type TabType = 'all' | 'unread' | 'groups' | 'archived'
 
 // Refresh conversations list if cache is older than 30 seconds
 const CACHE_STALE_MS = 30_000
+const CONVERSATION_RENDER_PAGE_SIZE = 80
 
 export function ChatsList({ currentUserId }: ChatsListProps) {
   const { t } = useI18n()
@@ -202,6 +203,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('all')
+  const [visibleConversationCount, setVisibleConversationCount] = useState(
+    CONVERSATION_RENDER_PAGE_SIZE
+  )
   // Use store-backed state — persists across navigation, no remount flash
   const conversations = useChatsListStore((s) => s.conversations)
   const archivedConversations = useChatsListStore((s) => s.archivedConversations)
@@ -265,6 +269,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab)
+    setVisibleConversationCount(CONVERSATION_RENDER_PAGE_SIZE)
     try {
       localStorage.setItem('chats-list-tab', tab)
     } catch {}
@@ -540,41 +545,67 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     }
   }, [currentUserId, supabase, conversations, setParticipantStatus])
 
-  const filteredConversations = conversations.filter((conv) => {
-    if (conv.participant && blockedUserIds.has(conv.participant.id)) return false
-    const displayName =
-      conv.type === 'group' ? conv.title || t('group.tab') : conv.participant?.display_name || ''
-    const matchesSearch = displayName.toLowerCase().includes(search.toLowerCase())
-    let matchesTab = true
-    if (activeTab === 'unread') {
-      matchesTab = conv.unread_count > 0
-    } else if (activeTab === 'groups') {
-      matchesTab = conv.type === 'group'
-    } else if (activeTab === 'all') {
-      matchesTab = !conv.is_archived
-    }
-    let matchesLabels = true
-    if (selectedLabelIds.size > 0) {
-      const convLabels = conversationLabels.get(conv.id) || []
-      const convLabelIds = new Set(convLabels.map((l) => l.id))
-      matchesLabels = Array.from(selectedLabelIds).some((id) => convLabelIds.has(id))
-    }
-    return matchesSearch && matchesTab && matchesLabels
-  })
-
-  const filteredArchived = archivedConversations.filter((conv) =>
-    (conv.type === 'group' ? conv.title || t('group.tab') : conv.participant?.display_name || '')
-      .toLowerCase()
-      .includes(search.toLowerCase())
+  const normalizedSearch = search.toLocaleLowerCase()
+  const filteredConversations = useMemo(
+    () =>
+      conversations.filter((conv) => {
+        if (conv.participant && blockedUserIds.has(conv.participant.id)) return false
+        const displayName =
+          conv.type === 'group'
+            ? conv.title || t('group.tab')
+            : conv.participant?.display_name || ''
+        const matchesSearch = displayName.toLocaleLowerCase().includes(normalizedSearch)
+        let matchesTab = true
+        if (activeTab === 'unread') {
+          matchesTab = conv.unread_count > 0
+        } else if (activeTab === 'groups') {
+          matchesTab = conv.type === 'group'
+        } else if (activeTab === 'all') {
+          matchesTab = !conv.is_archived
+        }
+        let matchesLabels = true
+        if (selectedLabelIds.size > 0) {
+          const convLabels = conversationLabels.get(conv.id) || []
+          const convLabelIds = new Set(convLabels.map((label) => label.id))
+          matchesLabels = Array.from(selectedLabelIds).some((id) => convLabelIds.has(id))
+        }
+        return matchesSearch && matchesTab && matchesLabels
+      }),
+    [
+      activeTab,
+      blockedUserIds,
+      conversationLabels,
+      conversations,
+      normalizedSearch,
+      selectedLabelIds,
+      t,
+    ]
   )
 
-  const sortedConversations = [...filteredConversations].sort((a, b) => {
-    if (a.is_pinned && !b.is_pinned) return -1
-    if (!a.is_pinned && b.is_pinned) return 1
-    const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
-    const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
-    return dateB - dateA
-  })
+  const filteredArchived = useMemo(
+    () =>
+      archivedConversations.filter((conv) =>
+        (conv.type === 'group'
+          ? conv.title || t('group.tab')
+          : conv.participant?.display_name || ''
+        )
+          .toLocaleLowerCase()
+          .includes(normalizedSearch)
+      ),
+    [archivedConversations, normalizedSearch, t]
+  )
+
+  const sortedConversations = useMemo(
+    () =>
+      [...filteredConversations].sort((a, b) => {
+        if (a.is_pinned && !b.is_pinned) return -1
+        if (!a.is_pinned && b.is_pinned) return 1
+        const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
+        const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
+        return dateB - dateA
+      }),
+    [filteredConversations]
+  )
 
   const tabs: { key: TabType; label: string }[] = [
     { key: 'all', label: t('chatList.all') },
@@ -817,7 +848,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                     {t('chatList.archivedCount', { count: filteredArchived.length })}
                   </p>
                 </div>
-                {filteredArchived.map((conversation, index) => {
+                {filteredArchived.slice(0, visibleConversationCount).map((conversation, index) => {
                   const ps = conversation.participant
                     ? participantStatuses.get(conversation.participant.id)
                     : undefined
@@ -835,6 +866,17 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                     </div>
                   )
                 })}
+                {filteredArchived.length > visibleConversationCount && (
+                  <Button
+                    variant="ghost"
+                    className="mx-3 my-2 w-[calc(100%-1.5rem)]"
+                    onClick={() =>
+                      setVisibleConversationCount((count) => count + CONVERSATION_RENDER_PAGE_SIZE)
+                    }
+                  >
+                    {t('chatList.loadMore')}
+                  </Button>
+                )}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
@@ -843,24 +885,39 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
               </div>
             )
           ) : sortedConversations.length > 0 ? (
-            sortedConversations.map((conversation, index) => {
-              const ps = conversation.participant
-                ? participantStatuses.get(conversation.participant.id)
-                : undefined
-              return (
-                <div key={conversation.id}>
-                  <ConversationItem
-                    conversation={conversation}
-                    isActive={selectedConversationId === conversation.id}
-                    currentUserId={currentUserId}
-                    participantStatus={resolvePresence(ps)}
-                    labels={conversationLabels.get(conversation.id) || []}
-                    draft={drafts.get(conversation.id)}
-                  />
-                  {index < sortedConversations.length - 1 && <Separator />}
-                </div>
-              )
-            })
+            <>
+              {sortedConversations.slice(0, visibleConversationCount).map((conversation, index) => {
+                const ps = conversation.participant
+                  ? participantStatuses.get(conversation.participant.id)
+                  : undefined
+                return (
+                  <div key={conversation.id}>
+                    <ConversationItem
+                      conversation={conversation}
+                      isActive={selectedConversationId === conversation.id}
+                      currentUserId={currentUserId}
+                      participantStatus={resolvePresence(ps)}
+                      labels={conversationLabels.get(conversation.id) || []}
+                      draft={drafts.get(conversation.id)}
+                    />
+                    {index < Math.min(sortedConversations.length, visibleConversationCount) - 1 && (
+                      <Separator />
+                    )}
+                  </div>
+                )
+              })}
+              {sortedConversations.length > visibleConversationCount && (
+                <Button
+                  variant="ghost"
+                  className="mx-3 my-2 w-[calc(100%-1.5rem)]"
+                  onClick={() =>
+                    setVisibleConversationCount((count) => count + CONVERSATION_RENDER_PAGE_SIZE)
+                  }
+                >
+                  {t('chatList.loadMore')}
+                </Button>
+              )}
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
               <MessageSquare className="mb-3 h-12 w-12 opacity-50" />

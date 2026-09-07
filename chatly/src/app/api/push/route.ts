@@ -142,9 +142,16 @@ export async function POST(request: Request) {
             title: mentioned ? `${senderName} đã nhắc đến bạn` : senderName,
             body,
             tag: `conversation-${message.conversation_id}`,
-            icon: sender?.avatar_url || '/pwa-icon/192',
-            data: { conversationId: message.conversation_id },
-          })
+            icon: sender?.avatar_url || '/icons/chatly-192.png',
+            badge: '/icons/notification-badge.png',
+            data: {
+              type: 'message',
+              messageId: message.id,
+              conversationId: message.conversation_id,
+              url: `/chats/${message.conversation_id}?scrollTo=${message.id}`,
+            },
+          }),
+          { TTL: 300, urgency: 'high' }
         )
       } catch (error) {
         const statusCode =
