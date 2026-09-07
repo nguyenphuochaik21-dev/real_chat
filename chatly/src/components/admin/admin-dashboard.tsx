@@ -1,8 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import {
   Ban,
   CheckCircle2,
@@ -19,7 +18,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { updateAdminUser, type AdminDashboardData, type AdminUser } from '@/lib/actions/admin'
+import {
+  getAdminUsersPage,
+  updateAdminUser,
+  type AdminDashboardData,
+  type AdminUser,
+} from '@/lib/actions/admin'
 import { useI18n } from '@/lib/i18n'
 
 interface AdminDashboardProps {
@@ -28,20 +32,42 @@ interface AdminDashboardProps {
 
 export function AdminDashboard({ data }: AdminDashboardProps) {
   const { dateLocale, t } = useI18n()
-  const router = useRouter()
   const [search, setSearch] = useState('')
+  const [users, setUsers] = useState(data.users)
+  const [totalUsers, setTotalUsers] = useState(data.totalUsers)
+  const [stats, setStats] = useState(data.stats)
+  const [loadingUsers, setLoadingUsers] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const firstSearchEffectRef = useRef(true)
+  const searchRequestRef = useRef(0)
 
-  const users = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase()
-    if (!query) return data.users
-    return data.users.filter((user) =>
-      `${user.display_name} ${user.username} ${user.email ?? ''}`
-        .toLocaleLowerCase()
-        .includes(query)
-    )
-  }, [data.users, search])
+  useEffect(() => {
+    if (firstSearchEffectRef.current) {
+      firstSearchEffectRef.current = false
+      return
+    }
+
+    const requestId = ++searchRequestRef.current
+    const timerId = window.setTimeout(async () => {
+      setLoadingUsers(true)
+      setError(null)
+      try {
+        const result = await getAdminUsersPage(search.trim(), 0, 50)
+        if (requestId !== searchRequestRef.current) return
+        setUsers(result.users)
+        setTotalUsers(result.totalUsers)
+      } catch (searchError) {
+        if (requestId === searchRequestRef.current) {
+          setError(searchError instanceof Error ? searchError.message : t('common.unknownError'))
+        }
+      } finally {
+        if (requestId === searchRequestRef.current) setLoadingUsers(false)
+      }
+    }, 300)
+
+    return () => window.clearTimeout(timerId)
+  }, [search, t])
 
   const updateUser = async (
     user: AdminUser,
@@ -55,7 +81,17 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
         updates.role ?? user.role,
         updates.is_suspended ?? user.is_suspended
       )
-      router.refresh()
+      setUsers((current) =>
+        current.map((managedUser) =>
+          managedUser.id === user.id ? { ...managedUser, ...updates } : managedUser
+        )
+      )
+      if (updates.is_suspended !== undefined && updates.is_suspended !== user.is_suspended) {
+        setStats((current) => ({
+          ...current,
+          suspendedUsers: Math.max(0, current.suspendedUsers + (updates.is_suspended ? 1 : -1)),
+        }))
+      }
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : t('common.unknownError'))
     } finally {
@@ -63,13 +99,35 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
     }
   }
 
+  const loadMore = async () => {
+    if (loadingUsers || users.length >= totalUsers) return
+    const requestId = ++searchRequestRef.current
+    setLoadingUsers(true)
+    setError(null)
+    try {
+      const result = await getAdminUsersPage(search.trim(), users.length, 50)
+      if (requestId !== searchRequestRef.current) return
+      setUsers((current) => {
+        const existing = new Set(current.map((user) => user.id))
+        return [...current, ...result.users.filter((user) => !existing.has(user.id))]
+      })
+      setTotalUsers(result.totalUsers)
+    } catch (loadError) {
+      if (requestId === searchRequestRef.current) {
+        setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
+      }
+    } finally {
+      if (requestId === searchRequestRef.current) setLoadingUsers(false)
+    }
+  }
+
   const statCards = [
-    { label: t('admin.users'), value: data.stats.users, icon: Users },
-    { label: t('admin.conversations'), value: data.stats.conversations, icon: MessageSquare },
-    { label: t('admin.messages'), value: data.stats.messages, icon: MessageSquare },
-    { label: t('admin.friendships'), value: data.stats.friendships, icon: UserRoundCheck },
-    { label: t('admin.calls'), value: data.stats.calls, icon: Phone },
-    { label: t('admin.suspended'), value: data.stats.suspendedUsers, icon: Ban },
+    { label: t('admin.users'), value: stats.users, icon: Users },
+    { label: t('admin.conversations'), value: stats.conversations, icon: MessageSquare },
+    { label: t('admin.messages'), value: stats.messages, icon: MessageSquare },
+    { label: t('admin.friendships'), value: stats.friendships, icon: UserRoundCheck },
+    { label: t('admin.calls'), value: stats.calls, icon: Phone },
+    { label: t('admin.suspended'), value: stats.suspendedUsers, icon: Ban },
   ]
 
   return (
@@ -177,6 +235,21 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                 <p className="p-8 text-center text-sm text-[var(--text-muted)]">
                   {t('admin.noUsers')}
                 </p>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-[var(--border-default)] p-4">
+              <p className="text-xs text-[var(--text-muted)]">
+                {t('admin.showingUsers', { shown: users.length, total: totalUsers })}
+              </p>
+              {users.length < totalUsers && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loadingUsers}
+                  onClick={() => void loadMore()}
+                >
+                  {loadingUsers ? t('common.loading') : t('admin.loadMore')}
+                </Button>
               )}
             </div>
           </section>

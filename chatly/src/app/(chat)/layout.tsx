@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { MobileNav } from '@/components/layout/mobile-nav'
 import { ConversationLabelsProvider } from '@/hooks/use-conversation-labels'
 import { useFriendshipsRealtime } from '@/hooks/use-friendships-realtime'
+import { useNavigationBadges } from '@/hooks/use-navigation-badges'
 import { CallProvider } from '@/components/calls'
 import { RealtimeNotifications } from '@/components/notifications/realtime-notifications'
 import { NotificationToastContainer } from '@/components/notifications'
@@ -18,6 +19,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
   const [loading, setLoading] = useState(true)
   const pathname = usePathname()
   useFriendshipsRealtime(user?.id ?? null)
+  useNavigationBadges(user?.id ?? null)
 
   useEffect(() => {
     const supabase = createClient()

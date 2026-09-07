@@ -55,6 +55,22 @@ const ConversationLabelsContext = createContext<ConversationLabelsContextValue |
 
 // Singleton Supabase client for this module
 const supabase = createClient()
+const LABEL_QUERY_BATCH_SIZE = 200
+
+async function fetchConversationLabelMap(conversationIds: string[]) {
+  const uniqueIds = Array.from(new Set(conversationIds))
+  const batches: string[][] = []
+  for (let index = 0; index < uniqueIds.length; index += LABEL_QUERY_BATCH_SIZE) {
+    batches.push(uniqueIds.slice(index, index + LABEL_QUERY_BATCH_SIZE))
+  }
+  const results = await Promise.all(batches.map((batch) => getLabelsForConversations(batch)))
+  const merged = new Map<string, Label[]>(uniqueIds.map((id) => [id, []]))
+  for (const result of results) {
+    if (!result.success || !result.labelsByConversation) continue
+    result.labelsByConversation.forEach((value, key) => merged.set(key, value))
+  }
+  return merged
+}
 
 function ConversationLabelsProvider({ userId, children }: { userId: string; children: ReactNode }) {
   const [labels, setLabels] = useState<Label[]>([])
@@ -136,10 +152,7 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
         async () => {
           const conversationIds = Array.from(conversationLabelsRef.current.keys())
           if (conversationIds.length > 0) {
-            const result = await getLabelsForConversations(conversationIds)
-            if (result.success && result.labelsByConversation) {
-              setConversationLabels(result.labelsByConversation)
-            }
+            setConversationLabels(await fetchConversationLabelMap(conversationIds))
           }
         }
       )
@@ -157,10 +170,7 @@ function ConversationLabelsProvider({ userId, children }: { userId: string; chil
     if (conversationIds.length === 0) return
 
     try {
-      const result = await getLabelsForConversations(conversationIds)
-      if (result.success && result.labelsByConversation) {
-        setConversationLabels(result.labelsByConversation)
-      }
+      setConversationLabels(await fetchConversationLabelMap(conversationIds))
     } catch (err) {
       console.error('Failed to load labels for conversations:', err)
     }

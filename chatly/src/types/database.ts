@@ -797,6 +797,23 @@ export type Database = {
           username: string
         }[]
       }
+      admin_list_users_page: {
+        Args: { p_limit?: number; p_offset?: number; p_search?: string }
+        Returns: {
+          avatar_url: string | null
+          created_at: string | null
+          display_name: string
+          email: string | null
+          friend_count: number
+          id: string
+          is_suspended: boolean
+          last_seen: string | null
+          role: string
+          status: string | null
+          total_count: number
+          username: string
+        }[]
+      }
       admin_update_user: {
         Args: { p_is_suspended: boolean; p_role: string; p_user_id: string }
         Returns: boolean

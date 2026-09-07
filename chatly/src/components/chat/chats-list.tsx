@@ -24,6 +24,7 @@ import type { PublicProfile, Tables } from '@/types'
 import { useI18n } from '@/lib/i18n'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { createConversation } from '@/lib/actions/conversations'
+import { BulkLabelManager } from '@/components/chat/bulk-label-manager'
 
 type Profile = PublicProfile
 
@@ -223,6 +224,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   // Label filter
   const [labelFilterOpen, setLabelFilterOpen] = useState(false)
+  const [labelManagerOpen, setLabelManagerOpen] = useState(false)
   const [selectedLabelIds, setSelectedLabelIds] = useState<Set<string>>(new Set())
 
   // Drafts
@@ -615,6 +617,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             {t('chatList.title')}
           </h1>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setLabelManagerOpen(true)}
+              title={t('labels.manage')}
+              aria-label={t('labels.manage')}
+            >
+              <Tag className="h-4 w-4" />
+            </Button>
             {labels.length > 0 && (
               <Button
                 variant="ghost"
@@ -625,7 +636,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                   selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
                 )}
               >
-                <Tag className="h-4 w-4" />
+                <span className="text-xs">{t('chatList.filter')}</span>
                 {selectedLabelIds.size > 0 && (
                   <span className="bg-primary-500 ml-1 rounded px-1.5 py-0.5 text-xs text-white">
                     {selectedLabelIds.size}
@@ -860,6 +871,11 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           )}
         </div>
       </ScrollArea>
+      <BulkLabelManager
+        isOpen={labelManagerOpen}
+        conversations={[...conversations, ...archivedConversations]}
+        onClose={() => setLabelManagerOpen(false)}
+      />
     </div>
   )
 }

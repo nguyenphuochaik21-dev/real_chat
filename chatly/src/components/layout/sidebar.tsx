@@ -12,7 +12,7 @@ import { usePresence } from '@/hooks/use-presence'
 import { NotificationBell, NotificationCenter } from '@/components/notifications'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
-import { parseConversationSummaries } from '@/lib/conversation-summary'
+import { useNavigationBadgesStore } from '@/stores/navigation-badges-store'
 
 const SearchModal = dynamic(() =>
   import('@/components/chat/search-modal').then((module) => module.SearchModal)
@@ -56,97 +56,22 @@ export function Sidebar() {
   const router = useRouter()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [unreadCount, setUnreadCount] = useState(0)
+  const unreadCount = useNavigationBadgesStore((state) => state.unreadMessages)
   const [showSearch, setShowSearch] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const friendRequestCount = useFriendshipStore((state) => state.incomingCount)
   const supabaseRef = useRef(createClient())
-  const pathnameRef = useRef(pathname)
-
-  useEffect(() => {
-    pathnameRef.current = pathname
-  }, [pathname])
 
   // Notification store
   // Initialize presence tracking for current user
   const {} = usePresence(profile?.id || null)
 
-  // Load profile + fetch unread count + subscribe to updates
+  // Load profile and initialize presence tracking.
   useEffect(() => {
     let mounted = true
-    let unreadChannel: ReturnType<ReturnType<typeof createClient>['channel']> | null = null
     let currentUserId: string | null = null
 
     const supabase = supabaseRef.current
-    const subscriptionId = crypto.randomUUID()
-
-    const fetchUnreadCount = async () => {
-      const { data, error } = await supabase.rpc('get_conversation_summaries')
-      if (error) return
-      const totalUnread = parseConversationSummaries(data)
-        .filter((conversation) => !conversation.is_archived)
-        .reduce((total, conversation) => total + conversation.unread_count, 0)
-      setUnreadCount(totalUnread)
-    }
-
-    // Subscribe to message inserts and participant updates
-    const setupUnreadSubscription = (userId: string) => {
-      currentUserId = userId
-      // Remove old channel first to avoid "already subscribed" errors
-      if (unreadChannel) {
-        supabase.removeChannel(unreadChannel)
-        unreadChannel = null
-      }
-      const channel = supabase
-        .channel(`sidebar-unread:${userId}:${subscriptionId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-          },
-          async (payload) => {
-            if (!mounted) return
-
-            const newMsg = payload.new as {
-              sender_id: string
-              conversation_id: string
-              created_at?: string
-            }
-            if (newMsg.sender_id !== userId) {
-              if (pathnameRef.current === `/chats/${newMsg.conversation_id}`) return
-              const part = await supabase
-                .from('conversation_participants')
-                .select('last_read_at')
-                .eq('user_id', userId)
-                .eq('conversation_id', newMsg.conversation_id)
-                .single()
-
-              const lastRead = part.data?.last_read_at || '1970-01-01T00:00:00Z'
-              const msgTime = newMsg.created_at || new Date().toISOString()
-
-              if (msgTime > lastRead) {
-                setUnreadCount((prev) => prev + 1)
-              }
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'conversation_participants',
-            filter: `user_id=eq.${userId}`,
-          },
-          () => {
-            fetchUnreadCount()
-          }
-        )
-      unreadChannel = channel
-      channel.subscribe()
-    }
 
     const loadProfile = async () => {
       const {
@@ -163,12 +88,9 @@ export function Sidebar() {
         if (mounted) {
           setProfile(data)
           setLoading(false)
+          currentUserId = user.id
           // Set user as online on mount
           await setUserOnline(supabase)
-
-          // Now fetch unread count and setup subscription with userId available
-          await fetchUnreadCount()
-          setupUnreadSubscription(user.id)
         }
       } else if (mounted) {
         setLoading(false)
@@ -179,7 +101,6 @@ export function Sidebar() {
 
     return () => {
       mounted = false
-      if (unreadChannel) void supabase.removeChannel(unreadChannel)
       if (currentUserId) void setUserOffline(supabase)
     }
   }, [t])

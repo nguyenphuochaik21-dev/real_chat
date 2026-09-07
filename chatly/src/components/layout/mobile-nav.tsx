@@ -6,6 +6,7 @@ import { MessageSquare, Users, Phone, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
+import { useNavigationBadgesStore } from '@/stores/navigation-badges-store'
 
 const items = [
   { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
@@ -18,6 +19,7 @@ export function MobileNav() {
   const { t } = useI18n()
   const pathname = usePathname()
   const friendRequestCount = useFriendshipStore((state) => state.incomingCount)
+  const unreadMessages = useNavigationBadgesStore((state) => state.unreadMessages)
 
   // Hide nav when inside a conversation chat (Messenger-style)
   const isInChat = /^\/chats\/[^/]+/.test(pathname)
@@ -47,6 +49,11 @@ export function MobileNav() {
           >
             <span className="relative">
               <item.icon className="h-5 w-5" />
+              {item.href === '/chats' && unreadMessages > 0 && (
+                <span className="bg-primary-500 absolute -top-2 -right-3 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white">
+                  {unreadMessages > 99 ? '99+' : unreadMessages}
+                </span>
+              )}
               {item.href === '/contacts' && friendRequestCount > 0 && (
                 <span className="bg-primary-500 absolute -top-2 -right-3 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-semibold text-white">
                   {friendRequestCount > 99 ? '99+' : friendRequestCount}

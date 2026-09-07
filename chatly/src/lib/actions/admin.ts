@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
+import { z } from 'zod'
 
 export interface AdminUser {
   id: string
@@ -30,8 +31,24 @@ export interface AdminStats {
 export interface AdminDashboardData {
   currentUserId: string
   users: AdminUser[]
+  totalUsers: number
   stats: AdminStats
 }
+
+export interface AdminUsersPage {
+  users: AdminUser[]
+  totalUsers: number
+}
+
+type RawAdminUser = Omit<AdminUser, 'role' | 'status'> & {
+  role: string
+  status: string | null
+  total_count?: number
+}
+
+const adminSearchSchema = z.string().trim().max(100)
+const adminOffsetSchema = z.number().int().min(0).max(1_000_000)
+const adminLimitSchema = z.number().int().min(1).max(100)
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -52,14 +69,71 @@ function numberValue(value: unknown) {
   return typeof value === 'number' ? value : Number(value) || 0
 }
 
+function normalizeAdminUsers(rows: RawAdminUser[]): AdminUser[] {
+  return rows.map((managedUser) => ({
+    ...managedUser,
+    role: managedUser.role === 'admin' ? 'admin' : 'user',
+    status:
+      managedUser.status === 'online' ||
+      managedUser.status === 'away' ||
+      managedUser.status === 'busy'
+        ? managedUser.status
+        : 'offline',
+    friend_count: numberValue(managedUser.friend_count),
+  }))
+}
+
+export async function getAdminUsersPage(
+  query = '',
+  offset = 0,
+  limit = 50
+): Promise<AdminUsersPage> {
+  const search = parseInput(adminSearchSchema, query)
+  const safeOffset = parseInput(adminOffsetSchema, offset)
+  const safeLimit = parseInput(adminLimitSchema, limit)
+  const { supabase } = await requireAdmin()
+  const result = await supabase.rpc('admin_list_users_page', {
+    p_search: search,
+    p_offset: safeOffset,
+    p_limit: safeLimit,
+  })
+
+  if (result.error) {
+    const isMissingMigration =
+      result.error.code === 'PGRST202' || result.error.message.includes('admin_list_users_page')
+    if (!isMissingMigration) throw new Error(result.error.message)
+
+    const fallback = await supabase.rpc('admin_list_users')
+    if (fallback.error) throw new Error(fallback.error.message)
+    const allUsers = normalizeAdminUsers(fallback.data ?? [])
+    const normalizedSearch = search.toLocaleLowerCase()
+    const filtered = normalizedSearch
+      ? allUsers.filter((managedUser) =>
+          `${managedUser.display_name} ${managedUser.username} ${managedUser.email ?? ''}`
+            .toLocaleLowerCase()
+            .includes(normalizedSearch)
+        )
+      : allUsers
+    return {
+      users: filtered.slice(safeOffset, safeOffset + safeLimit),
+      totalUsers: filtered.length,
+    }
+  }
+
+  const rows = result.data ?? []
+  return {
+    users: normalizeAdminUsers(rows),
+    totalUsers: numberValue(rows[0]?.total_count),
+  }
+}
+
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const { supabase, user } = await requireAdmin()
-  const [usersResult, statsResult] = await Promise.all([
-    supabase.rpc('admin_list_users'),
+  const [usersPage, statsResult] = await Promise.all([
+    getAdminUsersPage('', 0, 50),
     supabase.rpc('get_admin_dashboard_stats'),
   ])
 
-  if (usersResult.error) throw new Error(usersResult.error.message)
   if (statsResult.error) throw new Error(statsResult.error.message)
 
   const statsValue =
@@ -69,13 +143,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
 
   return {
     currentUserId: user.id,
-    users: ((usersResult.data ?? []) as Array<Omit<AdminUser, 'role'> & { role: string }>).map(
-      (managedUser) => ({
-        ...managedUser,
-        role: managedUser.role === 'admin' ? 'admin' : 'user',
-        friend_count: numberValue(managedUser.friend_count),
-      })
-    ),
+    users: usersPage.users,
+    totalUsers: usersPage.totalUsers,
     stats: {
       users: numberValue(statsValue.users),
       suspendedUsers: numberValue(statsValue.suspendedUsers),
