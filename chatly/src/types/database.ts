@@ -1031,6 +1031,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      get_unread_message_count: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
       get_or_create_direct_conversation: {
         Args: { p_other_user_id: string }
         Returns: string

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Search, Pin, BellOff, MessageSquare, Archive, Tag, ChevronDown, User } from 'lucide-react'
+import { Search, Pin, BellOff, MessageSquare, Archive, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { GroupAvatar } from '@/components/ui/group-avatar'
@@ -17,14 +17,12 @@ import { Separator } from '@/components/ui/separator'
 import { createClient } from '@/lib/supabase/client'
 import { getBlockedUsers } from '@/lib/actions/block'
 import { useDraftStore } from '@/stores/draft-store'
-import { useConversationLabels } from '@/hooks/use-conversation-labels'
 import { useSearch } from '@/hooks/use-search'
 import { useChatsListStore, type ConversationWithDetails } from '@/stores/chats-list-store'
-import type { PublicProfile, Tables } from '@/types'
+import type { PublicProfile } from '@/types'
 import { useI18n } from '@/lib/i18n'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { createConversation } from '@/lib/actions/conversations'
-import { BulkLabelManager } from '@/components/chat/bulk-label-manager'
 
 type Profile = PublicProfile
 
@@ -49,7 +47,6 @@ interface ConversationItemProps {
   isActive: boolean
   currentUserId: string
   participantStatus: PresenceStatus
-  labels?: Tables<'conversation_labels'>[]
   draft?: string
 }
 
@@ -58,7 +55,6 @@ function ConversationItem({
   isActive,
   currentUserId,
   participantStatus,
-  labels = [],
   draft,
 }: ConversationItemProps) {
   const { t, dateLocale } = useI18n()
@@ -129,18 +125,6 @@ function ConversationItem({
             )}
             {conversation.is_muted && (
               <BellOff className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
-            )}
-            {labels.length > 0 && (
-              <div className="flex gap-1">
-                {labels.slice(0, 3).map((label) => (
-                  <div
-                    key={label.id}
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: label.color || '#8B5CF6' }}
-                    title={label.name || ''}
-                  />
-                ))}
-              </div>
             )}
           </div>
           <span className="shrink-0 text-xs text-[var(--text-muted)]">
@@ -219,23 +203,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const updateConversation = useChatsListStore((s) => s.updateConversation)
   const incrementUnread = useChatsListStore((s) => s.incrementUnread)
   const setParticipantStatus = useChatsListStore((s) => s.setParticipantStatus)
-  const storeConversationIdsRef = useRef<string[]>([])
-  const supabase = createClient()
+  const storeConversationIdsRef = useRef<Set<string>>(new Set())
+  const [supabase] = useState(() => createClient())
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(
     null
   )
 
-  // Label filter
-  const [labelFilterOpen, setLabelFilterOpen] = useState(false)
-  const [labelManagerOpen, setLabelManagerOpen] = useState(false)
-  const [selectedLabelIds, setSelectedLabelIds] = useState<Set<string>>(new Set())
-
   // Drafts
   const { drafts } = useDraftStore()
-
-  // Conversation labels (userId comes from provider)
-  const { labels, conversationLabels, loadLabelsForConversations } = useConversationLabels()
 
   // Global search — messages + contacts
   const { state: searchState, search: runMessageSearch, searchContacts, clearSearch } = useSearch()
@@ -318,12 +294,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           }))
         }
       }
-      const participantIds = conversationsWithParticipants.flatMap((conversation) =>
-        conversation.type === 'direct' && conversation.participant
-          ? [conversation.participant.id]
-          : []
-      )
-
       const active: ConversationWithDetails[] = []
       const archived: ConversationWithDetails[] = []
       for (const conv of conversationsWithParticipants) {
@@ -342,45 +312,35 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       active.sort(sortFn)
       archived.sort(sortFn)
 
-      const ids: string[] = []
-      active.forEach((c) => ids.push(c.id))
-      archived.forEach((c) => ids.push(c.id))
-      storeConversationIdsRef.current = ids
-
-      loadLabelsForConversations(ids)
+      storeConversationIdsRef.current = new Set([
+        ...active.map((conversation) => conversation.id),
+        ...archived.map((conversation) => conversation.id),
+      ])
 
       const newStatuses = new Map<
         string,
         { status: 'online' | 'offline' | 'away' | 'busy'; lastSeen: string | null }
       >()
-      if (participantIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, status, last_seen')
-          .in('id', participantIds)
-
-        if (profiles) {
-          profiles.forEach((p) => {
-            newStatuses.set(p.id, {
-              status: (p.status as 'online' | 'offline' | 'away' | 'busy') || 'offline',
-              lastSeen: p.last_seen ?? null,
-            })
-          })
-        }
+      for (const conversation of conversationsWithParticipants) {
+        const participant = conversation.participant
+        if (conversation.type !== 'direct' || !participant) continue
+        newStatuses.set(participant.id, {
+          status: participant.status ?? 'offline',
+          lastSeen: participant.last_seen ?? null,
+        })
       }
 
       setAll({
         conversations: active,
         archivedConversations: archived,
         participantStatuses: newStatuses,
-        blockedUserIds,
       })
     } catch (err) {
       console.error('Failed to fetch conversations:', err)
     } finally {
       setLoading(false)
     }
-  }, [currentUserId, supabase, setAll, setLoading, blockedUserIds, loadLabelsForConversations])
+  }, [currentUserId, supabase, setAll, setLoading])
 
   // Fetch conversations — but only if cache is stale or empty
   useEffect(() => {
@@ -449,7 +409,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             updated_at: string | null
           }
 
-          if (storeConversationIdsRef.current.includes(updated.id)) {
+          if (storeConversationIdsRef.current.has(updated.id)) {
             const store = useChatsListStore.getState()
             const existing = [...store.conversations, ...store.archivedConversations].find(
               (conversation) => conversation.id === updated.id
@@ -563,23 +523,9 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         } else if (activeTab === 'all') {
           matchesTab = !conv.is_archived
         }
-        let matchesLabels = true
-        if (selectedLabelIds.size > 0) {
-          const convLabels = conversationLabels.get(conv.id) || []
-          const convLabelIds = new Set(convLabels.map((label) => label.id))
-          matchesLabels = Array.from(selectedLabelIds).some((id) => convLabelIds.has(id))
-        }
-        return matchesSearch && matchesTab && matchesLabels
+        return matchesSearch && matchesTab
       }),
-    [
-      activeTab,
-      blockedUserIds,
-      conversationLabels,
-      conversations,
-      normalizedSearch,
-      selectedLabelIds,
-      t,
-    ]
+    [activeTab, blockedUserIds, conversations, normalizedSearch, t]
   )
 
   const filteredArchived = useMemo(
@@ -643,84 +589,11 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   return (
     <div className="flex h-full w-full flex-col border-r border-[var(--border-default)] bg-[var(--bg-panel)] md:w-80">
       <div className="p-4">
-        <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="mb-4">
           <h1 className="text-xl font-semibold text-[var(--text-primary)]">
             {t('chatList.title')}
           </h1>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setLabelManagerOpen(true)}
-              title={t('labels.manage')}
-              aria-label={t('labels.manage')}
-            >
-              <Tag className="h-4 w-4" />
-            </Button>
-            {labels.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setLabelFilterOpen(!labelFilterOpen)}
-                className={cn(
-                  'gap-1.5',
-                  selectedLabelIds.size > 0 && 'bg-primary-500/20 text-primary-500'
-                )}
-              >
-                <span className="text-xs">{t('chatList.filter')}</span>
-                {selectedLabelIds.size > 0 && (
-                  <span className="bg-primary-500 ml-1 rounded px-1.5 py-0.5 text-xs text-white">
-                    {selectedLabelIds.size}
-                  </span>
-                )}
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
         </div>
-
-        {labelFilterOpen && labels.length > 0 && (
-          <div className="mb-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] p-2">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">
-                {t('chatList.filterByLabel')}
-              </span>
-              {selectedLabelIds.size > 0 && (
-                <button
-                  onClick={() => setSelectedLabelIds(new Set())}
-                  className="text-primary-500 text-xs hover:underline"
-                >
-                  {t('common.clear')}
-                </button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {labels.map((label) => (
-                <button
-                  key={label.id}
-                  onClick={() => {
-                    const newSelected = new Set(selectedLabelIds)
-                    if (newSelected.has(label.id)) newSelected.delete(label.id)
-                    else newSelected.add(label.id)
-                    setSelectedLabelIds(newSelected)
-                  }}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-colors',
-                    selectedLabelIds.has(label.id)
-                      ? 'ring-primary-500 bg-[var(--bg-active)] ring-1'
-                      : 'bg-[var(--bg-hover)] hover:bg-[var(--bg-active)]'
-                  )}
-                >
-                  <div
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: label.color || '#8B5CF6' }}
-                  />
-                  <span>{label.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="relative">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -859,7 +732,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                         isActive={selectedConversationId === conversation.id}
                         currentUserId={currentUserId}
                         participantStatus={resolvePresence(ps)}
-                        labels={conversationLabels.get(conversation.id) || []}
                         draft={drafts.get(conversation.id)}
                       />
                       {index < filteredArchived.length - 1 && <Separator />}
@@ -897,7 +769,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                       isActive={selectedConversationId === conversation.id}
                       currentUserId={currentUserId}
                       participantStatus={resolvePresence(ps)}
-                      labels={conversationLabels.get(conversation.id) || []}
                       draft={drafts.get(conversation.id)}
                     />
                     {index < Math.min(sortedConversations.length, visibleConversationCount) - 1 && (
@@ -928,11 +799,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           )}
         </div>
       </ScrollArea>
-      <BulkLabelManager
-        isOpen={labelManagerOpen}
-        conversations={[...conversations, ...archivedConversations]}
-        onClose={() => setLabelManagerOpen(false)}
-      />
     </div>
   )
 }

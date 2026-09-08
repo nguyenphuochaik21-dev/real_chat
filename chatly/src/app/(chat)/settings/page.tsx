@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   User,
@@ -23,6 +24,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Tables } from '@/types'
 import { useI18n, type Locale } from '@/lib/i18n'
 import { removeCurrentPushSubscription } from '@/lib/push'
+import { useCurrentUserId } from '@/hooks/use-current-user-id'
 
 type Profile = Pick<
   Tables<'profiles'>,
@@ -42,21 +44,17 @@ interface SettingsSectionProps {
 }
 
 function SettingsSection({ title, items }: SettingsSectionProps) {
-  const router = useRouter()
-
   return (
     <div className="mb-6">
       <h3 className="mb-2 px-4 text-sm font-medium text-[var(--text-muted)]">{title}</h3>
       <div className="rounded-xl bg-[var(--bg-panel)]">
-        {items.map((item, index) => (
-          <div key={item.title}>
-            <div
-              className={cn(
-                'flex items-center gap-4 px-4 py-3 transition-colors hover:bg-[var(--bg-hover)]',
-                item.href && 'cursor-pointer'
-              )}
-              onClick={item.onClick ?? (item.href ? () => router.push(item.href!) : undefined)}
-            >
+        {items.map((item, index) => {
+          const className = cn(
+            'flex w-full items-center gap-4 px-4 py-3 text-left transition-colors',
+            (item.href || item.onClick) && 'hover:bg-[var(--bg-hover)]'
+          )
+          const content = (
+            <>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--bg-hover)]">
                 <item.icon className="h-5 w-5 text-[var(--text-secondary)]" />
               </div>
@@ -71,10 +69,26 @@ function SettingsSection({ title, items }: SettingsSectionProps) {
               ) : (
                 <ChevronRight className="h-5 w-5 text-[var(--text-muted)]" />
               )}
+            </>
+          )
+
+          return (
+            <div key={item.title}>
+              {item.href ? (
+                <Link href={item.href} className={className}>
+                  {content}
+                </Link>
+              ) : item.onClick ? (
+                <button type="button" className={className} onClick={item.onClick}>
+                  {content}
+                </button>
+              ) : (
+                <div className={className}>{content}</div>
+              )}
+              {index < items.length - 1 && <Separator />}
             </div>
-            {index < items.length - 1 && <Separator />}
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -86,25 +100,21 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
+  const currentUserId = useCurrentUserId()
 
   useEffect(() => {
     const fetchProfile = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url, bio, role')
-          .eq('id', user.id)
-          .single()
-        setProfile(data)
-      }
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, bio, role')
+        .eq('id', currentUserId)
+        .single()
+      setProfile(data)
       setLoading(false)
     }
     fetchProfile()
-  }, [supabase])
+  }, [currentUserId, supabase])
 
   const handleSignOut = async () => {
     await removeCurrentPushSubscription().catch(() => undefined)

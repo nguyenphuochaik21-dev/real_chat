@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { useNavigationBadgesStore } from '@/stores/navigation-badges-store'
 
-const RECONCILE_INTERVAL_MS = 30_000
+const RECONCILE_INTERVAL_MS = 120_000
 const REFRESH_DEBOUNCE_MS = 120
 
 export function useNavigationBadges(userId: string | null) {
@@ -17,10 +17,21 @@ export function useNavigationBadges(userId: string | null) {
 
   const refresh = useCallback(async () => {
     if (!userId) return
-    const { data, error } = await supabase.rpc('get_conversation_summaries')
-    if (error) return
+    const { data, error } = await supabase.rpc('get_unread_message_count')
+    if (!error) {
+      setUnreadMessages(Number(data) || 0)
+      return
+    }
 
-    const total = parseConversationSummaries(data)
+    const isMissingMigration =
+      error.code === 'PGRST202' ||
+      error.code === '42883' ||
+      error.message.includes('get_unread_message_count')
+    if (!isMissingMigration) return
+
+    const fallback = await supabase.rpc('get_conversation_summaries')
+    if (fallback.error) return
+    const total = parseConversationSummaries(fallback.data)
       .filter((conversation) => !conversation.is_archived)
       .reduce((sum, conversation) => sum + conversation.unread_count, 0)
     setUnreadMessages(total)

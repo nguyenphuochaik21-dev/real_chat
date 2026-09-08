@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
 import { MessageSquare, Users, Phone, Settings, Search, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
-import { createClient } from '@/lib/supabase/client'
 import { usePresence } from '@/hooks/use-presence'
 import { NotificationBell, NotificationCenter } from '@/components/notifications'
 import { useI18n } from '@/lib/i18n'
@@ -25,7 +24,7 @@ const navItems = [
   { href: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 
-interface Profile {
+export interface SidebarProfile {
   id: string
   username: string
   display_name: string
@@ -34,76 +33,21 @@ interface Profile {
   role?: string
 }
 
-async function setUserOnline(supabase: ReturnType<typeof createClient>) {
-  try {
-    await supabase.rpc('set_user_online')
-  } catch {
-    // Silently fail
-  }
+interface SidebarProps {
+  userId: string
+  profile: SidebarProfile | null
 }
 
-async function setUserOffline(supabase: ReturnType<typeof createClient>) {
-  try {
-    await supabase.rpc('set_user_offline')
-  } catch {
-    // Silently fail
-  }
-}
-
-export function Sidebar() {
+export function Sidebar({ userId, profile }: SidebarProps) {
   const { t } = useI18n()
   const pathname = usePathname()
   const router = useRouter()
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
   const unreadCount = useNavigationBadgesStore((state) => state.unreadMessages)
   const [showSearch, setShowSearch] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const friendRequestCount = useFriendshipStore((state) => state.incomingCount)
-  const supabaseRef = useRef(createClient())
 
-  // Notification store
-  // Initialize presence tracking for current user
-  const {} = usePresence(profile?.id || null)
-
-  // Load profile and initialize presence tracking.
-  useEffect(() => {
-    let mounted = true
-    let currentUserId: string | null = null
-
-    const supabase = supabaseRef.current
-
-    const loadProfile = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (user && mounted) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url, status, role')
-          .eq('id', user.id)
-          .single()
-
-        if (mounted) {
-          setProfile(data)
-          setLoading(false)
-          currentUserId = user.id
-          // Set user as online on mount
-          await setUserOnline(supabase)
-        }
-      } else if (mounted) {
-        setLoading(false)
-      }
-    }
-
-    loadProfile()
-
-    return () => {
-      mounted = false
-      if (currentUserId) void setUserOffline(supabase)
-    }
-  }, [t])
+  usePresence(userId)
 
   const userForAvatar = profile || {
     id: 'unknown',
@@ -190,14 +134,9 @@ export function Sidebar() {
         </nav>
 
         {/* User avatar - show online status since user is active */}
-        {!loading && (
-          <Link
-            href="/settings"
-            className="mt-auto rounded-xl transition-transform hover:scale-105"
-          >
-            <Avatar user={userForAvatar} size="md" showStatus statusOverride={currentUserStatus} />
-          </Link>
-        )}
+        <Link href="/settings" className="mt-auto rounded-xl transition-transform hover:scale-105">
+          <Avatar user={userForAvatar} size="md" showStatus statusOverride={currentUserStatus} />
+        </Link>
       </aside>
 
       {/* Global Search Modal */}

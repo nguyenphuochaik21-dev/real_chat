@@ -1,7 +1,6 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { getServerAuth } from '@/lib/supabase/auth'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
 import { z } from 'zod'
 import type { Tables } from '@/types'
@@ -64,12 +63,13 @@ const adminOffsetSchema = z.number().int().min(0).max(1_000_000)
 const adminLimitSchema = z.number().int().min(1).max(100)
 const supportStatusSchema = z.enum(['open', 'in_progress', 'resolved'])
 const supportResponseSchema = z.string().trim().max(4000)
+const SUPPORT_REQUEST_SELECT =
+  'id, user_id, category, content, status, admin_response, resolved_at, resolved_by, created_at, updated_at, user:profiles(id, display_name, username, avatar_url)'
+
+type ServerSupabaseClient = Awaited<ReturnType<typeof getServerAuth>>['supabase']
 
 async function requireAdmin() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { supabase, user } = await getServerAuth()
   if (!user) throw new Error('Authentication required')
 
   const { data: isAdmin, error } = await supabase.rpc('is_chatly_admin', {
@@ -99,25 +99,32 @@ function normalizeAdminUsers(rows: RawAdminUser[]): AdminUser[] {
   }))
 }
 
-export async function getAdminUsersPage(
-  query = '',
-  offset = 0,
-  limit = 50
+function isMissingDatabaseFeature(error: { code?: string; message: string }, featureName: string) {
+  return (
+    error.code === 'PGRST202' ||
+    error.code === '42P01' ||
+    error.code === '42703' ||
+    error.code === '42883' ||
+    error.message.includes(featureName)
+  )
+}
+
+async function fetchAdminUsersPage(
+  supabase: ServerSupabaseClient,
+  search: string,
+  offset: number,
+  limit: number
 ): Promise<AdminUsersPage> {
-  const search = parseInput(adminSearchSchema, query)
-  const safeOffset = parseInput(adminOffsetSchema, offset)
-  const safeLimit = parseInput(adminLimitSchema, limit)
-  const { supabase } = await requireAdmin()
   const result = await supabase.rpc('admin_list_users_page', {
     p_search: search,
-    p_offset: safeOffset,
-    p_limit: safeLimit,
+    p_offset: offset,
+    p_limit: limit,
   })
 
   if (result.error) {
-    const isMissingMigration =
-      result.error.code === 'PGRST202' || result.error.message.includes('admin_list_users_page')
-    if (!isMissingMigration) throw new Error(result.error.message)
+    if (!isMissingDatabaseFeature(result.error, 'admin_list_users_page')) {
+      throw new Error(result.error.message)
+    }
 
     const fallback = await supabase.rpc('admin_list_users')
     if (fallback.error) throw new Error(fallback.error.message)
@@ -131,7 +138,7 @@ export async function getAdminUsersPage(
         )
       : allUsers
     return {
-      users: filtered.slice(safeOffset, safeOffset + safeLimit),
+      users: filtered.slice(offset, offset + limit),
       totalUsers: filtered.length,
     }
   }
@@ -143,24 +150,35 @@ export async function getAdminUsersPage(
   }
 }
 
+export async function getAdminUsersPage(
+  query = '',
+  offset = 0,
+  limit = 50
+): Promise<AdminUsersPage> {
+  const search = parseInput(adminSearchSchema, query)
+  const safeOffset = parseInput(adminOffsetSchema, offset)
+  const safeLimit = parseInput(adminLimitSchema, limit)
+  const { supabase } = await requireAdmin()
+  return fetchAdminUsersPage(supabase, search, safeOffset, safeLimit)
+}
+
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const { supabase, user } = await requireAdmin()
-  const [usersResult, statsResult, supportResult] = await Promise.all([
-    supabase.rpc('admin_list_users_page', { p_search: '', p_offset: 0, p_limit: 50 }),
+  const [usersPage, statsResult, supportResult] = await Promise.all([
+    fetchAdminUsersPage(supabase, '', 0, 50),
     supabase.rpc('get_admin_dashboard_stats'),
     supabase
       .from('support_requests')
-      .select('*, user:profiles(id, display_name, username, avatar_url)', { count: 'exact' })
+      .select(SUPPORT_REQUEST_SELECT, { count: 'exact' })
       .order('created_at', { ascending: false })
       .limit(30),
   ])
 
-  if (usersResult.error) throw new Error(usersResult.error.message)
   if (statsResult.error) throw new Error(statsResult.error.message)
-  if (supportResult.error) throw new Error(supportResult.error.message)
+  if (supportResult.error && !isMissingDatabaseFeature(supportResult.error, 'support_requests')) {
+    throw new Error(supportResult.error.message)
+  }
 
-  const rawUsers = usersResult.data ?? []
-  const users = normalizeAdminUsers(rawUsers)
   const supportRequests = ((supportResult.data ?? []) as RawSupportRequest[]).map((request) => ({
     ...request,
     user: Array.isArray(request.user) ? (request.user[0] ?? null) : request.user,
@@ -173,8 +191,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
 
   return {
     currentUserId: user.id,
-    users,
-    totalUsers: numberValue(rawUsers[0]?.total_count),
+    users: usersPage.users,
+    totalUsers: usersPage.totalUsers,
     stats: {
       users: numberValue(statsValue.users),
       suspendedUsers: numberValue(statsValue.suspendedUsers),
@@ -196,7 +214,6 @@ export async function setAdminUserVerified(userId: string, verified: boolean) {
     p_verified: verified,
   })
   if (error) throw new Error(error.message)
-  revalidatePath('/admin')
 }
 
 export async function getAdminSupportRequests(offset = 0, limit = 30) {
@@ -205,7 +222,7 @@ export async function getAdminSupportRequests(offset = 0, limit = 30) {
   const { supabase } = await requireAdmin()
   const { data, error, count } = await supabase
     .from('support_requests')
-    .select('*, user:profiles(id, display_name, username, avatar_url)', { count: 'exact' })
+    .select(SUPPORT_REQUEST_SELECT, { count: safeOffset === 0 ? 'exact' : undefined })
     .order('created_at', { ascending: false })
     .range(safeOffset, safeOffset + safeLimit - 1)
   if (error) throw new Error(error.message)
@@ -214,7 +231,7 @@ export async function getAdminSupportRequests(offset = 0, limit = 30) {
       ...request,
       user: Array.isArray(request.user) ? (request.user[0] ?? null) : request.user,
     })),
-    total: count ?? 0,
+    total: count,
   }
 }
 
@@ -235,7 +252,6 @@ export async function updateSupportRequest(requestId: string, status: string, re
     })
     .eq('id', id)
   if (error) throw new Error(error.message)
-  revalidatePath('/admin')
 }
 
 export async function updateAdminUser(
@@ -251,5 +267,4 @@ export async function updateAdminUser(
     p_is_suspended: isSuspended,
   })
   if (error) throw new Error(error.message)
-  revalidatePath('/admin')
 }

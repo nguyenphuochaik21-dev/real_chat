@@ -6,8 +6,15 @@ export default async function AdminPage() {
   let data
   try {
     data = await getAdminDashboard()
-  } catch {
-    redirect('/chats')
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === 'Authentication required' ||
+        error.message === 'Administrator access required')
+    ) {
+      redirect('/chats')
+    }
+    throw error
   }
 
   return <AdminDashboard data={data} />

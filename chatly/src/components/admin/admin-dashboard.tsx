@@ -45,6 +45,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
   const [totalSupportRequests, setTotalSupportRequests] = useState(data.totalSupportRequests)
   const [supportResponses, setSupportResponses] = useState<Record<string, string>>({})
   const [loadingUsers, setLoadingUsers] = useState(false)
+  const [loadingSupport, setLoadingSupport] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const firstSearchEffectRef = useRef(true)
@@ -172,16 +173,20 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
   }
 
   const loadMoreSupport = async () => {
-    if (loadingUsers || supportRequests.length >= totalSupportRequests) return
-    setLoadingUsers(true)
+    if (loadingSupport || supportRequests.length >= totalSupportRequests) return
+    setLoadingSupport(true)
+    setError(null)
     try {
       const page = await getAdminSupportRequests(supportRequests.length, 30)
-      setSupportRequests((current) => [...current, ...page.requests])
-      setTotalSupportRequests(page.total)
+      setSupportRequests((current) => {
+        const existing = new Set(current.map((request) => request.id))
+        return [...current, ...page.requests.filter((request) => !existing.has(request.id))]
+      })
+      if (page.total !== null) setTotalSupportRequests(page.total)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
     } finally {
-      setLoadingUsers(false)
+      setLoadingSupport(false)
     }
   }
 
@@ -406,8 +411,13 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
             </div>
             {supportRequests.length < totalSupportRequests && (
               <div className="border-t border-[var(--border-default)] p-4 text-right">
-                <Button variant="outline" size="sm" onClick={() => void loadMoreSupport()}>
-                  {t('admin.loadMore')}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loadingSupport}
+                  onClick={() => void loadMoreSupport()}
+                >
+                  {loadingSupport ? t('common.loading') : t('admin.loadMore')}
                 </Button>
               </div>
             )}

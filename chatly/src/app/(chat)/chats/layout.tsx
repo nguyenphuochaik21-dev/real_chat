@@ -1,17 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { usePathname } from 'next/navigation'
 import { ChatsList } from '@/components/chat/chats-list'
 import { ChatView } from '@/components/chat/chat-view'
-import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n'
+import { useCurrentUserId } from '@/hooks/use-current-user-id'
 
 export default function ChatsLayout() {
   const { t } = useI18n()
-  const [currentUserId, setCurrentUserId] = useState('')
+  const currentUserId = useCurrentUserId()
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
   const searchParams = useSearchParams()
@@ -22,17 +21,6 @@ export default function ChatsLayout() {
 
   // ChatsList chỉ hiển thị trên /chats paths
   const showChatsList = pathname.startsWith('/chats')
-
-  useEffect(() => {
-    const supabase = createClient()
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setCurrentUserId(user?.id || '')
-    }
-    getUser()
-  }, [])
 
   if (!showChatsList) {
     return null

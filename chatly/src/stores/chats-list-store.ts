@@ -26,7 +26,6 @@ interface ChatsListStore {
     conversations: ConversationWithDetails[]
     archivedConversations: ConversationWithDetails[]
     participantStatuses: Map<string, ParticipantStatus>
-    blockedUserIds: Set<string>
   }) => void
   setLoading: (loading: boolean) => void
   setBlockedUserIds: (ids: Set<string>) => void
@@ -55,7 +54,6 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
       conversations: data.conversations,
       archivedConversations: data.archivedConversations,
       participantStatuses: data.participantStatuses,
-      blockedUserIds: data.blockedUserIds,
       lastFetchedAt: Date.now(),
     }),
 

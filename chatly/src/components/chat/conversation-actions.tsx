@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Archive,
   ArchiveRestore,
@@ -10,7 +10,6 @@ import {
   Bell,
   Pin,
   PinOff,
-  Tag,
   ImageIcon,
   Search,
   Ban,
@@ -25,8 +24,6 @@ import {
   toggleMuted,
 } from '@/lib/actions/conversations'
 import { useNotificationStore } from '@/stores/notification-store'
-import { useConversationLabels } from '@/hooks/use-conversation-labels'
-import { LabelManager } from './label-manager'
 import { useI18n } from '@/lib/i18n'
 
 interface ConversationActionsProps {
@@ -66,25 +63,6 @@ export function ConversationActions({
   const [isArchived, setIsArchived] = useState(initialArchived)
   const [loading, setLoading] = useState<string | null>(null)
   const addToast = useNotificationStore((state) => state.addToast)
-
-  // Labels
-  const [showLabelManager, setShowLabelManager] = useState(false)
-  const {
-    labels,
-    conversationLabels,
-    createLabel,
-    deleteLabel,
-    assignLabel,
-    removeLabel,
-    loadLabelsForConversations,
-  } = useConversationLabels()
-
-  // Load labels for this conversation on mount
-  useEffect(() => {
-    loadLabelsForConversations([conversationId])
-  }, [conversationId, loadLabelsForConversations])
-
-  const currentLabels = conversationLabels.get(conversationId) || []
 
   const handlePinned = async () => {
     setLoading('pin')
@@ -197,193 +175,145 @@ export function ConversationActions({
   }
 
   return (
-    <>
-      <div
-        className="absolute top-full right-0 z-50 mt-1 w-56 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-3">
-          <span className="text-sm font-medium text-[var(--text-primary)]">
-            {t('actions.title')}
-          </span>
-          <Button variant="ghost" size="icon-sm" onClick={onClose} className="h-6 w-6">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <Separator />
-
-        {/* Menu items */}
-        <div className="p-1">
-          {onSearch && (
-            <button
-              onClick={() => {
-                onClose()
-                onSearch()
-              }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
-            >
-              <Search className="h-4 w-4 text-[var(--text-muted)]" />
-              <span className="text-[var(--text-primary)]">{t('actions.search')}</span>
-            </button>
-          )}
-
-          {onOpenMedia && (
-            <button
-              onClick={() => {
-                onClose()
-                onOpenMedia()
-              }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
-            >
-              <ImageIcon className="h-4 w-4 text-[var(--text-muted)]" />
-              <span className="text-[var(--text-primary)]">{t('actions.media')}</span>
-            </button>
-          )}
-
-          {onCreateGroup && (
-            <button
-              onClick={() => {
-                onClose()
-                onCreateGroup()
-              }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
-            >
-              <UsersRound className="h-4 w-4 text-[var(--text-muted)]" />
-              <span className="text-[var(--text-primary)]">{t('group.create')}</span>
-            </button>
-          )}
-
-          {(onSearch || onOpenMedia || onCreateGroup) && <Separator className="my-1" />}
-
-          {/* Pin/Unpin */}
-          <button
-            onClick={handlePinned}
-            disabled={loading === 'pin'}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
-          >
-            {isPinned ? (
-              <>
-                <PinOff className="h-4 w-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)]">{t('actions.unpin')}</span>
-              </>
-            ) : (
-              <>
-                <Pin className="h-4 w-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)]">{t('actions.pin')}</span>
-              </>
-            )}
-          </button>
-
-          {/* Mute/Unmute */}
-          <button
-            onClick={handleMuted}
-            disabled={loading === 'mute'}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
-          >
-            {isMuted ? (
-              <>
-                <Bell className="h-4 w-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)]">{t('actions.unmute')}</span>
-              </>
-            ) : (
-              <>
-                <BellOff className="h-4 w-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)]">{t('actions.mute')}</span>
-              </>
-            )}
-          </button>
-
-          {/* Archive/Unarchive */}
-          <button
-            onClick={handleArchiveToggle}
-            disabled={loading === 'archive'}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
-          >
-            {isArchived ? (
-              <>
-                <ArchiveRestore className="h-4 w-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)]">{t('actions.unarchive')}</span>
-              </>
-            ) : (
-              <>
-                <Archive className="h-4 w-4 text-[var(--text-muted)]" />
-                <span className="text-[var(--text-primary)]">{t('actions.archive')}</span>
-              </>
-            )}
-          </button>
-
-          {/* Labels */}
-          <button
-            onClick={() => setShowLabelManager(true)}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
-          >
-            <Tag className="h-4 w-4 text-[var(--text-muted)]" />
-            <span className="flex-1 text-left text-[var(--text-primary)]">
-              {t('actions.labels')}
-            </span>
-            {currentLabels.length > 0 && (
-              <div className="flex gap-1">
-                {currentLabels.slice(0, 3).map((label) => (
-                  <div
-                    key={label.id}
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: label.color || '#8B5CF6' }}
-                  />
-                ))}
-              </div>
-            )}
-          </button>
-
-          <Separator className="my-1" />
-
-          {onBlock && (
-            <button
-              onClick={() => {
-                onClose()
-                onBlock()
-              }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-500 hover:bg-red-500/10"
-            >
-              <Ban className="h-4 w-4" />
-              <span>{t('message.block')}</span>
-            </button>
-          )}
-
-          {/* Delete */}
-          <button
-            onClick={handleDelete}
-            disabled={loading === 'delete'}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-500 hover:bg-red-500/10 disabled:opacity-50"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span>{t('actions.deleteConversation')}</span>
-          </button>
-        </div>
+    <div
+      className="absolute top-full right-0 z-50 mt-1 w-56 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] shadow-lg"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between p-3">
+        <span className="text-sm font-medium text-[var(--text-primary)]">{t('actions.title')}</span>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} className="h-6 w-6">
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
-      {/* Label Manager Modal */}
-      <LabelManager
-        isOpen={showLabelManager}
-        onClose={() => setShowLabelManager(false)}
-        conversationId={conversationId}
-        currentLabels={currentLabels}
-        allLabels={labels}
-        onAssignLabel={async (labelId) => {
-          await assignLabel(conversationId, labelId)
-        }}
-        onRemoveLabel={async (labelId) => {
-          await removeLabel(conversationId, labelId)
-        }}
-        onCreateLabel={async (name, color) => {
-          const result = await createLabel(name, color)
-          return result
-        }}
-        onDeleteLabel={async (labelId) => {
-          await deleteLabel(labelId)
-        }}
-      />
-    </>
+      <Separator />
+
+      {/* Menu items */}
+      <div className="p-1">
+        {onSearch && (
+          <button
+            onClick={() => {
+              onClose()
+              onSearch()
+            }}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
+          >
+            <Search className="h-4 w-4 text-[var(--text-muted)]" />
+            <span className="text-[var(--text-primary)]">{t('actions.search')}</span>
+          </button>
+        )}
+
+        {onOpenMedia && (
+          <button
+            onClick={() => {
+              onClose()
+              onOpenMedia()
+            }}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
+          >
+            <ImageIcon className="h-4 w-4 text-[var(--text-muted)]" />
+            <span className="text-[var(--text-primary)]">{t('actions.media')}</span>
+          </button>
+        )}
+
+        {onCreateGroup && (
+          <button
+            onClick={() => {
+              onClose()
+              onCreateGroup()
+            }}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)]"
+          >
+            <UsersRound className="h-4 w-4 text-[var(--text-muted)]" />
+            <span className="text-[var(--text-primary)]">{t('group.create')}</span>
+          </button>
+        )}
+
+        {(onSearch || onOpenMedia || onCreateGroup) && <Separator className="my-1" />}
+
+        {/* Pin/Unpin */}
+        <button
+          onClick={handlePinned}
+          disabled={loading === 'pin'}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
+        >
+          {isPinned ? (
+            <>
+              <PinOff className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('actions.unpin')}</span>
+            </>
+          ) : (
+            <>
+              <Pin className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('actions.pin')}</span>
+            </>
+          )}
+        </button>
+
+        {/* Mute/Unmute */}
+        <button
+          onClick={handleMuted}
+          disabled={loading === 'mute'}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
+        >
+          {isMuted ? (
+            <>
+              <Bell className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('actions.unmute')}</span>
+            </>
+          ) : (
+            <>
+              <BellOff className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('actions.mute')}</span>
+            </>
+          )}
+        </button>
+
+        {/* Archive/Unarchive */}
+        <button
+          onClick={handleArchiveToggle}
+          disabled={loading === 'archive'}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-[var(--bg-hover)] disabled:opacity-50"
+        >
+          {isArchived ? (
+            <>
+              <ArchiveRestore className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('actions.unarchive')}</span>
+            </>
+          ) : (
+            <>
+              <Archive className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-primary)]">{t('actions.archive')}</span>
+            </>
+          )}
+        </button>
+
+        <Separator className="my-1" />
+
+        {onBlock && (
+          <button
+            onClick={() => {
+              onClose()
+              onBlock()
+            }}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-500 hover:bg-red-500/10"
+          >
+            <Ban className="h-4 w-4" />
+            <span>{t('message.block')}</span>
+          </button>
+        )}
+
+        {/* Delete */}
+        <button
+          onClick={handleDelete}
+          disabled={loading === 'delete'}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-red-500 hover:bg-red-500/10 disabled:opacity-50"
+        >
+          <Trash2 className="h-4 w-4" />
+          <span>{t('actions.deleteConversation')}</span>
+        </button>
+      </div>
+    </div>
   )
 }
