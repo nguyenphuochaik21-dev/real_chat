@@ -35,6 +35,7 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
         async (payload) => {
           if (!active) return
           const message = payload.new as {
+            id: string
             sender_id: string
             conversation_id: string
             content: string
@@ -42,7 +43,12 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
             media_group_id: string | null
           }
           if (message.sender_id === userId) return
-          if (pathnameRef.current === `/chats/${message.conversation_id}`) return
+          if (
+            document.visibilityState === 'visible' &&
+            pathnameRef.current === `/chats/${message.conversation_id}`
+          ) {
+            return
+          }
 
           if (message.media_group_id) {
             const version = (mediaGroupVersions.get(message.media_group_id) ?? 0) + 1
@@ -97,6 +103,7 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
             title: mentioned ? t('notifications.mentioned', { name: senderName }) : senderName,
             body,
             conversationId: message.conversation_id,
+            messageId: message.id,
             senderId: message.sender_id,
             senderName,
             senderAvatar: sender?.avatar_url,

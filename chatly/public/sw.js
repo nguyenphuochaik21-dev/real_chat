@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chatly-shell-v6'
+const CACHE_NAME = 'chatly-shell-v7'
 const SHELL_ASSETS = [
   '/offline',
   '/manifest.webmanifest',
@@ -86,6 +86,15 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const isIncomingCall = data.data?.type === 'call'
+      if (isIncomingCall) {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: 'CHATLY_INCOMING_CALL',
+            sessionId: data.data?.sessionId,
+            conversationId: data.data?.conversationId,
+          })
+        })
+      }
       if (!isIncomingCall && clients.some((client) => client.visibilityState === 'visible')) {
         return undefined
       }

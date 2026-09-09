@@ -19,6 +19,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import {
   getGroupDetails,
   inviteGroupMembers,
@@ -352,8 +353,11 @@ export function GroupDetailsPanel({
                           className="flex items-center gap-3 rounded-xl bg-[var(--bg-app)] p-3"
                         >
                           <Avatar user={request.profile} size="sm" />
-                          <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                            {request.profile.display_name}
+                          <p className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm font-medium">
+                            <span className="truncate">{request.profile.display_name}</span>
+                            {request.profile.is_verified && (
+                              <VerifiedBadge label={t('verified.label')} />
+                            )}
                           </p>
                           <Button
                             size="sm"
@@ -433,8 +437,9 @@ export function GroupDetailsPanel({
                             )}
                           >
                             <Avatar user={profile} size="sm" />
-                            <span className="min-w-0 flex-1 truncate text-sm">
-                              {profile.display_name}
+                            <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm">
+                              <span className="truncate">{profile.display_name}</span>
+                              {profile.is_verified && <VerifiedBadge label={t('verified.label')} />}
                             </span>
                           </button>
                         ))}
@@ -473,9 +478,14 @@ export function GroupDetailsPanel({
                         >
                           <Avatar user={member.profile} size="md" />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-                              {member.profile.display_name}
-                              {isSelf && ` (${t('common.you')})`}
+                            <p className="flex items-center gap-1 truncate text-sm font-medium text-[var(--text-primary)]">
+                              <span className="truncate">
+                                {member.profile.display_name}
+                                {isSelf && ` (${t('common.you')})`}
+                              </span>
+                              {member.profile.is_verified && (
+                                <VerifiedBadge label={t('verified.label')} />
+                              )}
                             </p>
                             <p className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
                               {member.role === 'owner' && <Crown className="h-3 w-3" />}

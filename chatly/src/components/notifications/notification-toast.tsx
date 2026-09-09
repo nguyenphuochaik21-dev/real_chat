@@ -4,7 +4,11 @@ import { useEffect, useState } from 'react'
 import { X, MessageSquare, Phone, AtSign, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
-import { useNotificationStore, type Notification, type NotificationType } from '@/stores/notification-store'
+import {
+  useNotificationStore,
+  type Notification,
+  type NotificationType,
+} from '@/stores/notification-store'
 import { useRouter } from 'next/navigation'
 
 const iconMap: Record<NotificationType, typeof MessageSquare> = {
@@ -32,7 +36,11 @@ function ToastItem({ notification }: { notification: Notification }) {
 
   const handleClick = () => {
     if (notification.conversationId) {
-      router.push(`/chats/${notification.conversationId}`)
+      router.push(
+        `/chats/${notification.conversationId}${
+          notification.messageId ? `?scrollTo=${notification.messageId}` : ''
+        }`
+      )
       handleClose()
     }
   }
@@ -43,9 +51,7 @@ function ToastItem({ notification }: { notification: Notification }) {
     <div
       className={cn(
         'pointer-events-auto flex w-80 items-start gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] p-3 shadow-lg transition-all duration-200',
-        isVisible && !isLeaving
-          ? 'translate-x-0 opacity-100'
-          : 'translate-x-full opacity-0'
+        isVisible && !isLeaving ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
       )}
     >
       {/* Avatar */}
@@ -68,21 +74,16 @@ function ToastItem({ notification }: { notification: Notification }) {
 
       {/* Content */}
       <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
-        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+        <p className="truncate text-sm font-medium text-[var(--text-primary)]">
           {notification.title}
         </p>
-        <p className="text-xs text-[var(--text-muted)] truncate">
-          {notification.body}
-        </p>
+        <p className="truncate text-xs text-[var(--text-muted)]">{notification.body}</p>
       </div>
 
       {/* Actions */}
       <div className="flex flex-shrink-0 items-center gap-1">
         {notification.conversationId && (
-          <button
-            onClick={handleClick}
-            className="text-xs text-primary-500 hover:underline"
-          >
+          <button onClick={handleClick} className="text-primary-500 text-xs hover:underline">
             View
           </button>
         )}
@@ -103,7 +104,7 @@ export function NotificationToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    <div className="fixed right-4 bottom-4 z-50 flex flex-col gap-2">
       {toasts.slice(-3).map((toast) => (
         <ToastItem key={toast.id} notification={toast} />
       ))}

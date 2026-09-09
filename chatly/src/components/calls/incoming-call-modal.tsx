@@ -38,8 +38,13 @@ export function IncomingCallModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-md">
-      <div className="w-80 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-8 text-center shadow-2xl ring-1 ring-white/10">
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+      role="dialog"
+      aria-modal="true"
+      aria-label={isVideo ? t('call.incomingVideo') : t('call.incomingVoice')}
+    >
+      <div className="w-full max-w-80 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-8 text-center shadow-2xl ring-1 ring-white/10">
         {/* Avatar */}
         <div className="mb-6">
           <div className="relative inline-block">

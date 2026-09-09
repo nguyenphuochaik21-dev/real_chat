@@ -9,6 +9,7 @@ export interface Notification {
   title: string
   body: string
   conversationId?: string
+  messageId?: string
   senderId?: string
   senderName?: string
   senderAvatar?: string | null
@@ -47,9 +48,14 @@ const showBrowserNotification = async (notification: Notification) => {
         : notification.id,
       data: {
         conversationId: notification.conversationId,
+        messageId: notification.messageId,
         senderId: notification.senderId,
         url: notification.conversationId
-          ? `/chats/${encodeURIComponent(notification.conversationId)}`
+          ? `/chats/${encodeURIComponent(notification.conversationId)}${
+              notification.messageId
+                ? `?scrollTo=${encodeURIComponent(notification.messageId)}`
+                : ''
+            }`
           : '/chats',
       },
       requireInteraction: false,
@@ -74,7 +80,13 @@ const showBrowserNotification = async (notification: Notification) => {
     browserNotification.onclick = () => {
       window.focus()
       if (notification.conversationId) {
-        window.open(`/chats/${encodeURIComponent(notification.conversationId)}`, '_self')
+        const messageQuery = notification.messageId
+          ? `?scrollTo=${encodeURIComponent(notification.messageId)}`
+          : ''
+        window.open(
+          `/chats/${encodeURIComponent(notification.conversationId)}${messageQuery}`,
+          '_self'
+        )
       }
       browserNotification.close()
     }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
@@ -66,9 +67,10 @@ export function Sidebar({ userId, profile }: SidebarProps) {
         {/* Logo */}
         <Link
           href="/chats"
-          className="bg-primary-500 mb-6 flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-sm"
+          className="mb-6 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl shadow-sm"
+          aria-label="Chatly"
         >
-          <MessageSquare className="h-5 w-5" />
+          <Image src="/icons/chatly-192.png" alt="" width={40} height={40} priority />
         </Link>
 
         {/* Navigation */}

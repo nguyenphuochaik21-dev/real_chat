@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSearch, type Profile, type SearchResult } from '@/hooks/use-search'
 import { Avatar } from '@/components/ui/avatar'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { useI18n } from '@/lib/i18n'
 
 interface SearchModalProps {
@@ -403,7 +404,10 @@ export function SearchModal({
                 >
                   <Avatar user={contact} size="md" />
                   <div className="text-left">
-                    <p className="font-medium text-[var(--text-primary)]">{contact.display_name}</p>
+                    <p className="flex items-center gap-1 font-medium text-[var(--text-primary)]">
+                      <span>{contact.display_name}</span>
+                      {contact.is_verified && <VerifiedBadge label={t('verified.label')} />}
+                    </p>
                     <p className="text-xs text-[var(--text-muted)]">@{contact.username}</p>
                   </div>
                 </button>

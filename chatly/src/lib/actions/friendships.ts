@@ -34,7 +34,8 @@ interface FriendshipRowWithProfiles extends FriendshipRow {
   addressee: FriendProfile | FriendProfile[] | null
 }
 
-const PROFILE_COLUMNS = 'id, username, display_name, avatar_url, bio, status, last_seen, created_at'
+const PROFILE_COLUMNS =
+  'id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified'
 
 async function getAuthenticatedUser() {
   const supabase = await createClient()

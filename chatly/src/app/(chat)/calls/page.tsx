@@ -16,6 +16,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { useCallHistoryFiltered } from '@/hooks/use-call-history'
 import { formatCallDuration } from '@/stores/call-store'
 import { useI18n } from '@/lib/i18n'
@@ -191,6 +192,9 @@ export default function CallsPage() {
                           >
                             {call.other_user?.display_name || t('calls.unknownUser')}
                           </p>
+                          {call.other_user?.is_verified && (
+                            <VerifiedBadge label={t('verified.label')} />
+                          )}
                           <CallIcon direction={call.direction} status={call.status} />
                         </div>
                         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">

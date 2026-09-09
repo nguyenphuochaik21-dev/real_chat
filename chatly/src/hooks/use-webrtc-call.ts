@@ -144,33 +144,64 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         .eq('id', session.caller_id)
         .single()
 
-      if (caller) {
-        useCallStore.getState().receiveCall(
-          session.id,
-          session.conversation_id,
-          {
-            id: caller.id,
-            displayName: caller.display_name,
-            avatarUrl: caller.avatar_url || undefined,
-          },
-          session.call_type
-        )
+      useCallStore.getState().receiveCall(
+        session.id,
+        session.conversation_id,
+        {
+          id: caller?.id || session.caller_id,
+          displayName: caller?.display_name || 'Chatly user',
+          avatarUrl: caller?.avatar_url || undefined,
+        },
+        session.call_type
+      )
 
-        window.setTimeout(() => {
-          const latest = useCallStore.getState()
-          if (latest.sessionId !== session.id || latest.status !== 'ringing') return
+      window.setTimeout(() => {
+        const latest = useCallStore.getState()
+        if (latest.sessionId !== session.id || latest.status !== 'ringing') return
 
-          void supabase
-            .rpc('end_call', { p_session_id: session.id, p_status: 'missed' })
-            .then(({ error }) => {
-              const active = useCallStore.getState()
-              if (!error && active.sessionId === session.id && active.status === 'ringing') {
-                active.markMissed()
-              }
-            })
-        }, remainingRingTime)
+        void supabase
+          .rpc('end_call', { p_session_id: session.id, p_status: 'missed' })
+          .then(({ error }) => {
+            const active = useCallStore.getState()
+            if (!error && active.sessionId === session.id && active.status === 'ringing') {
+              active.markMissed()
+            }
+          })
+      }, remainingRingTime)
+    }
+
+    const recoverIncomingCall = async (sessionId?: string) => {
+      await supabase.rpc('expire_stale_calls_for_current_user')
+      const cutoff = new Date(Date.now() - CALL_RING_TIMEOUT_MS).toISOString()
+      const baseQuery = supabase
+        .from('call_sessions')
+        .select('id, caller_id, call_type, conversation_id, created_at')
+        .eq('callee_id', userId)
+        .in('status', ['pending', 'ringing'])
+        .gte('created_at', cutoff)
+
+      const { data } = sessionId
+        ? await baseQuery.eq('id', sessionId).maybeSingle()
+        : await baseQuery.order('created_at', { ascending: false }).limit(1).maybeSingle()
+
+      if (data?.call_type && data.conversation_id && data.created_at) {
+        await receiveIncomingCall(data as IncomingSession)
       }
     }
+
+    const handleIncomingCallPush = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string }>).detail
+      void recoverIncomingCall(detail?.sessionId)
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void recoverIncomingCall()
+    }
+    const handleResume = () => void recoverIncomingCall()
+
+    window.addEventListener('chatly:incoming-call', handleIncomingCallPush)
+    window.addEventListener('focus', handleResume)
+    window.addEventListener('online', handleResume)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     const channel = supabase
       .channel(`call-sessions:${userId}:${crypto.randomUUID()}`)
@@ -253,26 +284,14 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       )
       .subscribe((status) => {
         if (status !== 'SUBSCRIBED') return
-        void (async () => {
-          await supabase.rpc('expire_stale_calls_for_current_user')
-          const cutoff = new Date(Date.now() - CALL_RING_TIMEOUT_MS).toISOString()
-          const { data } = await supabase
-            .from('call_sessions')
-            .select('id, caller_id, call_type, conversation_id, created_at')
-            .eq('callee_id', userId)
-            .in('status', ['pending', 'ringing'])
-            .gte('created_at', cutoff)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-          if (data?.call_type && data.conversation_id && data.created_at) {
-            await receiveIncomingCall(data as IncomingSession)
-          }
-        })()
+        void recoverIncomingCall()
       })
 
     return () => {
+      window.removeEventListener('chatly:incoming-call', handleIncomingCallPush)
+      window.removeEventListener('focus', handleResume)
+      window.removeEventListener('online', handleResume)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       void supabase.removeChannel(channel)
     }
   }, [userId, supabase])

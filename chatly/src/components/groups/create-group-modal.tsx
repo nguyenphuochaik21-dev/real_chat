@@ -6,6 +6,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { createGroup } from '@/lib/actions/groups'
 import { getFriendshipOverview, type FriendshipItem } from '@/lib/actions/friendships'
 import { useI18n } from '@/lib/i18n'
@@ -215,8 +216,9 @@ export function CreateGroupModal({
                   >
                     <Avatar user={profile} size="md" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-[var(--text-primary)]">
-                        {profile.display_name}
+                      <p className="flex items-center gap-1 truncate font-medium text-[var(--text-primary)]">
+                        <span className="truncate">{profile.display_name}</span>
+                        {profile.is_verified && <VerifiedBadge label={t('verified.label')} />}
                       </p>
                       {profile.username && (
                         <p className="truncate text-xs text-[var(--text-muted)]">

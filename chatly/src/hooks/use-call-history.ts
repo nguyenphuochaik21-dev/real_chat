@@ -21,6 +21,7 @@ export interface CallHistoryItem {
     id: string
     display_name: string
     avatar_url: string | null
+    is_verified: boolean
   }
 }
 
@@ -82,13 +83,13 @@ export function useCallHistory(userId: string, filter: CallHistoryFilter = 'all'
         )
         const profilesMap = new Map<
           string,
-          { id: string; display_name: string; avatar_url: string | null }
+          { id: string; display_name: string; avatar_url: string | null; is_verified: boolean }
         >()
 
         if (otherUserIds.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, display_name, avatar_url')
+            .select('id, display_name, avatar_url, is_verified')
             .in('id', otherUserIds)
           profiles?.forEach((profile) => profilesMap.set(profile.id, profile))
         }

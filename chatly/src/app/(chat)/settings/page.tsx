@@ -97,11 +97,12 @@ function SettingsSection({ title, items }: SettingsSectionProps) {
 export default function SettingsPage() {
   const { locale, setLocale, t } = useI18n()
   const router = useRouter()
-  const { theme, setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [supabase] = useState(() => createClient())
   const currentUserId = useCurrentUserId()
+  const isDark = (resolvedTheme ?? 'dark') === 'dark'
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -197,11 +198,10 @@ export default function SettingsPage() {
             title={t('settings.appearance')}
             items={[
               {
-                icon: theme === 'dark' ? Sun : Moon,
-                title: theme === 'dark' ? t('settings.lightMode') : t('settings.darkMode'),
-                description:
-                  theme === 'dark' ? t('settings.switchLight') : t('settings.switchDark'),
-                onClick: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
+                icon: isDark ? Sun : Moon,
+                title: isDark ? t('settings.lightMode') : t('settings.darkMode'),
+                description: isDark ? t('settings.switchLight') : t('settings.switchDark'),
+                onClick: () => setTheme(isDark ? 'light' : 'dark'),
               },
               {
                 icon: Palette,

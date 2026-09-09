@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { NotificationPermission } from '@/components/notifications/notification-permission'
 import { Separator } from '@/components/ui/separator'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { createClient } from '@/lib/supabase/client'
 import { getBlockedUsers } from '@/lib/actions/block'
 import { useDraftStore } from '@/stores/draft-store'
@@ -120,6 +121,9 @@ function ConversationItem({
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="truncate font-medium text-[var(--text-primary)]">{displayName}</span>
+            {!isGroup && conversation.participant?.is_verified && (
+              <VerifiedBadge label={t('verified.label')} />
+            )}
             {conversation.is_pinned && (
               <Pin className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
             )}

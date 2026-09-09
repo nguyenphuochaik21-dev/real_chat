@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { forwardMessage } from '@/lib/actions/messages'
 import { useConversations } from '@/hooks/use-conversations'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
@@ -200,7 +201,12 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
 
                     {/* Name */}
                     <div className="flex-1 text-left">
-                      <p className="font-medium text-[var(--text-primary)]">{displayName}</p>
+                      <p className="flex items-center gap-1 font-medium text-[var(--text-primary)]">
+                        <span className="truncate">{displayName}</span>
+                        {conv.type === 'direct' && conv.participant?.is_verified && (
+                          <VerifiedBadge label={t('verified.label')} />
+                        )}
+                      </p>
                     </div>
                   </button>
                 )

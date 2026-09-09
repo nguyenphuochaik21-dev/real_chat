@@ -68,6 +68,18 @@ export function queueCallPushNotification(sessionId: string) {
   }).catch(() => undefined)
 }
 
+export function queueSupportPushNotification(requestId: string, event: 'created' | 'updated') {
+  if (typeof window === 'undefined') return
+
+  void fetch('/api/push/support', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, event }),
+    credentials: 'same-origin',
+    keepalive: true,
+  }).catch(() => undefined)
+}
+
 export async function removeCurrentPushSubscription() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
 

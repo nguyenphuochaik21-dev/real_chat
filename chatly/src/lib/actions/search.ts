@@ -9,7 +9,7 @@ import { z } from 'zod'
 export type Message = Tables<'messages'>
 export type PublicProfile = Pick<
   Tables<'profiles'>,
-  'id' | 'username' | 'display_name' | 'avatar_url' | 'status'
+  'id' | 'username' | 'display_name' | 'avatar_url' | 'status' | 'is_verified'
 >
 
 export interface SearchResult {
@@ -196,7 +196,7 @@ export async function searchConversations(query: string): Promise<PublicProfile[
   } = await supabase.auth.getUser()
   if (!user) return []
 
-  const selectFields = 'id, username, display_name, avatar_url, status' as const
+  const selectFields = 'id, username, display_name, avatar_url, status, is_verified' as const
   const [nameResult, usernameResult] = await Promise.all([
     supabase
       .from('profiles')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, WifiOff, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
@@ -17,6 +17,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [installDismissed, setInstallDismissed] = useState(false)
   const [online, setOnline] = useState(true)
+  const lastPushRefreshRef = useRef(0)
 
   useEffect(() => {
     const onlineStatusTimeout = window.setTimeout(() => setOnline(navigator.onLine), 0)
@@ -35,25 +36,63 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     }
 
     const unlockAudio = () => unlockNotificationAudio()
+    const refreshPushSubscription = () => {
+      if (
+        document.visibilityState !== 'visible' ||
+        !('Notification' in window) ||
+        Notification.permission !== 'granted' ||
+        Date.now() - lastPushRefreshRef.current < 60_000
+      ) {
+        return
+      }
+      lastPushRefreshRef.current = Date.now()
+      void ensurePushSubscription().catch((error: unknown) => {
+        console.warn('[PWA] Push subscription refresh failed:', error)
+      })
+    }
 
     const handleInstallPrompt = (event: Event) => {
       event.preventDefault()
       setInstallPrompt(event as BeforeInstallPromptEvent)
     }
     const handleInstalled = () => setInstallPrompt(null)
-    const handleOnline = () => setOnline(true)
+    const handleOnline = () => {
+      setOnline(true)
+      refreshPushSubscription()
+    }
     const handleOffline = () => setOnline(false)
+    const handleVisibilityChange = () => refreshPushSubscription()
+    const handlePageShow = () => refreshPushSubscription()
     const handleServiceWorkerMessage = (event: MessageEvent) => {
-      const value = event.data as { type?: string; url?: string } | null
-      if (value?.type !== 'CHATLY_NAVIGATE' || !value.url) return
-      const target = new URL(value.url, window.location.origin)
-      if (target.origin === window.location.origin) window.location.assign(target.href)
+      const value = event.data as {
+        type?: string
+        url?: string
+        sessionId?: string
+        conversationId?: string
+      } | null
+      if (value?.type === 'CHATLY_NAVIGATE' && value.url) {
+        const target = new URL(value.url, window.location.origin)
+        if (target.origin === window.location.origin) window.location.assign(target.href)
+        return
+      }
+      if (value?.type === 'CHATLY_INCOMING_CALL' && value.sessionId) {
+        window.dispatchEvent(
+          new CustomEvent('chatly:incoming-call', {
+            detail: {
+              sessionId: value.sessionId,
+              conversationId: value.conversationId,
+            },
+          })
+        )
+      }
     }
 
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('pointerdown', unlockAudio, { once: true })
     window.addEventListener('keydown', unlockAudio, { once: true })
     navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
@@ -64,6 +103,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('appinstalled', handleInstalled)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('pointerdown', unlockAudio)
       window.removeEventListener('keydown', unlockAudio)
       navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)

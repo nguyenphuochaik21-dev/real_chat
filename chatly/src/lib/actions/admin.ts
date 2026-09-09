@@ -40,6 +40,7 @@ export interface AdminDashboardData {
 
 export interface AdminSupportRequest extends Tables<'support_requests'> {
   user: Pick<AdminUser, 'id' | 'display_name' | 'username' | 'avatar_url'> | null
+  assignedAdmin: Pick<AdminUser, 'id' | 'display_name' | 'username' | 'avatar_url'> | null
 }
 
 export interface AdminUsersPage {
@@ -56,6 +57,7 @@ type RawAdminUser = Omit<AdminUser, 'role' | 'status' | 'is_verified'> & {
 
 type RawSupportRequest = Tables<'support_requests'> & {
   user: AdminSupportRequest['user'] | AdminSupportRequest['user'][]
+  assignedAdmin: AdminSupportRequest['assignedAdmin'] | AdminSupportRequest['assignedAdmin'][]
 }
 
 const adminSearchSchema = z.string().trim().max(100)
@@ -64,7 +66,7 @@ const adminLimitSchema = z.number().int().min(1).max(100)
 const supportStatusSchema = z.enum(['open', 'in_progress', 'resolved'])
 const supportResponseSchema = z.string().trim().max(4000)
 const SUPPORT_REQUEST_SELECT =
-  'id, user_id, category, content, status, admin_response, resolved_at, resolved_by, created_at, updated_at, user:profiles(id, display_name, username, avatar_url)'
+  'id, user_id, assigned_admin_id, category, content, status, admin_response, resolved_at, resolved_by, created_at, updated_at, user:profiles!support_requests_user_id_fkey(id, display_name, username, avatar_url), assignedAdmin:profiles!support_requests_assigned_admin_id_fkey(id, display_name, username, avatar_url)'
 
 type ServerSupabaseClient = Awaited<ReturnType<typeof getServerAuth>>['supabase']
 
@@ -97,6 +99,16 @@ function normalizeAdminUsers(rows: RawAdminUser[]): AdminUser[] {
     friend_count: numberValue(managedUser.friend_count),
     is_verified: managedUser.role === 'admin' || managedUser.is_verified === true,
   }))
+}
+
+function normalizeSupportRequest(request: RawSupportRequest): AdminSupportRequest {
+  return {
+    ...request,
+    user: Array.isArray(request.user) ? (request.user[0] ?? null) : request.user,
+    assignedAdmin: Array.isArray(request.assignedAdmin)
+      ? (request.assignedAdmin[0] ?? null)
+      : request.assignedAdmin,
+  }
 }
 
 function isMissingDatabaseFeature(error: { code?: string; message: string }, featureName: string) {
@@ -179,10 +191,9 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
     throw new Error(supportResult.error.message)
   }
 
-  const supportRequests = ((supportResult.data ?? []) as RawSupportRequest[]).map((request) => ({
-    ...request,
-    user: Array.isArray(request.user) ? (request.user[0] ?? null) : request.user,
-  }))
+  const supportRequests = ((supportResult.data ?? []) as RawSupportRequest[]).map(
+    normalizeSupportRequest
+  )
 
   const statsValue =
     statsResult.data && typeof statsResult.data === 'object' && !Array.isArray(statsResult.data)
@@ -227,12 +238,21 @@ export async function getAdminSupportRequests(offset = 0, limit = 30) {
     .range(safeOffset, safeOffset + safeLimit - 1)
   if (error) throw new Error(error.message)
   return {
-    requests: ((data ?? []) as RawSupportRequest[]).map((request) => ({
-      ...request,
-      user: Array.isArray(request.user) ? (request.user[0] ?? null) : request.user,
-    })),
+    requests: ((data ?? []) as RawSupportRequest[]).map(normalizeSupportRequest),
     total: count,
   }
+}
+
+export async function getAdminSupportRequest(requestId: string) {
+  const id = parseInput(uuidSchema, requestId)
+  const { supabase } = await requireAdmin()
+  const { data, error } = await supabase
+    .from('support_requests')
+    .select(SUPPORT_REQUEST_SELECT)
+    .eq('id', id)
+    .single()
+  if (error) throw new Error(error.message)
+  return normalizeSupportRequest(data as RawSupportRequest)
 }
 
 export async function updateSupportRequest(requestId: string, status: string, response: string) {

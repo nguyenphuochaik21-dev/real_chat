@@ -695,7 +695,11 @@ export function ChatView({
   const { markAsRead } = useReadReceipts(conversationId, currentUserId)
 
   // Media gallery
-  const { mediaItems, refetch: refetchMedia } = useConversationMedia({ conversationId })
+  const {
+    mediaItems,
+    totalCount: mediaTotalCount,
+    refetch: refetchMedia,
+  } = useConversationMedia({ conversationId })
   const previewMediaItems = useMemo(
     () =>
       messages.flatMap((message) => {
@@ -1850,7 +1854,7 @@ export function ChatView({
     <div
       className={cn(
         'relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--bg-app)] transition-[padding] lg:duration-200',
-        showProfilePanel && 'lg:pr-80'
+        showProfilePanel && 'lg:pr-96'
       )}
     >
       {/* Header */}
@@ -2400,6 +2404,29 @@ export function ChatView({
         <ConversationProfilePanel
           profile={participant}
           status={participantStatus}
+          mediaItems={mediaItems.map((item) => ({
+            id: item.id,
+            url: item.url,
+            type: item.type,
+            name: item.name,
+            size: item.size,
+            mimeType: item.mimeType,
+          }))}
+          mediaTotalCount={mediaTotalCount}
+          isPinned={conversationFlags.is_pinned}
+          isMuted={conversationFlags.is_muted}
+          onOpenMedia={() => {
+            setShowProfilePanel(false)
+            setShowMediaGallery(true)
+          }}
+          onOpenSearch={() => {
+            setShowProfilePanel(false)
+            setShowSearch(true)
+          }}
+          onOpenActions={() => {
+            setShowProfilePanel(false)
+            setShowConversationActions(true)
+          }}
           onClose={() => setShowProfilePanel(false)}
         />
       )}

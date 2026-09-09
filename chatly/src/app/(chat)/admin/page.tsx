@@ -1,21 +1,13 @@
 import { redirect } from 'next/navigation'
 import { AdminDashboard } from '@/components/admin/admin-dashboard'
-import { getAdminDashboard } from '@/lib/actions/admin'
+import { getServerAuth } from '@/lib/supabase/auth'
 
 export default async function AdminPage() {
-  let data
-  try {
-    data = await getAdminDashboard()
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.message === 'Authentication required' ||
-        error.message === 'Administrator access required')
-    ) {
-      redirect('/chats')
-    }
-    throw error
-  }
+  const { supabase, user } = await getServerAuth()
+  if (!user) redirect('/login')
 
-  return <AdminDashboard data={data} />
+  const { data: isAdmin } = await supabase.rpc('is_chatly_admin', { p_user_id: user.id })
+  if (!isAdmin) redirect('/chats')
+
+  return <AdminDashboard currentUserId={user.id} />
 }

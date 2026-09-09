@@ -2,14 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, MessageCircle, Send } from 'lucide-react'
+import { ArrowLeft, Check, CheckCircle2, MessageCircle, Send } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { createConversation } from '@/lib/actions/conversations'
 import { getSupportPageData, submitSupportRequest, type SupportAdmin } from '@/lib/actions/support'
 import { useI18n } from '@/lib/i18n'
+import { queueSupportPushNotification } from '@/lib/push'
+import { createClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
+import { useNotificationStore } from '@/stores/notification-store'
 import type { Tables } from '@/types'
 import { useRouter } from 'next/navigation'
 
@@ -18,7 +23,9 @@ const CATEGORIES = ['account', 'messaging', 'calling', 'privacy', 'report', 'oth
 export default function SupportPage() {
   const { dateLocale, t } = useI18n()
   const router = useRouter()
-  const [admin, setAdmin] = useState<SupportAdmin | null>(null)
+  const [supabase] = useState(() => createClient())
+  const [admins, setAdmins] = useState<SupportAdmin[]>([])
+  const [selectedAdminId, setSelectedAdminId] = useState('')
   const [requests, setRequests] = useState<Tables<'support_requests'>[]>([])
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('account')
   const [content, setContent] = useState('')
@@ -30,7 +37,8 @@ export default function SupportPage() {
   useEffect(() => {
     void getSupportPageData()
       .then((data) => {
-        setAdmin(data.admin)
+        setAdmins(data.admins)
+        setSelectedAdminId((current) => current || data.admins[0]?.id || '')
         setRequests(data.requests)
       })
       .catch((loadError: unknown) =>
@@ -39,8 +47,34 @@ export default function SupportPage() {
       .finally(() => setLoading(false))
   }, [t])
 
-  const messageAdmin = async () => {
-    if (!admin) return
+  useEffect(() => {
+    const addNotification = useNotificationStore.getState().addNotification
+    const channel = supabase
+      .channel(`my-support-requests:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'support_requests' },
+        (payload) => {
+          const request = payload.new as Tables<'support_requests'>
+          const previous = payload.old as Partial<Tables<'support_requests'>>
+          setRequests((current) => current.map((item) => (item.id === request.id ? request : item)))
+          if (request.admin_response && request.admin_response !== previous.admin_response) {
+            addNotification({
+              type: 'system',
+              title: t('support.replyReceived'),
+              body: request.admin_response.slice(0, 120),
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [supabase, t])
+
+  const messageAdmin = async (admin: SupportAdmin) => {
     setBusy(true)
     try {
       const conversation = await createConversation(admin.id)
@@ -57,8 +91,9 @@ export default function SupportPage() {
     setError('')
     setNotice('')
     try {
-      const request = await submitSupportRequest(category, content)
+      const request = await submitSupportRequest(category, content, selectedAdminId)
       setRequests((current) => [request, ...current].slice(0, 30))
+      queueSupportPushNotification(request.id, 'created')
       setContent('')
       setNotice(t('support.sent'))
     } catch (submitError) {
@@ -78,19 +113,62 @@ export default function SupportPage() {
       </header>
       <ScrollArea className="flex-1">
         <main className="mx-auto w-full max-w-2xl space-y-5 p-4 sm:p-6">
-          {admin && (
-            <section className="flex items-center gap-3 rounded-2xl bg-[var(--bg-panel)] p-4 shadow-sm">
-              <Avatar user={admin} size="lg" showStatus />
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-[var(--text-primary)]">{admin.display_name}</p>
-                <p className="text-xs text-[var(--text-muted)]">{t('support.adminHint')}</p>
+          <section className="rounded-2xl bg-[var(--bg-panel)] p-4 shadow-sm">
+            <div className="mb-3">
+              <h2 className="font-semibold text-[var(--text-primary)]">
+                {t('support.chooseAdmin')}
+              </h2>
+              <p className="text-xs text-[var(--text-muted)]">{t('support.chooseAdminHint')}</p>
+            </div>
+            {admins.length ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {admins.map((admin) => {
+                  const selected = selectedAdminId === admin.id
+                  return (
+                    <div
+                      key={admin.id}
+                      className={cn(
+                        'flex items-center gap-3 rounded-xl border p-3 transition-colors',
+                        selected
+                          ? 'border-primary-500 bg-[var(--bg-active)]'
+                          : 'border-[var(--border-default)]'
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        onClick={() => setSelectedAdminId(admin.id)}
+                        aria-pressed={selected}
+                      >
+                        <Avatar user={admin} size="md" showStatus />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1 font-medium text-[var(--text-primary)]">
+                            <span className="truncate">{admin.display_name}</span>
+                            <VerifiedBadge label={t('verified.label')} />
+                          </span>
+                          <span className="block truncate text-xs text-[var(--text-muted)]">
+                            @{admin.username}
+                          </span>
+                        </span>
+                        {selected && <Check className="text-primary-500 h-5 w-5 shrink-0" />}
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => void messageAdmin(admin)}
+                        disabled={busy}
+                        aria-label={`${t('support.messageAdmin')} ${admin.display_name}`}
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
-              <Button size="sm" onClick={() => void messageAdmin()} disabled={busy}>
-                <MessageCircle className="h-4 w-4" />
-                {t('support.messageAdmin')}
-              </Button>
-            </section>
-          )}
+            ) : (
+              <p className="text-sm text-[var(--text-muted)]">{t('support.noAdmins')}</p>
+            )}
+          </section>
 
           <form
             onSubmit={submit}
@@ -124,7 +202,7 @@ export default function SupportPage() {
                 className="focus:ring-primary-500 mt-1 w-full resize-y rounded-xl border border-[var(--border-default)] bg-[var(--bg-app)] px-3 py-2 focus:ring-2 focus:outline-none"
               />
             </label>
-            <Button type="submit" disabled={busy || content.trim().length < 5}>
+            <Button type="submit" disabled={busy || !selectedAdminId || content.trim().length < 5}>
               <Send className="h-4 w-4" />
               {t('support.submit')}
             </Button>
@@ -141,9 +219,24 @@ export default function SupportPage() {
             ) : requests.length ? (
               <div className="divide-y divide-[var(--border-default)]">
                 {requests.map((request) => (
-                  <article key={request.id} className="list-render-row space-y-2 p-4">
+                  <article
+                    id={`support-${request.id}`}
+                    key={request.id}
+                    className="list-render-row scroll-mt-4 space-y-2 p-4"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{t(`support.${request.category}`)}</p>
+                      <p className="text-sm font-medium">
+                        {t(`support.${request.category}`)}
+                        {request.assigned_admin_id && (
+                          <span className="mt-0.5 block text-xs font-normal text-[var(--text-muted)]">
+                            {t('support.assignedTo', {
+                              name:
+                                admins.find((admin) => admin.id === request.assigned_admin_id)
+                                  ?.display_name ?? t('support.adminContact'),
+                            })}
+                          </span>
+                        )}
+                      </p>
                       <Badge variant={request.status === 'resolved' ? 'primary' : 'secondary'}>
                         {t(`support.${request.status}`)}
                       </Badge>

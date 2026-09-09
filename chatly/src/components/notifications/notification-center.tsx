@@ -33,7 +33,11 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
 
   const handleNotificationClick = (notification: (typeof notifications)[0]) => {
     if (notification.conversationId) {
-      router.push(`/chats/${notification.conversationId}`)
+      router.push(
+        `/chats/${notification.conversationId}${
+          notification.messageId ? `?scrollTo=${notification.messageId}` : ''
+        }`
+      )
       onClose()
     }
   }

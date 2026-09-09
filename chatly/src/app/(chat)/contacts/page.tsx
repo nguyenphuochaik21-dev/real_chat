@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { createConversation } from '@/lib/actions/conversations'
 import {
   getFriendshipOverview,
@@ -32,11 +33,15 @@ function matchesSearch(profile: FriendProfile, search: string) {
 }
 
 function ProfileIdentity({ profile }: { profile: FriendProfile }) {
+  const { t } = useI18n()
   return (
     <Link href={`/profile/${profile.id}`} className="flex min-w-0 flex-1 items-center gap-3">
       <Avatar user={profile} size="md" showStatus />
       <div className="min-w-0">
-        <p className="truncate font-medium text-[var(--text-primary)]">{profile.display_name}</p>
+        <p className="flex items-center gap-1 truncate font-medium text-[var(--text-primary)]">
+          <span className="truncate">{profile.display_name}</span>
+          {profile.is_verified && <VerifiedBadge label={t('verified.label')} />}
+        </p>
         <p className="truncate text-xs text-[var(--text-muted)]">
           @{profile.username}
           {profile.bio ? ` · ${profile.bio}` : ''}

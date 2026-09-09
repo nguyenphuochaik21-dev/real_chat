@@ -20,6 +20,11 @@
 }
 
 @layer utilities {
+  :root[data-theme='dark'] .text-primary-500,
+  :root[data-theme='system'][data-system-theme='dark'] .text-primary-500 {
+    color: var(--color-primary-300);
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--border-strong) transparent;

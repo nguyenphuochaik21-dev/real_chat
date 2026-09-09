@@ -293,6 +293,7 @@ export type Database = {
       support_requests: {
         Row: {
           admin_response: string | null
+          assigned_admin_id: string | null
           category: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
           content: string
           created_at: string
@@ -305,6 +306,7 @@ export type Database = {
         }
         Insert: {
           admin_response?: string | null
+          assigned_admin_id: string
           category: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
           content: string
           created_at?: string
@@ -317,6 +319,7 @@ export type Database = {
         }
         Update: {
           admin_response?: string | null
+          assigned_admin_id?: string | null
           category?: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
           content?: string
           created_at?: string
@@ -328,6 +331,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: 'support_requests_assigned_admin_id_fkey'
+            columns: ['assigned_admin_id']
+            isOneToOne: false
+            referencedRelation: 'profiles'
+            referencedColumns: ['id']
+          },
           {
             foreignKeyName: 'support_requests_user_id_fkey'
             columns: ['user_id']
@@ -1042,6 +1052,14 @@ export type Database = {
       get_support_admin_profile: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      get_support_admin_profiles: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      is_available_support_admin: {
+        Args: { p_admin_id: string }
+        Returns: boolean
       }
       get_group_share_info: {
         Args: { p_share_token: string }

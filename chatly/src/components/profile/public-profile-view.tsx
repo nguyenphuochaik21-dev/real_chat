@@ -8,7 +8,6 @@ import {
   CalendarDays,
   Cake,
   Check,
-  CheckCircle2,
   Clock3,
   Edit3,
   MessageSquare,
@@ -23,6 +22,7 @@ import { FaFacebookF, FaGithub, FaInstagram, FaLinkedinIn, FaYoutube } from 'rea
 import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { createConversation } from '@/lib/actions/conversations'
 import {
   removeFriendship,
@@ -214,10 +214,7 @@ export function PublicProfileView({
                 {profile.display_name}
               </h2>
               {profile.is_verified && (
-                <CheckCircle2
-                  className="h-5 w-5 fill-sky-500 text-white"
-                  aria-label={t('verified.label')}
-                />
+                <VerifiedBadge className="h-5 w-5" label={t('verified.label')} />
               )}
               {initialFriendship?.status === 'accepted' && (
                 <Badge variant="secondary">{t('publicProfile.friend')}</Badge>

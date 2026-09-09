@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Ban,
-  BadgeCheck,
   CheckCircle2,
   KeyRound,
   LifeBuoy,
@@ -20,7 +19,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { VerifiedBadge } from '@/components/ui/verified-badge'
 import {
+  getAdminDashboard,
+  getAdminSupportRequest,
   getAdminUsersPage,
   getAdminSupportRequests,
   setAdminUserVerified,
@@ -30,26 +32,118 @@ import {
   type AdminUser,
 } from '@/lib/actions/admin'
 import { useI18n } from '@/lib/i18n'
+import { queueSupportPushNotification } from '@/lib/push'
+import { createClient } from '@/lib/supabase/client'
+import { useNotificationStore } from '@/stores/notification-store'
 
 interface AdminDashboardProps {
-  data: AdminDashboardData
+  currentUserId: string
 }
 
-export function AdminDashboard({ data }: AdminDashboardProps) {
+const EMPTY_STATS: AdminDashboardData['stats'] = {
+  users: 0,
+  suspendedUsers: 0,
+  conversations: 0,
+  messages: 0,
+  friendships: 0,
+  calls: 0,
+}
+
+export function AdminDashboard({ currentUserId }: AdminDashboardProps) {
   const { dateLocale, t } = useI18n()
+  const [supabase] = useState(() => createClient())
   const [search, setSearch] = useState('')
-  const [users, setUsers] = useState(data.users)
-  const [totalUsers, setTotalUsers] = useState(data.totalUsers)
-  const [stats, setStats] = useState(data.stats)
-  const [supportRequests, setSupportRequests] = useState(data.supportRequests)
-  const [totalSupportRequests, setTotalSupportRequests] = useState(data.totalSupportRequests)
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [totalUsers, setTotalUsers] = useState(0)
+  const [stats, setStats] = useState(EMPTY_STATS)
+  const [supportRequests, setSupportRequests] = useState<AdminDashboardData['supportRequests']>([])
+  const [totalSupportRequests, setTotalSupportRequests] = useState(0)
   const [supportResponses, setSupportResponses] = useState<Record<string, string>>({})
+  const [loadingDashboard, setLoadingDashboard] = useState(true)
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingSupport, setLoadingSupport] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const firstSearchEffectRef = useRef(true)
   const searchRequestRef = useRef(0)
+  const supportRequestIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    let active = true
+    void getAdminDashboard()
+      .then((dashboard) => {
+        if (!active) return
+        setUsers(dashboard.users)
+        setTotalUsers(dashboard.totalUsers)
+        setStats(dashboard.stats)
+        setSupportRequests(dashboard.supportRequests)
+        supportRequestIdsRef.current = new Set(
+          dashboard.supportRequests.map((request) => request.id)
+        )
+        setTotalSupportRequests(dashboard.totalSupportRequests)
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingDashboard(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [t])
+
+  useEffect(() => {
+    let active = true
+    const addNotification = useNotificationStore.getState().addNotification
+    const refreshRequest = async (requestId: string, notify: boolean) => {
+      try {
+        const request = await getAdminSupportRequest(requestId)
+        if (!active) return
+        const alreadyKnown = supportRequestIdsRef.current.has(request.id)
+        supportRequestIdsRef.current.add(request.id)
+        setSupportRequests((current) => {
+          const exists = current.some((item) => item.id === request.id)
+          const next = exists
+            ? current.map((item) => (item.id === request.id ? request : item))
+            : [request, ...current]
+          return next.slice(0, 100)
+        })
+        if (notify && !alreadyKnown) {
+          setTotalSupportRequests((current) => current + 1)
+          addNotification({
+            type: 'system',
+            title: t('admin.newSupportRequest'),
+            body: `${request.user?.display_name ?? t('common.user')}: ${request.content.slice(0, 100)}`,
+          })
+        }
+      } catch {
+        // The next dashboard refresh will reconcile transient realtime fetch failures.
+      }
+    }
+
+    const channel = supabase
+      .channel(`admin-support:${currentUserId}:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'support_requests' },
+        (payload) => void refreshRequest(String(payload.new.id), true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'support_requests' },
+        (payload) => void refreshRequest(String(payload.new.id), false)
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      void supabase.removeChannel(channel)
+    }
+  }, [currentUserId, supabase, t])
 
   useEffect(() => {
     if (firstSearchEffectRef.current) {
@@ -158,6 +252,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
         supportRequests.find((request) => request.id === requestId)?.admin_response ??
         ''
       await updateSupportRequest(requestId, status, response)
+      queueSupportPushNotification(requestId, 'updated')
       setSupportRequests((current) =>
         current.map((request) =>
           request.id === requestId
@@ -178,6 +273,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
     setError(null)
     try {
       const page = await getAdminSupportRequests(supportRequests.length, 30)
+      page.requests.forEach((request) => supportRequestIdsRef.current.add(request.id))
       setSupportRequests((current) => {
         const existing = new Set(current.map((request) => request.id))
         return [...current, ...page.requests.filter((request) => !existing.has(request.id))]
@@ -215,7 +311,12 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
         <main className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
           <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             {statCards.map((card) => (
-              <div key={card.label} className="rounded-xl bg-[var(--bg-panel)] p-4 shadow-sm">
+              <div
+                key={card.label}
+                className={`rounded-xl bg-[var(--bg-panel)] p-4 shadow-sm ${
+                  loadingDashboard ? 'animate-pulse' : ''
+                }`}
+              >
                 <card.icon className="text-primary-500 mb-3 h-5 w-5" />
                 <p className="text-2xl font-bold text-[var(--text-primary)]">{card.value}</p>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">{card.label}</p>
@@ -259,12 +360,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                             Admin
                           </Badge>
                         )}
-                        {user.is_verified && (
-                          <BadgeCheck
-                            className="h-4 w-4 fill-sky-500 text-white"
-                            aria-label={t('verified.label')}
-                          />
-                        )}
+                        {user.is_verified && <VerifiedBadge label={t('verified.label')} />}
                         {user.is_suspended && (
                           <Badge className="bg-red-500/10 text-red-500" size="sm">
                             {t('admin.suspended')}
@@ -288,13 +384,13 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                       disabled={busyId === user.id || user.role === 'admin'}
                       onClick={() => void toggleVerification(user)}
                     >
-                      <BadgeCheck className="h-4 w-4" />
+                      <VerifiedBadge label={t('verified.label')} />
                       {user.is_verified ? t('admin.unverify') : t('admin.verify')}
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={busyId === user.id || user.id === data.currentUserId}
+                      disabled={busyId === user.id || user.id === currentUserId}
                       onClick={() =>
                         void updateUser(user, { role: user.role === 'admin' ? 'user' : 'admin' })
                       }
@@ -305,7 +401,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                     <Button
                       variant={user.is_suspended ? 'outline' : 'destructive'}
                       size="sm"
-                      disabled={busyId === user.id || user.id === data.currentUserId}
+                      disabled={busyId === user.id || user.id === currentUserId}
                       onClick={() => void updateUser(user, { is_suspended: !user.is_suspended })}
                     >
                       {user.is_suspended ? (
@@ -320,7 +416,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
               ))}
               {!users.length && (
                 <p className="p-8 text-center text-sm text-[var(--text-muted)]">
-                  {t('admin.noUsers')}
+                  {loadingDashboard ? t('common.loading') : t('admin.noUsers')}
                 </p>
               )}
             </div>
@@ -351,7 +447,11 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
             </div>
             <div className="divide-y divide-[var(--border-default)]">
               {supportRequests.map((request) => (
-                <article key={request.id} className="list-render-row space-y-3 p-4">
+                <article
+                  id={`support-${request.id}`}
+                  key={request.id}
+                  className="list-render-row scroll-mt-4 space-y-3 p-4"
+                >
                   <div className="flex items-start gap-3">
                     {request.user && <Avatar user={request.user} size="sm" />}
                     <div className="min-w-0 flex-1">
@@ -362,6 +462,13 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
                         {t(`support.${request.category}`)} ·{' '}
                         {new Date(request.created_at).toLocaleString(dateLocale)}
                       </p>
+                      {request.assignedAdmin && (
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                          {t('support.assignedTo', {
+                            name: request.assignedAdmin.display_name,
+                          })}
+                        </p>
+                      )}
                     </div>
                     <Badge variant={request.status === 'resolved' ? 'primary' : 'secondary'}>
                       {t(`support.${request.status}`)}
@@ -405,7 +512,7 @@ export function AdminDashboard({ data }: AdminDashboardProps) {
               ))}
               {!supportRequests.length && (
                 <p className="p-6 text-center text-sm text-[var(--text-muted)]">
-                  {t('support.empty')}
+                  {loadingDashboard ? t('common.loading') : t('support.empty')}
                 </p>
               )}
             </div>
