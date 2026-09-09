@@ -1,6 +1,6 @@
 'use client'
 
-import { MessageSquare, Phone, AtSign, Info, Check, Trash2 } from 'lucide-react'
+import { MessageSquare, Phone, AtSign, Info, Check, Trash2, LifeBuoy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { type Notification, type NotificationType } from '@/stores/notification-store'
@@ -11,6 +11,7 @@ const iconMap: Record<NotificationType, typeof MessageSquare> = {
   message: MessageSquare,
   call: Phone,
   mention: AtSign,
+  support: LifeBuoy,
   system: Info,
 }
 

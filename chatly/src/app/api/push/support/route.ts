@@ -38,16 +38,19 @@ export async function POST(request: Request) {
   const [{ data: ticket }, { data: actor }] = await Promise.all([
     admin
       .from('support_requests')
-      .select('id, user_id, assigned_admin_id, category, status, admin_response')
+      .select(
+        'id, user_id, assigned_admin_id, category, status, admin_response, admin_push_sent_at, user_push_sent_at'
+      )
       .eq('id', values.data.requestId)
       .maybeSingle(),
-    admin.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+    admin.from('profiles').select('role, is_suspended').eq('id', user.id).maybeSingle(),
   ])
   if (!ticket) return Response.json({ error: 'Support request not found' }, { status: 404 })
 
   let recipientIds: string[] = []
   if (values.data.event === 'created') {
     if (ticket.user_id !== user.id) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    if (actor?.is_suspended) return Response.json({ error: 'Forbidden' }, { status: 403 })
     if (ticket.assigned_admin_id) {
       recipientIds = [ticket.assigned_admin_id]
     } else {
@@ -59,9 +62,36 @@ export async function POST(request: Request) {
       recipientIds = (admins ?? []).map((profile) => profile.id)
     }
   } else {
-    if (actor?.role !== 'admin') return Response.json({ error: 'Forbidden' }, { status: 403 })
+    if (actor?.role !== 'admin' || actor.is_suspended) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    }
     recipientIds = [ticket.user_id]
   }
+
+  if (recipientIds.length === 0) return new Response(null, { status: 204 })
+
+  const pushSentAt = new Date().toISOString()
+  const claimResult =
+    values.data.event === 'created'
+      ? await admin
+          .from('support_requests')
+          .update({ admin_push_sent_at: pushSentAt })
+          .eq('id', ticket.id)
+          .is('admin_push_sent_at', null)
+          .select('id')
+          .maybeSingle()
+      : await admin
+          .from('support_requests')
+          .update({ user_push_sent_at: pushSentAt })
+          .eq('id', ticket.id)
+          .is('user_push_sent_at', null)
+          .select('id')
+          .maybeSingle()
+
+  if (claimResult.error) {
+    return Response.json({ error: 'Unable to queue notification' }, { status: 500 })
+  }
+  if (!claimResult.data) return new Response(null, { status: 204 })
 
   const { data: subscriptions } = await admin
     .from('push_subscriptions')

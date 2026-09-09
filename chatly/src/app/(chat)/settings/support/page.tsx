@@ -9,16 +9,21 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { createConversation } from '@/lib/actions/conversations'
-import { getSupportPageData, submitSupportRequest, type SupportAdmin } from '@/lib/actions/support'
+import {
+  getMySupportRequests,
+  getSupportPageData,
+  submitSupportRequest,
+  type SupportAdmin,
+} from '@/lib/actions/support'
 import { useI18n } from '@/lib/i18n'
 import { queueSupportPushNotification } from '@/lib/push'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { useNotificationStore } from '@/stores/notification-store'
 import type { Tables } from '@/types'
 import { useRouter } from 'next/navigation'
 
 const CATEGORIES = ['account', 'messaging', 'calling', 'privacy', 'report', 'other'] as const
+const SUPPORT_PAGE_SIZE = 6
 
 export default function SupportPage() {
   const { dateLocale, t } = useI18n()
@@ -27,6 +32,8 @@ export default function SupportPage() {
   const [admins, setAdmins] = useState<SupportAdmin[]>([])
   const [selectedAdminId, setSelectedAdminId] = useState('')
   const [requests, setRequests] = useState<Tables<'support_requests'>[]>([])
+  const [totalRequests, setTotalRequests] = useState(0)
+  const [requestPage, setRequestPage] = useState(0)
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('account')
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
@@ -40,6 +47,7 @@ export default function SupportPage() {
         setAdmins(data.admins)
         setSelectedAdminId((current) => current || data.admins[0]?.id || '')
         setRequests(data.requests)
+        setTotalRequests(data.totalRequests)
       })
       .catch((loadError: unknown) =>
         setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
@@ -48,7 +56,6 @@ export default function SupportPage() {
   }, [t])
 
   useEffect(() => {
-    const addNotification = useNotificationStore.getState().addNotification
     const channel = supabase
       .channel(`my-support-requests:${crypto.randomUUID()}`)
       .on(
@@ -56,15 +63,7 @@ export default function SupportPage() {
         { event: 'UPDATE', schema: 'public', table: 'support_requests' },
         (payload) => {
           const request = payload.new as Tables<'support_requests'>
-          const previous = payload.old as Partial<Tables<'support_requests'>>
           setRequests((current) => current.map((item) => (item.id === request.id ? request : item)))
-          if (request.admin_response && request.admin_response !== previous.admin_response) {
-            addNotification({
-              type: 'system',
-              title: t('support.replyReceived'),
-              body: request.admin_response.slice(0, 120),
-            })
-          }
         }
       )
       .subscribe()
@@ -73,6 +72,33 @@ export default function SupportPage() {
       void supabase.removeChannel(channel)
     }
   }, [supabase, t])
+
+  useEffect(() => {
+    if (loading || !window.location.hash.startsWith('#support-')) return
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(window.location.hash.slice(1))?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [loading, requests])
+
+  const changeRequestPage = async (nextPage: number) => {
+    if (nextPage < 0 || nextPage === requestPage) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await getMySupportRequests(nextPage * SUPPORT_PAGE_SIZE, SUPPORT_PAGE_SIZE)
+      setRequests(result.requests)
+      setTotalRequests(result.totalRequests)
+      setRequestPage(nextPage)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const messageAdmin = async (admin: SupportAdmin) => {
     setBusy(true)
@@ -92,7 +118,21 @@ export default function SupportPage() {
     setNotice('')
     try {
       const request = await submitSupportRequest(category, content, selectedAdminId)
-      setRequests((current) => [request, ...current].slice(0, 30))
+      setRequestPage(0)
+      setTotalRequests((current) => current + 1)
+      setRequests((current) =>
+        requestPage === 0 ? [request, ...current].slice(0, SUPPORT_PAGE_SIZE) : [request]
+      )
+      if (requestPage !== 0) {
+        void getMySupportRequests(0, SUPPORT_PAGE_SIZE)
+          .then((result) => {
+            setRequests(result.requests)
+            setTotalRequests(result.totalRequests)
+          })
+          .catch((loadError: unknown) => {
+            setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
+          })
+      }
       queueSupportPushNotification(request.id, 'created')
       setContent('')
       setNotice(t('support.sent'))
@@ -136,7 +176,7 @@ export default function SupportPage() {
                     >
                       <button
                         type="button"
-                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        className="flex min-w-0 flex-1 touch-manipulation items-center gap-3 text-left transition-transform active:scale-[0.98]"
                         onClick={() => setSelectedAdminId(admin.id)}
                         aria-pressed={selected}
                       >
@@ -261,6 +301,35 @@ export default function SupportPage() {
               </div>
             ) : (
               <p className="p-5 text-sm text-[var(--text-muted)]">{t('support.empty')}</p>
+            )}
+            {totalRequests > 0 && (
+              <div className="flex items-center justify-between gap-3 border-t border-[var(--border-default)] p-4">
+                <p className="text-xs text-[var(--text-muted)]">
+                  {t('support.showingRequests', {
+                    from: requestPage * SUPPORT_PAGE_SIZE + 1,
+                    to: Math.min((requestPage + 1) * SUPPORT_PAGE_SIZE, totalRequests),
+                    total: totalRequests,
+                  })}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading || requestPage === 0}
+                    onClick={() => void changeRequestPage(requestPage - 1)}
+                  >
+                    {t('common.previous')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading || (requestPage + 1) * SUPPORT_PAGE_SIZE >= totalRequests}
+                    onClick={() => void changeRequestPage(requestPage + 1)}
+                  >
+                    {t('common.next')}
+                  </Button>
+                </div>
+              </div>
             )}
           </section>
         </main>

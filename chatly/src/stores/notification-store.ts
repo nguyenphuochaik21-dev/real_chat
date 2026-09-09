@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { playMessageTone } from '@/lib/notification-sounds'
 
-export type NotificationType = 'message' | 'call' | 'mention' | 'system'
+export type NotificationType = 'message' | 'call' | 'mention' | 'support' | 'system'
 
 export interface Notification {
   id: string
@@ -10,6 +10,7 @@ export interface Notification {
   body: string
   conversationId?: string
   messageId?: string
+  url?: string
   senderId?: string
   senderName?: string
   senderAvatar?: string | null
@@ -50,13 +51,15 @@ const showBrowserNotification = async (notification: Notification) => {
         conversationId: notification.conversationId,
         messageId: notification.messageId,
         senderId: notification.senderId,
-        url: notification.conversationId
-          ? `/chats/${encodeURIComponent(notification.conversationId)}${
-              notification.messageId
-                ? `?scrollTo=${encodeURIComponent(notification.messageId)}`
-                : ''
-            }`
-          : '/chats',
+        url:
+          notification.url ||
+          (notification.conversationId
+            ? `/chats/${encodeURIComponent(notification.conversationId)}${
+                notification.messageId
+                  ? `?scrollTo=${encodeURIComponent(notification.messageId)}`
+                  : ''
+              }`
+            : '/chats'),
       },
       requireInteraction: false,
       renotify: true,
@@ -79,7 +82,9 @@ const showBrowserNotification = async (notification: Notification) => {
     // Handle click - navigate to conversation
     browserNotification.onclick = () => {
       window.focus()
-      if (notification.conversationId) {
+      if (notification.url) {
+        window.open(notification.url, '_self')
+      } else if (notification.conversationId) {
         const messageQuery = notification.messageId
           ? `?scrollTo=${encodeURIComponent(notification.messageId)}`
           : ''

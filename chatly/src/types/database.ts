@@ -293,6 +293,7 @@ export type Database = {
       support_requests: {
         Row: {
           admin_response: string | null
+          admin_push_sent_at: string | null
           assigned_admin_id: string | null
           category: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
           content: string
@@ -302,10 +303,12 @@ export type Database = {
           resolved_by: string | null
           status: 'open' | 'in_progress' | 'resolved'
           updated_at: string
+          user_push_sent_at: string | null
           user_id: string
         }
         Insert: {
           admin_response?: string | null
+          admin_push_sent_at?: string | null
           assigned_admin_id: string
           category: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
           content: string
@@ -315,10 +318,12 @@ export type Database = {
           resolved_by?: string | null
           status?: 'open' | 'in_progress' | 'resolved'
           updated_at?: string
+          user_push_sent_at?: string | null
           user_id: string
         }
         Update: {
           admin_response?: string | null
+          admin_push_sent_at?: string | null
           assigned_admin_id?: string | null
           category?: 'account' | 'messaging' | 'calling' | 'privacy' | 'report' | 'other'
           content?: string
@@ -328,6 +333,7 @@ export type Database = {
           resolved_by?: string | null
           status?: 'open' | 'in_progress' | 'resolved'
           updated_at?: string
+          user_push_sent_at?: string | null
           user_id?: string
         }
         Relationships: [

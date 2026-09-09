@@ -8,9 +8,10 @@ import { useNotificationStore } from '@/stores/notification-store'
 
 interface RealtimeNotificationsProps {
   userId: string
+  isAdmin: boolean
 }
 
-export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
+export function RealtimeNotifications({ userId, isAdmin }: RealtimeNotificationsProps) {
   const { t } = useI18n()
   const pathname = usePathname()
   const pathnameRef = useRef(pathname)
@@ -27,7 +28,7 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
     const supabase = createClient()
     const addNotification = useNotificationStore.getState().addNotification
 
-    const channel = supabase
+    let channel = supabase
       .channel(`notifications:${userId}:${crypto.randomUUID()}`)
       .on(
         'postgres_changes',
@@ -110,14 +111,76 @@ export function RealtimeNotifications({ userId }: RealtimeNotificationsProps) {
           })
         }
       )
-      .subscribe()
+
+    channel = channel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'support_requests',
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        if (!active) return
+        const request = payload.new as {
+          id: string
+          admin_response: string | null
+          status: string
+        }
+        const previous = payload.old as { admin_response?: string | null }
+        if (!request.admin_response || request.admin_response === previous.admin_response) return
+        addNotification({
+          type: 'support',
+          title: t('support.replyReceived'),
+          body: request.admin_response.slice(0, 120),
+          url: `/settings/support#support-${request.id}`,
+        })
+      }
+    )
+
+    if (isAdmin) {
+      channel = channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'support_requests',
+          filter: `assigned_admin_id=eq.${userId}`,
+        },
+        async (payload) => {
+          if (!active) return
+          const request = payload.new as {
+            id: string
+            user_id: string
+            category: string
+            content: string
+          }
+          const { data: sender } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', request.user_id)
+            .maybeSingle()
+          if (!active) return
+          addNotification({
+            type: 'support',
+            title: t('admin.newSupportRequest'),
+            body: `${sender?.display_name ?? t('common.user')}: ${request.content.slice(0, 100)}`,
+            senderId: request.user_id,
+            senderName: sender?.display_name,
+            url: `/admin#support-${request.id}`,
+          })
+        }
+      )
+    }
+
+    channel.subscribe()
 
     return () => {
       active = false
       mediaGroupVersions.clear()
       void supabase.removeChannel(channel)
     }
-  }, [t, userId])
+  }, [isAdmin, t, userId])
 
   return null
 }

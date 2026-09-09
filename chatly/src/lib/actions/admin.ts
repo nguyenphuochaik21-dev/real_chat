@@ -66,7 +66,7 @@ const adminLimitSchema = z.number().int().min(1).max(100)
 const supportStatusSchema = z.enum(['open', 'in_progress', 'resolved'])
 const supportResponseSchema = z.string().trim().max(4000)
 const SUPPORT_REQUEST_SELECT =
-  'id, user_id, assigned_admin_id, category, content, status, admin_response, resolved_at, resolved_by, created_at, updated_at, user:profiles!support_requests_user_id_fkey(id, display_name, username, avatar_url), assignedAdmin:profiles!support_requests_assigned_admin_id_fkey(id, display_name, username, avatar_url)'
+  'id, user_id, assigned_admin_id, category, content, status, admin_response, admin_push_sent_at, user_push_sent_at, resolved_at, resolved_by, created_at, updated_at, user:profiles!support_requests_user_id_fkey(id, display_name, username, avatar_url), assignedAdmin:profiles!support_requests_assigned_admin_id_fkey(id, display_name, username, avatar_url)'
 
 type ServerSupabaseClient = Awaited<ReturnType<typeof getServerAuth>>['supabase']
 
@@ -165,7 +165,7 @@ async function fetchAdminUsersPage(
 export async function getAdminUsersPage(
   query = '',
   offset = 0,
-  limit = 50
+  limit = 20
 ): Promise<AdminUsersPage> {
   const search = parseInput(adminSearchSchema, query)
   const safeOffset = parseInput(adminOffsetSchema, offset)
@@ -177,13 +177,13 @@ export async function getAdminUsersPage(
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const { supabase, user } = await requireAdmin()
   const [usersPage, statsResult, supportResult] = await Promise.all([
-    fetchAdminUsersPage(supabase, '', 0, 50),
+    fetchAdminUsersPage(supabase, '', 0, 20),
     supabase.rpc('get_admin_dashboard_stats'),
     supabase
       .from('support_requests')
       .select(SUPPORT_REQUEST_SELECT, { count: 'exact' })
       .order('created_at', { ascending: false })
-      .limit(30),
+      .limit(10),
   ])
 
   if (statsResult.error) throw new Error(statsResult.error.message)
@@ -227,7 +227,7 @@ export async function setAdminUserVerified(userId: string, verified: boolean) {
   if (error) throw new Error(error.message)
 }
 
-export async function getAdminSupportRequests(offset = 0, limit = 30) {
+export async function getAdminSupportRequests(offset = 0, limit = 10) {
   const safeOffset = parseInput(adminOffsetSchema, offset)
   const safeLimit = parseInput(adminLimitSchema, limit)
   const { supabase } = await requireAdmin()
@@ -266,6 +266,7 @@ export async function updateSupportRequest(requestId: string, status: string, re
     .update({
       status: safeStatus,
       admin_response: safeResponse || null,
+      user_push_sent_at: null,
       updated_at: new Date().toISOString(),
       resolved_at: resolved ? new Date().toISOString() : null,
       resolved_by: resolved ? user.id : null,

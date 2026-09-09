@@ -67,7 +67,8 @@ export function Sidebar({ userId, profile }: SidebarProps) {
         {/* Logo */}
         <Link
           href="/chats"
-          className="mb-6 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl shadow-sm"
+          prefetch
+          className="mb-6 flex h-10 w-10 touch-manipulation items-center justify-center overflow-hidden rounded-xl shadow-sm transition-transform active:scale-95"
           aria-label="Chatly"
         >
           <Image src="/icons/chatly-192.png" alt="" width={40} height={40} priority />
@@ -108,8 +109,9 @@ export function Sidebar({ userId, profile }: SidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 className={cn(
-                  'group relative flex h-12 w-12 items-center justify-center rounded-xl transition-colors',
+                  'group relative flex h-12 w-12 touch-manipulation items-center justify-center rounded-xl transition-[color,background-color,transform] active:scale-95',
                   isActive
                     ? 'text-primary-500 bg-[var(--bg-active)]'
                     : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
@@ -136,7 +138,11 @@ export function Sidebar({ userId, profile }: SidebarProps) {
         </nav>
 
         {/* User avatar - show online status since user is active */}
-        <Link href="/settings" className="mt-auto rounded-xl transition-transform hover:scale-105">
+        <Link
+          href="/settings"
+          prefetch
+          className="mt-auto touch-manipulation rounded-xl transition-transform hover:scale-105 active:scale-95"
+        >
           <Avatar user={userForAvatar} size="md" showStatus statusOverride={currentUserStatus} />
         </Link>
       </aside>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, MessageSquare, Phone, AtSign, Info } from 'lucide-react'
+import { X, MessageSquare, Phone, AtSign, Info, LifeBuoy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import {
@@ -15,6 +15,7 @@ const iconMap: Record<NotificationType, typeof MessageSquare> = {
   message: MessageSquare,
   call: Phone,
   mention: AtSign,
+  support: LifeBuoy,
   system: Info,
 }
 
@@ -35,7 +36,10 @@ function ToastItem({ notification }: { notification: Notification }) {
   }
 
   const handleClick = () => {
-    if (notification.conversationId) {
+    if (notification.url) {
+      router.push(notification.url)
+      handleClose()
+    } else if (notification.conversationId) {
       router.push(
         `/chats/${notification.conversationId}${
           notification.messageId ? `?scrollTo=${notification.messageId}` : ''
@@ -82,7 +86,7 @@ function ToastItem({ notification }: { notification: Notification }) {
 
       {/* Actions */}
       <div className="flex flex-shrink-0 items-center gap-1">
-        {notification.conversationId && (
+        {(notification.url || notification.conversationId) && (
           <button onClick={handleClick} className="text-primary-500 text-xs hover:underline">
             View
           </button>

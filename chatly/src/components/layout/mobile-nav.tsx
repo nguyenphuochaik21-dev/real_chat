@@ -41,9 +41,12 @@ export function MobileNav() {
           <Link
             key={item.href}
             href={item.href}
+            prefetch
             className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors',
-              active ? 'text-primary-500' : 'text-[var(--text-muted)]'
+              'mx-1 flex flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-xl py-2 transition-[color,background-color,transform] active:scale-95',
+              active
+                ? 'text-primary-500 bg-[var(--bg-active)]'
+                : 'text-[var(--text-muted)] active:bg-[var(--bg-hover)]'
             )}
             aria-current={active ? 'page' : undefined}
           >

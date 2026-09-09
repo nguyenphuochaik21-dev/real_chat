@@ -67,7 +67,7 @@ export async function getGroupDetails(conversationId: string): Promise<GroupDeta
     supabase
       .from('conversation_participants')
       .select(
-        'joined_at, role, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at)'
+        'joined_at, role, profile:profiles(id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified)'
       )
       .eq('conversation_id', id)
       .order('joined_at'),

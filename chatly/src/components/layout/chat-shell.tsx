@@ -37,7 +37,7 @@ export function ChatShell({ children, userId, profile }: ChatShellProps) {
           )}
         >
           <CallProvider userId={userId}>
-            <RealtimeNotifications userId={userId} />
+            <RealtimeNotifications userId={userId} isAdmin={profile?.role === 'admin'} />
             {children}
             <NotificationToastContainer />
           </CallProvider>

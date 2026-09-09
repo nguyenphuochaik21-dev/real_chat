@@ -7,6 +7,8 @@ import type { Json, Tables } from '@/types'
 
 const categorySchema = z.enum(['account', 'messaging', 'calling', 'privacy', 'report', 'other'])
 const contentSchema = z.string().trim().min(5).max(4000)
+const pageOffsetSchema = z.number().int().min(0).max(1_000_000)
+const pageLimitSchema = z.number().int().min(1).max(20)
 
 export interface SupportAdmin {
   id: string
@@ -55,16 +57,34 @@ export async function getSupportPageData() {
     supabase.rpc('get_support_admin_profiles'),
     supabase
       .from('support_requests')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(30),
+      .limit(6),
   ])
   if (adminResult.error) throw new Error(adminResult.error.message)
   if (requestsResult.error) throw new Error(requestsResult.error.message)
   return {
     admins: parseAdmins(adminResult.data),
     requests: requestsResult.data as Tables<'support_requests'>[],
+    totalRequests: requestsResult.count ?? 0,
+  }
+}
+
+export async function getMySupportRequests(offset = 0, limit = 6) {
+  const safeOffset = parseInput(pageOffsetSchema, offset)
+  const safeLimit = parseInput(pageLimitSchema, limit)
+  const { supabase, user } = await authenticatedClient()
+  const { data, error, count } = await supabase
+    .from('support_requests')
+    .select('*', { count: 'exact' })
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .range(safeOffset, safeOffset + safeLimit - 1)
+  if (error) throw new Error(error.message)
+  return {
+    requests: data as Tables<'support_requests'>[],
+    totalRequests: count ?? 0,
   }
 }
 
