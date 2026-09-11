@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useHydrated } from '@/hooks/use-hydrated'
 import { useI18n } from '@/lib/i18n'
 
 export default function ResetPasswordPage() {
   const { t } = useI18n()
   const router = useRouter()
+  const hydrated = useHydrated()
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [visible, setVisible] = useState(false)
@@ -95,7 +97,7 @@ export default function ResetPasswordPage() {
             required
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Button type="submit" className="w-full" disabled={!hydrated || loading}>
           {loading ? t('common.loading') : t('auth.updatePassword')}
         </Button>
       </form>

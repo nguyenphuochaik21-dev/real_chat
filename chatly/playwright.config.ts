@@ -1,4 +1,7 @@
+import { loadEnvConfig } from '@next/env'
 import { defineConfig, devices } from '@playwright/test'
+
+loadEnvConfig(process.cwd(), true)
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3000)
 

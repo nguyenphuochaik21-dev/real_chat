@@ -40,7 +40,13 @@ test.describe('public application shell', () => {
 
     await page.getByLabel('Email').fill('audit@example.invalid')
     await page.getByLabel('Mật khẩu', { exact: true }).fill('not-a-real-password')
-    await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
+    const submit = page.getByRole('button', { name: 'Đăng nhập', exact: true })
+    await expect(submit).toBeEnabled()
+    const rejectedRequest = page.waitForResponse(
+      (response) => response.url().includes('/auth/v1/token') && response.status() === 400
+    )
+    await submit.click()
+    await rejectedRequest
 
     await expect(page.getByText('Invalid login credentials', { exact: true })).toBeVisible()
   })

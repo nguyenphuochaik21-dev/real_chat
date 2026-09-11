@@ -1,6 +1,6 @@
 # Chatly: current context
 
-Last reviewed: 2026-09-10
+Last reviewed: 2026-09-11
 
 ## Runtime
 
@@ -31,8 +31,9 @@ Last reviewed: 2026-09-10
 
 ## Database migration baseline
 
-- There are 47 committed, append-only SQL migrations, ending at
-  `20260909070000_support_push_deduplication.sql`.
+- The production baseline contains 47 committed migrations through
+  `20260909070000_support_push_deduplication.sql`. The worktree adds the pending append-only
+  `20260911010000_private_call_signaling.sql` migration.
 - The `202501...` names are migration sequence identifiers, not evidence that the files are safe
   to remove. They create the base schema needed by fresh databases.
 - Do not delete, rename, reorder, edit, or squash an existing migration during normal feature
@@ -66,6 +67,7 @@ Last reviewed: 2026-09-10
 - `20260908010000`-`20260909070000`: single-reaction enforcement, admin/unread performance,
   assigned support queues and Realtime, runtime indexes, RLS advisor fixes, redundant-index
   removal, and push-notification deduplication.
+- `20260911010000`: private WebRTC signaling authorization for call participants.
 
 ### Current data model and invariants
 
@@ -97,8 +99,9 @@ Last reviewed: 2026-09-10
 - Incoming-call recovery ignores sessions older than 60 seconds; a database cleanup RPC and
   one-minute cron job expire abandoned pending calls.
 - The credential-free Playwright suite passed 14 tests on desktop and a Pixel 7 viewport on
-  2026-09-10. The authenticated group mutation test remains opt-in and was skipped because no
-  dedicated E2E credentials are configured.
+  2026-09-11. The authenticated group mutation test remains opt-in and was skipped because no
+  dedicated E2E credentials are configured. It can now provision and remove three temporary users
+  when explicitly enabled with a dedicated E2E service-role key.
 - The 2026-09-10 production audit added bounded link-preview image reads, stronger CSP directives,
   resilient service-worker registration, truthful non-E2EE security copy, functional call-history
   redial, and lazy-loaded browser auth/push code.
@@ -108,6 +111,9 @@ Last reviewed: 2026-09-10
   production `/login` then scored 97 Performance and 100 for Accessibility, Best Practices, and SEO.
 - Remaining release checks are physical-device PWA/push/TURN testing and the opt-in authenticated
   group mutation test with an account that has at least two accepted friends.
+- WebRTC signaling now has a pending hardening change that switches the call Broadcast topic to a
+  private channel and authorizes only the caller and callee through Realtime RLS. Apply its migration
+  before deploying the matching client change.
 
 ## Validation
 

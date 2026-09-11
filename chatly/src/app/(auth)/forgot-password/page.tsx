@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { ArrowLeft, MailCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useHydrated } from '@/hooks/use-hydrated'
 import { useI18n } from '@/lib/i18n'
 
 export default function ForgotPasswordPage() {
   const { t } = useI18n()
+  const hydrated = useHydrated()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
@@ -75,7 +77,7 @@ export default function ForgotPasswordPage() {
             required
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Button type="submit" className="w-full" disabled={!hydrated || loading}>
           {loading ? t('common.loading') : t('auth.sendResetLink')}
         </Button>
       </form>

@@ -373,10 +373,11 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
     const s = useCallStore.getState()
     if (s.sessionId) {
       try {
-        await supabase.rpc('update_call_status', {
+        const { error } = await supabase.rpc('update_call_status', {
           p_session_id: s.sessionId,
           p_status: 'declined',
         })
+        if (error) throw error
       } catch (err) {
         console.error('[declineCall] DB update failed', err)
       }
@@ -390,10 +391,11 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
 
     if (s.sessionId) {
       try {
-        await supabase.rpc('end_call', {
+        const { error } = await supabase.rpc('end_call', {
           p_session_id: s.sessionId,
           p_status: 'ended',
         })
+        if (error) throw error
       } catch (err) {
         console.error('[endCall] DB update failed', err)
       }

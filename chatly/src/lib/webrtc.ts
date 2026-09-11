@@ -75,15 +75,10 @@ export class WebRTCService {
   }
 
   async initialize(): Promise<void> {
-    try {
-      await this.acquireLocalStream()
-      this.createPeerConnection()
-      await this.connectSignaling()
-      if (this.isInitiator) await this.createOffer()
-    } catch (error) {
-      this.config.onError(error instanceof Error ? error : new Error('Failed to initialize WebRTC'))
-      throw error
-    }
+    await this.acquireLocalStream()
+    this.createPeerConnection()
+    await this.connectSignaling()
+    if (this.isInitiator) await this.createOffer()
   }
 
   private async acquireLocalStream(): Promise<MediaStream> {
@@ -139,10 +134,19 @@ export class WebRTCService {
    */
   private async connectSignaling(): Promise<void> {
     const supabase = createClient()
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError) throw new Error(`Could not authorize WebRTC: ${sessionError.message}`)
+    if (!session) throw new Error('Authentication is required for WebRTC signaling')
+    supabase.realtime.setAuth(session.access_token)
 
     const channel = supabase.channel(this.channelName, {
       config: {
         broadcast: { self: false, ack: false },
+        private: true,
       },
     })
 
@@ -156,10 +160,10 @@ export class WebRTCService {
 
     this.channel = channel
     await new Promise<void>((resolve, reject) => {
-      channel.subscribe((status) => {
+      channel.subscribe((status, error) => {
         if (status === 'SUBSCRIBED') resolve()
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          reject(new Error(`WebRTC signaling channel failed: ${status}`))
+          reject(new Error(`WebRTC signaling channel failed: ${status}`, { cause: error }))
         }
       })
     })

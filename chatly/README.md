@@ -35,5 +35,16 @@ npm run typecheck
 npm run build
 ```
 
+The authenticated group E2E test is intentionally opt-in because it mutates data. Configure it in
+an ignored `.env.local` (or `.env.test.local` when running with `NODE_ENV=test`) in one of two ways:
+
+- Set `E2E_MUTATION_TESTS=true`, `E2E_USER_EMAIL`, and `E2E_USER_PASSWORD` for a dedicated account
+  that has at least two accepted friends.
+- For a disposable Supabase project, also set `E2E_AUTO_PROVISION=true` and
+  `E2E_SUPABASE_SERVICE_ROLE_KEY`. The test creates three temporary confirmed users, exercises group
+  management, then removes their conversations and accounts even if the browser assertion fails.
+
+Never enable auto-provisioning against a project containing user data.
+
 Project architecture and roadmap documentation live in the repository-level `docs/` directory.
 The compact handoff reference is `../memory/chatly-context.md`.

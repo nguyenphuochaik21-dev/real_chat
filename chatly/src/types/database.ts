@@ -944,6 +944,10 @@ export type Database = {
         Args: { p_email: string }
         Returns: string
       }
+      can_access_call_signaling_topic: {
+        Args: { p_topic: string }
+        Returns: boolean
+      }
       create_group_conversation: {
         Args: { p_member_ids: string[]; p_title: string }
         Returns: string

@@ -7,11 +7,13 @@ import { Eye, EyeOff, MessageSquare, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
+import { useHydrated } from '@/hooks/use-hydrated'
 import { useI18n } from '@/lib/i18n'
 
 export default function RegisterPage() {
   const { t } = useI18n()
   const router = useRouter()
+  const hydrated = useHydrated()
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -114,7 +116,7 @@ export default function RegisterPage() {
           variant="outline"
           className="w-full justify-center"
           onClick={handleOAuthRegister}
-          disabled={isLoading}
+          disabled={!hydrated || isLoading}
         >
           <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
             <path
@@ -240,7 +242,11 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading || !allRequirementsMet}>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={!hydrated || isLoading || !allRequirementsMet}
+        >
           {isLoading ? t('auth.creating') : t('auth.createAccount')}
         </Button>
       </form>

@@ -7,11 +7,13 @@ import { Eye, EyeOff, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
+import { useHydrated } from '@/hooks/use-hydrated'
 import { useI18n } from '@/lib/i18n'
 
 export default function LoginPage() {
   const { t } = useI18n()
   const router = useRouter()
+  const hydrated = useHydrated()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -90,7 +92,7 @@ export default function LoginPage() {
           variant="outline"
           className="w-full justify-center"
           onClick={handleOAuthLogin}
-          disabled={isLoading}
+          disabled={!hydrated || isLoading}
         >
           <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
             <path
@@ -170,7 +172,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <Button type="submit" className="w-full" disabled={!hydrated || isLoading}>
           {isLoading ? t('auth.signingIn') : t('auth.signIn')}
         </Button>
       </form>
