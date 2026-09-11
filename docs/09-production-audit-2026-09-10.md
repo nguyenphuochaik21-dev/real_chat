@@ -6,6 +6,9 @@ The deployed application, local production build, application code, and linked S
 were reviewed. No known dependency vulnerability, schema-lint error, migration drift, blocking
 database query, or critical accessibility violation was found.
 
+The optimized application was deployed to production through the GitHub/Vercel integration from
+commit `5ac723f` on 2026-09-11 and passed the post-deployment smoke checks.
+
 The production URL was inspected while authenticated in the existing Chrome session for chats,
 contacts, settings, appearance, support, and administration. Public routes, redirects, PWA assets,
 headers, responsive behavior, and accessibility were also exercised through automated browser
@@ -41,16 +44,17 @@ tests on desktop and a Pixel 7 viewport.
 - `supabase db lint --level warning`: no schema errors.
 - Lighthouse on the optimized local production `/login`: Performance 97, Accessibility 100, Best
   Practices 100, SEO 100; FCP 0.8 s, LCP 2.7 s, TBT 20 ms, CLS 0. Scores vary by machine and run.
+- Lighthouse on the deployed production `/login`: Performance 97, Accessibility 100, Best
+  Practices 100, SEO 100; FCP 1.5 s, LCP 2.5 s, TBT 20 ms, CLS 0.
 
 ## Production observations and remaining release checks
 
-- The currently deployed pre-fix build measured 94 Performance, 94 Accessibility, 100 Best
-  Practices, and 100 SEO on `/login`.
+- The pre-fix deployment measured 94 Performance, 94 Accessibility, 100 Best Practices, and 100 SEO
+  on `/login`.
 - The production CSP still permits inline scripts/styles because the current static/CDN-friendly
   Next.js setup does not use request-scoped nonces. Moving to nonce-based CSP is a separate tradeoff
   that would make affected pages dynamic.
 - WebRTC camera/microphone/TURN behavior, installed-PWA push delivery, and notification audio still
   require physical-device testing. Automated destructive tests were not run against real user data.
-- Vercel CLI was logged out on this machine, so the optimized build could not be deployed directly
-  from the audit session without using the repository's deployment integration or authenticating
-  the CLI.
+- Vercel CLI was logged out on this machine; deployment completed successfully through the
+  repository integration instead.

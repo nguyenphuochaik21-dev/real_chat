@@ -104,6 +104,8 @@ Last reviewed: 2026-09-10
   redial, and lazy-loaded browser auth/push code.
 - The optimized local production build scored 97 Performance and 100 for Accessibility, Best
   Practices, and SEO in Lighthouse on `/login`; results can vary between runs and environments.
+- Commit `5ac723f` deployed successfully through the GitHub/Vercel integration on 2026-09-11. The
+  production `/login` then scored 97 Performance and 100 for Accessibility, Best Practices, and SEO.
 - Remaining release checks are physical-device PWA/push/TURN testing and the opt-in authenticated
   group mutation test with an account that has at least two accepted friends.
 
