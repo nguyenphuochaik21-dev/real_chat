@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, WifiOff, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
-import { ensurePushSubscription } from '@/lib/push'
 import { unlockNotificationAudio } from '@/lib/notification-sounds'
 
 interface BeforeInstallPromptEvent extends Event {
@@ -12,10 +11,16 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
+async function ensurePushIsReady() {
+  const { ensurePushSubscription } = await import('@/lib/push')
+  await ensurePushSubscription()
+}
+
 export function PwaProvider({ children }: { children: React.ReactNode }) {
   const { t } = useI18n()
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [installDismissed, setInstallDismissed] = useState(false)
+  const [canOfferInstall, setCanOfferInstall] = useState(false)
   const [online, setOnline] = useState(true)
   const lastPushRefreshRef = useRef(0)
 
@@ -25,9 +30,10 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       void navigator.serviceWorker
         .register('/sw.js')
         .then(async (registration) => {
+          if (!registration) return
           await registration.update()
           if ('Notification' in window && Notification.permission === 'granted') {
-            await ensurePushSubscription()
+            await ensurePushIsReady()
           }
         })
         .catch((error: unknown) => {
@@ -35,7 +41,10 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
         })
     }
 
-    const unlockAudio = () => unlockNotificationAudio()
+    const handleUserActivation = () => {
+      unlockNotificationAudio()
+      setCanOfferInstall(true)
+    }
     const refreshPushSubscription = () => {
       if (
         document.visibilityState !== 'visible' ||
@@ -46,7 +55,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
         return
       }
       lastPushRefreshRef.current = Date.now()
-      void ensurePushSubscription().catch((error: unknown) => {
+      void ensurePushIsReady().catch((error: unknown) => {
         console.warn('[PWA] Push subscription refresh failed:', error)
       })
     }
@@ -93,8 +102,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('offline', handleOffline)
     window.addEventListener('pageshow', handlePageShow)
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('pointerdown', unlockAudio, { once: true })
-    window.addEventListener('keydown', unlockAudio, { once: true })
+    window.addEventListener('pointerdown', handleUserActivation, { once: true })
+    window.addEventListener('keydown', handleUserActivation, { once: true })
     navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
 
     return () => {
@@ -105,8 +114,8 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('pageshow', handlePageShow)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('pointerdown', unlockAudio)
-      window.removeEventListener('keydown', unlockAudio)
+      window.removeEventListener('pointerdown', handleUserActivation)
+      window.removeEventListener('keydown', handleUserActivation)
       navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
     }
   }, [])
@@ -130,7 +139,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
           {t('pwa.offline')}
         </div>
       )}
-      {installPrompt && !installDismissed && (
+      {installPrompt && canOfferInstall && !installDismissed && (
         <div className="fixed right-3 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-[60] flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-panel)] p-3 shadow-xl md:bottom-4">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--text-primary)]">{t('pwa.install')}</p>

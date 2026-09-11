@@ -144,6 +144,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'calls.outgoing': 'Đi',
     'calls.yesterday': 'Hôm qua',
     'calls.retry': 'Thử lại',
+    'calls.refresh': 'Làm mới lịch sử cuộc gọi',
     'calls.unknownUser': 'Người dùng không xác định',
     'calls.none': 'Không tìm thấy cuộc gọi',
     'calls.video': 'video',
@@ -193,7 +194,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'auth.welcome': 'Chào mừng đến với Chatly',
     'auth.tagline':
       'Kết nối với bạn bè và đồng nghiệp theo thời gian thực. Nhanh, an toàn và đẹp mắt.',
-    'auth.encrypted': 'Tin nhắn được mã hóa đầu cuối',
+    'auth.encrypted': 'Tin nhắn được bảo vệ bằng kiểm soát truy cập',
     'auth.realtime': 'Nhắn tin thời gian thực và báo đang nhập',
     'auth.share': 'Chia sẻ ảnh, tệp và nhiều nội dung khác',
     'profile.title': 'Hồ sơ',
@@ -634,6 +635,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'calls.outgoing': 'Outgoing',
     'calls.yesterday': 'Yesterday',
     'calls.retry': 'Retry',
+    'calls.refresh': 'Refresh call history',
     'calls.unknownUser': 'Unknown User',
     'calls.none': 'No calls found',
     'calls.video': 'video',
@@ -682,7 +684,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'auth.welcome': 'Welcome to Chatly',
     'auth.tagline':
       'Connect with friends and colleagues in real-time. Fast, secure, and beautiful messaging.',
-    'auth.encrypted': 'End-to-end encrypted messages',
+    'auth.encrypted': 'Messages protected by access controls',
     'auth.realtime': 'Real-time messaging with typing indicators',
     'auth.share': 'Share photos, files, and more',
     'profile.title': 'Profile',

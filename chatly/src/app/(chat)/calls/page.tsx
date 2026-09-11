@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Phone,
@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { useCallHistoryFiltered } from '@/hooks/use-call-history'
+import { useCurrentUserId } from '@/hooks/use-current-user-id'
 import { formatCallDuration } from '@/stores/call-store'
 import { useI18n } from '@/lib/i18n'
 
@@ -84,23 +85,10 @@ function groupCallsByDate(
 export default function CallsPage() {
   const { t, dateLocale } = useI18n()
   const [filter, setFilter] = useState<CallFilter>('all')
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-
-  // Get current user
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      const { createClient } = await import('@/lib/supabase/client')
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setCurrentUserId(user?.id || null)
-    }
-    getCurrentUser()
-  }, [])
+  const currentUserId = useCurrentUserId()
 
   const { calls, loading, loadingMore, hasMore, error, refresh, loadMore } = useCallHistoryFiltered(
-    currentUserId || '',
+    currentUserId,
     filter
   )
   const groupedCalls = useMemo(() => groupCallsByDate(calls, dateLocale), [calls, dateLocale])
@@ -112,13 +100,36 @@ export default function CallsPage() {
     { key: 'outgoing', label: t('calls.outgoing') },
   ]
 
+  const callAgain = (call: (typeof calls)[number]) => {
+    if (!call.conversation_id || !call.other_user) return
+    window.dispatchEvent(
+      new CustomEvent('call:initiate', {
+        detail: {
+          conversationId: call.conversation_id,
+          remoteUser: {
+            id: call.other_user.id,
+            displayName: call.other_user.display_name,
+            avatarUrl: call.other_user.avatar_url || undefined,
+          },
+          type: call.call_type,
+        },
+      })
+    )
+  }
+
   return (
     <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-[var(--text-primary)]">{t('calls.title')}</h1>
-          <Button variant="ghost" size="icon" onClick={refresh} disabled={loading}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={refresh}
+            disabled={loading}
+            aria-label={t('calls.refresh')}
+          >
             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           </Button>
         </div>
@@ -221,13 +232,21 @@ export default function CallsPage() {
 
                       <div className="flex items-center gap-1">
                         {call.conversation_id && (
-                          <Link href={`/chats/${call.conversation_id}`}>
-                            <Button variant="ghost" size="icon-sm">
-                              <MessageSquare className="h-4 w-4" />
-                            </Button>
+                          <Link
+                            href={`/chats/${call.conversation_id}`}
+                            aria-label={`${t('nav.chats')}: ${call.other_user?.display_name || t('calls.unknownUser')}`}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+                          >
+                            <MessageSquare className="h-4 w-4" />
                           </Link>
                         )}
-                        <Button variant="ghost" size="icon-sm">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={!call.conversation_id || !call.other_user}
+                          aria-label={`${t(call.call_type === 'video' ? 'chat.videoCall' : 'chat.voiceCall')}: ${call.other_user?.display_name || t('calls.unknownUser')}`}
+                          onClick={() => callAgain(call)}
+                        >
                           {call.call_type === 'video' ? (
                             <Video className="h-4 w-4" />
                           ) : (

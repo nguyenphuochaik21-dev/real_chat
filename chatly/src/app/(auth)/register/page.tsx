@@ -7,7 +7,6 @@ import { Eye, EyeOff, MessageSquare, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { createClient } from '@/lib/supabase/client'
 import { useI18n } from '@/lib/i18n'
 
 export default function RegisterPage() {
@@ -41,6 +40,7 @@ export default function RegisterPage() {
       return
     }
 
+    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const { error } = await supabase.auth.signUp({
       email,
@@ -68,6 +68,7 @@ export default function RegisterPage() {
     setIsLoading(true)
     setError('')
 
+    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -99,7 +100,10 @@ export default function RegisterPage() {
       </p>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+        <div
+          role="alert"
+          className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
+        >
           {error}
         </div>
       )}
@@ -208,11 +212,13 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              className="pr-12"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+              className="absolute top-1/2 right-0 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>

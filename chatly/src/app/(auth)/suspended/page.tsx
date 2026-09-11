@@ -4,7 +4,6 @@ import { Ban } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n'
-import { createClient } from '@/lib/supabase/client'
 import { removeCurrentPushSubscription } from '@/lib/push'
 
 export default function SuspendedPage() {
@@ -13,6 +12,7 @@ export default function SuspendedPage() {
 
   const signOut = async () => {
     await removeCurrentPushSubscription().catch(() => undefined)
+    const { createClient } = await import('@/lib/supabase/client')
     await createClient().auth.signOut()
     router.replace('/login')
     router.refresh()

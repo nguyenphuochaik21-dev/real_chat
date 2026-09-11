@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { createClient } from '@/lib/supabase/client'
 import { useI18n } from '@/lib/i18n'
 
 export default function ResetPasswordPage() {
@@ -29,6 +28,7 @@ export default function ResetPasswordPage() {
     }
     setLoading(true)
     setError('')
+    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const { error: updateError } = await supabase.auth.updateUser({ password })
     if (updateError) {
@@ -46,7 +46,11 @@ export default function ResetPasswordPage() {
         {t('auth.chooseNewPassword')}
       </h1>
       <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('auth.newPasswordHint')}</p>
-      {error && <p className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">
+          {error}
+        </p>
+      )}
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div>
           <label htmlFor="new-password" className="text-sm font-medium text-[var(--text-primary)]">
@@ -61,11 +65,12 @@ export default function ResetPasswordPage() {
               autoComplete="new-password"
               minLength={8}
               required
+              className="pr-12"
             />
             <button
               type="button"
               onClick={() => setVisible((current) => !current)}
-              className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--text-muted)]"
+              className="absolute top-1/2 right-0 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               aria-label={visible ? t('auth.hidePassword') : t('auth.showPassword')}
             >
               {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
