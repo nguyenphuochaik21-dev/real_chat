@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
@@ -13,6 +12,7 @@ import { NotificationBell, NotificationCenter } from '@/components/notifications
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
 import { useNavigationBadgesStore } from '@/stores/navigation-badges-store'
+import { ChatlyLogo } from '@/components/brand/chatly-logo'
 
 const SearchModal = dynamic(() =>
   import('@/components/chat/search-modal').then((module) => module.SearchModal)
@@ -71,7 +71,7 @@ export function Sidebar({ userId, profile }: SidebarProps) {
           className="mb-6 flex h-10 w-10 touch-manipulation items-center justify-center overflow-hidden rounded-xl shadow-sm transition-transform active:scale-95"
           aria-label="Chatly"
         >
-          <Image src="/icons/chatly-192.png" alt="" width={40} height={40} priority />
+          <ChatlyLogo className="h-10 w-10" />
         </Link>
 
         {/* Navigation */}

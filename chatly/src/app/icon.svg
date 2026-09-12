@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Chatly">
-  <defs>
-    <radialGradient id="glow" cx="32%" cy="18%" r="92%">
-      <stop offset="0" stop-color="#8b5cf6" />
-      <stop offset="0.55" stop-color="#6d28d9" />
-      <stop offset="1" stop-color="#4c1d95" />
-    </radialGradient>
-  </defs>
-  <rect width="64" height="64" rx="15" fill="url(#glow)" />
-  <path d="M18 16h28a7 7 0 0 1 7 7v15a7 7 0 0 1-7 7H32l-8.5 6.3L25 45h-7a7 7 0 0 1-7-7V23a7 7 0 0 1 7-7Z" fill="#f5f5f4" />
+  <rect width="64" height="64" rx="17" fill="#6d28d9" />
+  <path d="M64 26v38H20C39 55 53 42 64 26Z" fill="#4338ca" opacity=".72" />
+  <circle cx="15" cy="12" r="15" fill="#fff" opacity=".08" />
+  <path d="M17.5 15.5h29A8.5 8.5 0 0 1 55 24v15a8.5 8.5 0 0 1-8.5 8.5H33.4L22 55l2.3-7.5h-6.8A8.5 8.5 0 0 1 9 39V24a8.5 8.5 0 0 1 8.5-8.5Z" fill="#fff" />
+  <path d="M21 33.5c3.1-5.7 7.2-5.7 10.3 0s7.2 5.7 11.7 0" fill="none" stroke="#22d3ee" stroke-linecap="round" stroke-width="4.5" />
+  <circle cx="21" cy="33.5" r="3.2" fill="#6d28d9" />
+  <circle cx="43" cy="33.5" r="3.2" fill="#4338ca" />
 </svg>

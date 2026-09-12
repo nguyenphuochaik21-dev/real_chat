@@ -25,6 +25,9 @@ import type { Tables } from '@/types'
 import { useI18n, type Locale } from '@/lib/i18n'
 import { removeCurrentPushSubscription } from '@/lib/push'
 import { useCurrentUserId } from '@/hooks/use-current-user-id'
+import { saveAuthNotice } from '@/lib/auth-notice'
+import { resetUserSessionState } from '@/lib/reset-user-session'
+import { useNotificationStore } from '@/stores/notification-store'
 
 type Profile = Pick<
   Tables<'profiles'>,
@@ -102,6 +105,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [supabase] = useState(() => createClient())
   const currentUserId = useCurrentUserId()
+  const addToast = useNotificationStore((state) => state.addToast)
   const isDark = (resolvedTheme ?? 'dark') === 'dark'
 
   useEffect(() => {
@@ -119,8 +123,20 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     await removeCurrentPushSubscription().catch(() => undefined)
-    await supabase.auth.signOut()
-    router.push('/login')
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      addToast({
+        type: 'system',
+        title: t('auth.noticeSignOutFailedTitle'),
+        body: t('auth.noticeSignOutFailedBody'),
+      })
+      return
+    }
+
+    resetUserSessionState()
+    saveAuthNotice('signed-out')
+    router.replace('/login')
+    router.refresh()
   }
 
   const userForAvatar = profile || {

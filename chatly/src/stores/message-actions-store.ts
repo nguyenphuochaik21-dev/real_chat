@@ -28,45 +28,55 @@ interface MessageActionsState {
   messagesToForward: Message[]
   openForwardModal: (messages: Message[]) => void
   closeForwardModal: () => void
+  reset: () => void
+}
+
+const initialState = {
+  isReplying: false,
+  replyToMessage: null,
+  isEditing: false,
+  editingMessage: null,
+  contextMenuOpen: false,
+  contextMenuPosition: { x: 0, y: 0 },
+  contextMenuTarget: null,
+  forwardModalOpen: false,
+  messagesToForward: [],
 }
 
 export const useMessageActionsStore = create<MessageActionsState>((set) => ({
   // Reply state
-  isReplying: false,
-  replyToMessage: null,
+  ...initialState,
   setReplyTo: (message) => set({ isReplying: !!message, replyToMessage: message }),
   clearReply: () => set({ isReplying: false, replyToMessage: null }),
 
   // Edit state
-  isEditing: false,
-  editingMessage: null,
   setEditingMessage: (message) => set({ isEditing: !!message, editingMessage: message }),
   clearEdit: () => set({ isEditing: false, editingMessage: null }),
 
   // Context menu state
-  contextMenuOpen: false,
-  contextMenuPosition: { x: 0, y: 0 },
-  contextMenuTarget: null,
-  openContextMenu: (message, position) => set({
-    contextMenuOpen: true,
-    contextMenuPosition: position,
-    contextMenuTarget: message
-  }),
-  closeContextMenu: () => set({
-    contextMenuOpen: false,
-    contextMenuPosition: { x: 0, y: 0 },
-    contextMenuTarget: null
-  }),
+  openContextMenu: (message, position) =>
+    set({
+      contextMenuOpen: true,
+      contextMenuPosition: position,
+      contextMenuTarget: message,
+    }),
+  closeContextMenu: () =>
+    set({
+      contextMenuOpen: false,
+      contextMenuPosition: { x: 0, y: 0 },
+      contextMenuTarget: null,
+    }),
 
   // Forward modal state
-  forwardModalOpen: false,
-  messagesToForward: [],
-  openForwardModal: (messages) => set({
-    forwardModalOpen: true,
-    messagesToForward: messages
-  }),
-  closeForwardModal: () => set({
-    forwardModalOpen: false,
-    messagesToForward: []
-  }),
+  openForwardModal: (messages) =>
+    set({
+      forwardModalOpen: true,
+      messagesToForward: messages,
+    }),
+  closeForwardModal: () =>
+    set({
+      forwardModalOpen: false,
+      messagesToForward: [],
+    }),
+  reset: () => set(initialState),
 }))

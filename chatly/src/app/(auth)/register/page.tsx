@@ -3,11 +3,14 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, MessageSquare, Check } from 'lucide-react'
+import { Check, Eye, EyeOff, Sparkles } from 'lucide-react'
+import { AuthFeedback } from '@/components/auth/auth-feedback'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { useHydrated } from '@/hooks/use-hydrated'
+import { saveAuthNotice } from '@/lib/auth-notice'
+import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useI18n } from '@/lib/i18n'
 
 export default function RegisterPage() {
@@ -44,7 +47,7 @@ export default function RegisterPage() {
 
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -57,12 +60,20 @@ export default function RegisterPage() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(getAuthErrorMessage(error, t))
       setIsLoading(false)
       return
     }
 
-    router.push('/chats')
+    if (!data.session) {
+      saveAuthNotice('check-email')
+      router.replace('/login')
+      router.refresh()
+      return
+    }
+
+    saveAuthNotice('account-created')
+    router.replace('/chats')
     router.refresh()
   }
 
@@ -80,41 +91,30 @@ export default function RegisterPage() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(getAuthErrorMessage(error, t))
       setIsLoading(false)
     }
   }
 
   return (
     <div>
-      <div className="mb-8 flex justify-center lg:hidden">
-        <div className="bg-primary-500 flex h-12 w-12 items-center justify-center rounded-xl text-white">
-          <MessageSquare className="h-6 w-6" />
-        </div>
+      <div className="text-primary-500 mb-3 flex items-center gap-2 text-sm font-semibold">
+        <Sparkles className="h-4 w-4" />
+        {t('auth.joinChatly')}
       </div>
 
-      <h2 className="text-2xl font-bold text-[var(--text-primary)]">{t('auth.registerTitle')}</h2>
-      <p className="mt-2 text-[var(--text-secondary)]">
-        {t('auth.hasAccount')}{' '}
-        <Link href="/login" className="text-primary-500 font-medium hover:underline">
-          {t('auth.signIn')}
-        </Link>
-      </p>
+      <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+        {t('auth.registerTitle')}
+      </h1>
+      <p className="mt-2 leading-6 text-[var(--text-secondary)]">{t('auth.registerSubtitle')}</p>
 
-      {error && (
-        <div
-          role="alert"
-          className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
-        >
-          {error}
-        </div>
-      )}
+      {error && <AuthFeedback message={error} />}
 
       {/* OAuth Buttons */}
-      <div className="mt-6 space-y-3">
+      <div className="mt-7 space-y-3">
         <Button
           variant="outline"
-          className="w-full justify-center"
+          className="h-11 w-full justify-center rounded-xl"
           onClick={handleOAuthRegister}
           disabled={!hydrated || isLoading}
         >
@@ -158,10 +158,11 @@ export default function RegisterPage() {
           <Input
             id="fullName"
             type="text"
-            placeholder="John Doe"
+            placeholder={t('auth.fullNamePlaceholder')}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             required
+            autoComplete="name"
             className="mt-1"
           />
         </div>
@@ -176,10 +177,11 @@ export default function RegisterPage() {
           <Input
             id="username"
             type="text"
-            placeholder="johndoe"
+            placeholder={t('auth.usernamePlaceholder')}
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
             required
+            autoComplete="username"
             className="mt-1"
           />
         </div>
@@ -195,6 +197,7 @@ export default function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete="email"
             className="mt-1"
           />
         </div>
@@ -214,6 +217,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              autoComplete="new-password"
               className="pr-12"
             />
             <button
@@ -244,7 +248,7 @@ export default function RegisterPage() {
 
         <Button
           type="submit"
-          className="w-full"
+          className="h-11 w-full rounded-xl"
           disabled={!hydrated || isLoading || !allRequirementsMet}
         >
           {isLoading ? t('auth.creating') : t('auth.createAccount')}
@@ -252,6 +256,12 @@ export default function RegisterPage() {
       </form>
 
       <p className="mt-6 text-center text-xs text-[var(--text-muted)]">{t('auth.terms')}</p>
+      <p className="mt-4 text-center text-sm text-[var(--text-muted)]">
+        {t('auth.hasAccount')}{' '}
+        <Link href="/login" className="text-primary-500 font-medium hover:underline">
+          {t('auth.signIn')}
+        </Link>
+      </p>
     </div>
   )
 }

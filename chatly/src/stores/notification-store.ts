@@ -181,7 +181,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   clearAll: () => {
-    set({ notifications: [], unreadCount: 0 })
+    set({ notifications: [], unreadCount: 0, toasts: [], isOpen: false })
   },
 
   setIsOpen: (open) => {

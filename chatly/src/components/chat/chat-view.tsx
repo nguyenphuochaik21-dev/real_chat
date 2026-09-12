@@ -1821,9 +1821,7 @@ export function ChatView({
     }
 
     setIsParticipantBlocked(false)
-    const blockedIds = new Set(useChatsListStore.getState().blockedUserIds)
-    blockedIds.delete(participant.id)
-    useChatsListStore.getState().setBlockedUserIds(blockedIds)
+    useChatsListStore.getState().unmarkUserBlocked(participant.id)
     addToast({
       type: 'system',
       title: t('block.unblocked'),
@@ -1844,7 +1842,7 @@ export function ChatView({
 
   if (loading) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-[var(--bg-app)]">
+      <div className="flex h-full w-full flex-1 flex-col items-center justify-center bg-[var(--bg-app)]">
         <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-3 border-t-transparent" />
       </div>
     )
@@ -2325,9 +2323,9 @@ export function ChatView({
           if (!userToBlock) return
           setIsParticipantBlocked(true)
           clearReply()
-          const blockedIds = new Set(useChatsListStore.getState().blockedUserIds)
-          blockedIds.add(userToBlock.id)
-          useChatsListStore.getState().setBlockedUserIds(blockedIds)
+          useChatsListStore.getState().markUserBlocked(userToBlock.id)
+          useChatCacheStore.getState().clearCache(conversationId)
+          router.replace('/chats')
         }}
       />
 

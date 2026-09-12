@@ -15,6 +15,7 @@ export interface ParticipantStatus {
 export type ConversationWithDetails = ConversationSummary
 
 interface ChatsListStore {
+  ownerUserId: string | null
   conversations: ConversationWithDetails[]
   archivedConversations: ConversationWithDetails[]
   participantStatuses: Map<string, ParticipantStatus>
@@ -22,13 +23,20 @@ interface ChatsListStore {
   loading: boolean
   lastFetchedAt: number
 
-  setAll: (data: {
-    conversations: ConversationWithDetails[]
-    archivedConversations: ConversationWithDetails[]
-    participantStatuses: Map<string, ParticipantStatus>
-  }) => void
-  setLoading: (loading: boolean) => void
-  setBlockedUserIds: (ids: Set<string>) => void
+  beginUserSession: (userId: string) => void
+  reset: () => void
+  setAll: (
+    userId: string,
+    data: {
+      conversations: ConversationWithDetails[]
+      archivedConversations: ConversationWithDetails[]
+      participantStatuses: Map<string, ParticipantStatus>
+    }
+  ) => void
+  setLoading: (userId: string, loading: boolean) => void
+  setBlockedUserIds: (userId: string, ids: Set<string>) => void
+  markUserBlocked: (blockedUserId: string) => void
+  unmarkUserBlocked: (blockedUserId: string) => void
 
   // Per-conversation updates
   upsertConversation: (conv: ConversationWithDetails) => void
@@ -41,28 +49,100 @@ interface ChatsListStore {
   setParticipantStatus: (userId: string, status: PresenceStatus, lastSeen?: string | null) => void
 }
 
-export const useChatsListStore = create<ChatsListStore>((set) => ({
+const initialState = {
+  ownerUserId: null,
   conversations: [],
   archivedConversations: [],
-  participantStatuses: new Map(),
-  blockedUserIds: new Set(),
+  participantStatuses: new Map<string, ParticipantStatus>(),
+  blockedUserIds: new Set<string>(),
   loading: false,
   lastFetchedAt: 0,
+}
 
-  setAll: (data) =>
-    set({
-      conversations: data.conversations,
-      archivedConversations: data.archivedConversations,
-      participantStatuses: data.participantStatuses,
-      lastFetchedAt: Date.now(),
+export const useChatsListStore = create<ChatsListStore>((set) => ({
+  ...initialState,
+
+  beginUserSession: (userId) =>
+    set((state) =>
+      state.ownerUserId === userId
+        ? state
+        : {
+            ...initialState,
+            ownerUserId: userId,
+            loading: true,
+          }
+    ),
+
+  reset: () => set(initialState),
+
+  setAll: (userId, data) =>
+    set((state) => {
+      if (state.ownerUserId !== userId) return state
+
+      const isVisible = (conversation: ConversationWithDetails) =>
+        conversation.type !== 'direct' ||
+        !conversation.participant ||
+        !state.blockedUserIds.has(conversation.participant.id)
+
+      return {
+        conversations: data.conversations.filter(isVisible),
+        archivedConversations: data.archivedConversations.filter(isVisible),
+        participantStatuses: data.participantStatuses,
+        lastFetchedAt: Date.now(),
+      }
     }),
 
-  setLoading: (loading) => set({ loading }),
+  setLoading: (userId, loading) =>
+    set((state) => (state.ownerUserId === userId ? { loading } : state)),
 
-  setBlockedUserIds: (ids) => set({ blockedUserIds: ids }),
+  setBlockedUserIds: (userId, ids) =>
+    set((state) => {
+      if (state.ownerUserId !== userId) return state
+      const isVisible = (conversation: ConversationWithDetails) =>
+        conversation.type !== 'direct' ||
+        !conversation.participant ||
+        !ids.has(conversation.participant.id)
+
+      return {
+        blockedUserIds: ids,
+        conversations: state.conversations.filter(isVisible),
+        archivedConversations: state.archivedConversations.filter(isVisible),
+      }
+    }),
+
+  markUserBlocked: (blockedUserId) =>
+    set((state) => {
+      const blockedUserIds = new Set(state.blockedUserIds)
+      blockedUserIds.add(blockedUserId)
+      const isVisible = (conversation: ConversationWithDetails) =>
+        conversation.type !== 'direct' || conversation.participant?.id !== blockedUserId
+      const participantStatuses = new Map(state.participantStatuses)
+      participantStatuses.delete(blockedUserId)
+
+      return {
+        blockedUserIds,
+        conversations: state.conversations.filter(isVisible),
+        archivedConversations: state.archivedConversations.filter(isVisible),
+        participantStatuses,
+      }
+    }),
+
+  unmarkUserBlocked: (blockedUserId) =>
+    set((state) => {
+      const blockedUserIds = new Set(state.blockedUserIds)
+      blockedUserIds.delete(blockedUserId)
+      return { blockedUserIds, lastFetchedAt: 0 }
+    }),
 
   upsertConversation: (conv) =>
     set((state) => {
+      if (
+        conv.type === 'direct' &&
+        conv.participant &&
+        state.blockedUserIds.has(conv.participant.id)
+      ) {
+        return state
+      }
       const existsInActive = state.conversations.some((c) => c.id === conv.id)
       const existsInArchived = state.archivedConversations.some((c) => c.id === conv.id)
 

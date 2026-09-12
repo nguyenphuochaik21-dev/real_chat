@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { searchMessages, searchConversations, type SearchFilters } from '@/lib/actions/search'
 import type { PublicProfile, SearchResult } from '@/lib/actions/search'
 
@@ -28,7 +28,7 @@ export interface UseSearchReturn {
 }
 
 const DEBOUNCE_MS = 300
-const PAGE_SIZE = 50
+const PAGE_SIZE = 20
 
 export function useSearch(conversationId?: string): UseSearchReturn {
   const [state, setState] = useState<SearchState>({
@@ -46,11 +46,22 @@ export function useSearch(conversationId?: string): UseSearchReturn {
   stateRef.current = state
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const contactDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasMoreRef = useRef(true)
   const messageRequestRef = useRef(0)
   const contactRequestRef = useRef(0)
   const messageLoadingRef = useRef(false)
   const contactLoadingRef = useRef(false)
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      if (contactDebounceRef.current) clearTimeout(contactDebounceRef.current)
+      messageRequestRef.current += 1
+      contactRequestRef.current += 1
+    },
+    []
+  )
 
   const search = useCallback(async (query: string) => {
     const requestId = ++messageRequestRef.current
@@ -103,6 +114,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
 
   const searchContacts = useCallback(async (query: string) => {
     const requestId = ++contactRequestRef.current
+    if (contactDebounceRef.current) clearTimeout(contactDebounceRef.current)
     if (!query.trim()) {
       contactLoadingRef.current = false
       setState((previous) => ({
@@ -116,24 +128,26 @@ export function useSearch(conversationId?: string): UseSearchReturn {
 
     contactLoadingRef.current = true
     setState((previous) => ({ ...previous, loading: true, error: null }))
-    try {
-      const contacts = await searchConversations(query)
-      if (requestId !== contactRequestRef.current) return
-      contactLoadingRef.current = false
-      setState((previous) => ({
-        ...previous,
-        contacts,
-        loading: messageLoadingRef.current,
-      }))
-    } catch (error) {
-      if (requestId !== contactRequestRef.current) return
-      contactLoadingRef.current = false
-      setState((previous) => ({
-        ...previous,
-        loading: messageLoadingRef.current,
-        error: error instanceof Error ? error.message : 'Contact search failed',
-      }))
-    }
+    contactDebounceRef.current = setTimeout(async () => {
+      try {
+        const contacts = await searchConversations(query)
+        if (requestId !== contactRequestRef.current) return
+        contactLoadingRef.current = false
+        setState((previous) => ({
+          ...previous,
+          contacts,
+          loading: messageLoadingRef.current,
+        }))
+      } catch (error) {
+        if (requestId !== contactRequestRef.current) return
+        contactLoadingRef.current = false
+        setState((previous) => ({
+          ...previous,
+          loading: messageLoadingRef.current,
+          error: error instanceof Error ? error.message : 'Contact search failed',
+        }))
+      }
+    }, DEBOUNCE_MS)
   }, [])
 
   const setFilters = useCallback(
@@ -156,6 +170,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     messageLoadingRef.current = false
     contactLoadingRef.current = false
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (contactDebounceRef.current) clearTimeout(contactDebounceRef.current)
     setState({
       query: '',
       results: [],

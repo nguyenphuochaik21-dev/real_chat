@@ -7,7 +7,7 @@ test.describe('public application shell', () => {
 
     await expect(page.getByRole('main')).toBeVisible()
 
-    await expect(page.getByRole('heading', { name: 'Đăng nhập Chatly' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Chào mừng bạn trở lại' })).toBeVisible()
     await expect(page.getByLabel('Email')).toBeVisible()
     await expect(page.getByLabel('Mật khẩu', { exact: true })).toBeVisible()
 
@@ -48,7 +48,20 @@ test.describe('public application shell', () => {
     await submit.click()
     await rejectedRequest
 
-    await expect(page.getByText('Invalid login credentials', { exact: true })).toBeVisible()
+    await expect(
+      page.getByText('Email hoặc mật khẩu chưa đúng. Vui lòng thử lại.', { exact: true })
+    ).toBeVisible()
+  })
+
+  test('login reports a completed sign-out', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (window.location.protocol.startsWith('http')) {
+        sessionStorage.setItem('chatly_auth_notice', 'signed-out')
+      }
+    })
+    await page.goto('/login')
+
+    await expect(page.getByText('Bạn đã đăng xuất an toàn khỏi Chatly.')).toBeVisible()
   })
 
   test('PWA manifest and generated icons are available', async ({ request }) => {

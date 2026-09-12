@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Search, Pin, BellOff, MessageSquare, Archive, User } from 'lucide-react'
@@ -24,6 +24,7 @@ import type { PublicProfile } from '@/types'
 import { useI18n } from '@/lib/i18n'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { createConversation } from '@/lib/actions/conversations'
+import { getSearchSnippet } from '@/lib/search-text'
 
 type Profile = PublicProfile
 
@@ -180,6 +181,7 @@ type TabType = 'all' | 'unread' | 'groups' | 'archived'
 // Refresh conversations list if cache is older than 30 seconds
 const CACHE_STALE_MS = 30_000
 const CONVERSATION_RENDER_PAGE_SIZE = 80
+const EMPTY_CONVERSATIONS: ConversationWithDetails[] = []
 
 export function ChatsList({ currentUserId }: ChatsListProps) {
   const { t } = useI18n()
@@ -195,12 +197,14 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     CONVERSATION_RENDER_PAGE_SIZE
   )
   // Use store-backed state — persists across navigation, no remount flash
-  const conversations = useChatsListStore((s) => s.conversations)
-  const archivedConversations = useChatsListStore((s) => s.archivedConversations)
+  const ownerUserId = useChatsListStore((s) => s.ownerUserId)
+  const storedConversations = useChatsListStore((s) => s.conversations)
+  const storedArchivedConversations = useChatsListStore((s) => s.archivedConversations)
   const participantStatuses = useChatsListStore((s) => s.participantStatuses)
   const blockedUserIds = useChatsListStore((s) => s.blockedUserIds)
-  const loading = useChatsListStore((s) => s.loading)
+  const storedLoading = useChatsListStore((s) => s.loading)
   const lastFetchedAt = useChatsListStore((s) => s.lastFetchedAt)
+  const beginUserSession = useChatsListStore((s) => s.beginUserSession)
   const setAll = useChatsListStore((s) => s.setAll)
   const setLoading = useChatsListStore((s) => s.setLoading)
   const setBlockedUserIds = useChatsListStore((s) => s.setBlockedUserIds)
@@ -219,6 +223,26 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   // Global search — messages + contacts
   const { state: searchState, search: runMessageSearch, searchContacts, clearSearch } = useSearch()
+
+  const hasCurrentUserScope = ownerUserId === currentUserId
+  const conversations = hasCurrentUserScope ? storedConversations : EMPTY_CONVERSATIONS
+  const archivedConversations = hasCurrentUserScope
+    ? storedArchivedConversations
+    : EMPTY_CONVERSATIONS
+  const loading = !hasCurrentUserScope || storedLoading
+
+  useLayoutEffect(() => {
+    beginUserSession(currentUserId)
+    storeConversationIdsRef.current = new Set()
+  }, [beginUserSession, currentUserId])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearch('')
+      clearSearch()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [clearSearch, currentUserId])
 
   // Restore tab from localStorage after hydration to avoid mismatch
   useEffect(() => {
@@ -255,26 +279,21 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     } catch {}
   }
 
-  const fetchBlockedUsers = useCallback(async () => {
-    try {
-      const blocked = await getBlockedUsers()
-      setBlockedUserIds(new Set(blocked))
-    } catch (err) {
-      console.error('Failed to fetch blocked users:', err)
-    }
-  }, [setBlockedUserIds])
-
   const fetchConversations = useCallback(async () => {
     if (!currentUserId) {
-      setLoading(false)
+      setLoading(currentUserId, false)
       return
     }
 
-    setLoading(true)
+    setLoading(currentUserId, true)
 
     try {
-      const { data, error } = await supabase.rpc('get_conversation_summaries')
+      const [blocked, { data, error }] = await Promise.all([
+        getBlockedUsers(),
+        supabase.rpc('get_conversation_summaries'),
+      ])
       if (error) throw error
+      setBlockedUserIds(currentUserId, new Set(blocked))
 
       let conversationsWithParticipants = parseConversationSummaries(data)
       const groupIds = conversationsWithParticipants
@@ -334,7 +353,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         })
       }
 
-      setAll({
+      setAll(currentUserId, {
         conversations: active,
         archivedConversations: archived,
         participantStatuses: newStatuses,
@@ -342,27 +361,19 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     } catch (err) {
       console.error('Failed to fetch conversations:', err)
     } finally {
-      setLoading(false)
+      setLoading(currentUserId, false)
     }
-  }, [currentUserId, supabase, setAll, setLoading])
+  }, [currentUserId, setAll, setBlockedUserIds, setLoading, supabase])
 
   // Fetch conversations — but only if cache is stale or empty
   useEffect(() => {
     if (!currentUserId) return
 
     const isStale = Date.now() - lastFetchedAt > CACHE_STALE_MS
-    const isEmpty = conversations.length === 0 && archivedConversations.length === 0
-
-    if (isStale || isEmpty) {
-      fetchConversations()
+    if (!hasCurrentUserScope || isStale) {
+      void fetchConversations()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId])
-
-  // Fetch blocked users once (independent of conversations cache)
-  useEffect(() => {
-    fetchBlockedUsers()
-  }, [fetchBlockedUsers])
+  }, [currentUserId, fetchConversations, hasCurrentUserScope, lastFetchedAt])
 
   useEffect(() => {
     if (!currentUserId) return
@@ -534,15 +545,17 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   const filteredArchived = useMemo(
     () =>
-      archivedConversations.filter((conv) =>
-        (conv.type === 'group'
-          ? conv.title || t('group.tab')
-          : conv.participant?.display_name || ''
+      archivedConversations.filter((conv) => {
+        if (conv.participant && blockedUserIds.has(conv.participant.id)) return false
+        return (
+          conv.type === 'group'
+            ? conv.title || t('group.tab')
+            : conv.participant?.display_name || ''
         )
           .toLocaleLowerCase()
           .includes(normalizedSearch)
-      ),
-    [archivedConversations, normalizedSearch, t]
+      }),
+    [archivedConversations, blockedUserIds, normalizedSearch, t]
   )
 
   const sortedConversations = useMemo(
@@ -698,7 +711,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                                 {result.conversation_title || t('chat.selectConversation')}
                               </p>
                               <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-primary)]">
-                                {result.content}
+                                {getSearchSnippet(result.content, search)}
                               </p>
                             </div>
                           </button>

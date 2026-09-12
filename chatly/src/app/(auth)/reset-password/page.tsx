@@ -3,9 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react'
+import { AuthFeedback } from '@/components/auth/auth-feedback'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useHydrated } from '@/hooks/use-hydrated'
+import { saveAuthNotice } from '@/lib/auth-notice'
+import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useI18n } from '@/lib/i18n'
 
 export default function ResetPasswordPage() {
@@ -34,10 +37,11 @@ export default function ResetPasswordPage() {
     const supabase = createClient()
     const { error: updateError } = await supabase.auth.updateUser({ password })
     if (updateError) {
-      setError(updateError.message)
+      setError(getAuthErrorMessage(updateError, t))
       setLoading(false)
       return
     }
+    saveAuthNotice('password-updated')
     router.replace('/chats')
     router.refresh()
   }
@@ -48,11 +52,7 @@ export default function ResetPasswordPage() {
         {t('auth.chooseNewPassword')}
       </h1>
       <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('auth.newPasswordHint')}</p>
-      {error && (
-        <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">
-          {error}
-        </p>
-      )}
+      {error && <AuthFeedback message={error} />}
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div>
           <label htmlFor="new-password" className="text-sm font-medium text-[var(--text-primary)]">

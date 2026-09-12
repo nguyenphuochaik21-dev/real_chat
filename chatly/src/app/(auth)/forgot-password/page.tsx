@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, MailCheck } from 'lucide-react'
+import { AuthFeedback } from '@/components/auth/auth-feedback'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useHydrated } from '@/hooks/use-hydrated'
 import { useI18n } from '@/lib/i18n'
+import { getAuthErrorMessage } from '@/lib/auth-error'
 
 export default function ForgotPasswordPage() {
   const { t } = useI18n()
@@ -25,7 +27,7 @@ export default function ForgotPasswordPage() {
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/callback?next=/reset-password`,
     })
-    if (resetError) setError(resetError.message)
+    if (resetError) setError(getAuthErrorMessage(resetError, t))
     else setSent(true)
     setLoading(false)
   }
@@ -57,11 +59,7 @@ export default function ForgotPasswordPage() {
         {t('auth.resetPasswordTitle')}
       </h1>
       <p className="mt-2 text-sm text-[var(--text-secondary)]">{t('auth.resetPasswordHint')}</p>
-      {error && (
-        <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">
-          {error}
-        </p>
-      )}
+      {error && <AuthFeedback message={error} />}
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div>
           <label htmlFor="reset-email" className="text-sm font-medium text-[var(--text-primary)]">

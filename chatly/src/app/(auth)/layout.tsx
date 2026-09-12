@@ -1,5 +1,8 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import { Image as ImageIcon, ShieldCheck, Sparkles, Zap } from 'lucide-react'
 import { LocalizedText } from '@/components/auth/localized-text'
+import { ChatlyLogo } from '@/components/brand/chatly-logo'
 
 export const metadata: Metadata = {
   title: 'Chatly - Đăng nhập',
@@ -7,85 +10,83 @@ export const metadata: Metadata = {
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-dvh">
-      {/* Left side - Branding */}
-      <div className="from-primary-600 via-primary-700 to-primary-900 hidden flex-col justify-between bg-gradient-to-br p-12 lg:flex lg:w-1/2">
-        <div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur">
-            <svg
-              className="h-6 w-6 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
+    <main className="relative flex min-h-dvh overflow-hidden bg-[var(--bg-app)]">
+      <section className="from-primary-600 via-primary-700 to-primary-950 relative hidden w-[54%] overflow-hidden bg-gradient-to-br px-12 py-10 text-white lg:flex lg:flex-col xl:px-16 xl:py-12">
+        <div
+          aria-hidden
+          className="absolute -top-32 -left-24 h-96 w-96 rounded-full bg-white/10 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="absolute right-[-8rem] bottom-[-9rem] h-[30rem] w-[30rem] rounded-full bg-cyan-300/15 blur-3xl"
+        />
+
+        <Link href="/login" className="relative z-10 flex w-fit items-center gap-3">
+          <ChatlyLogo className="h-12 w-12 drop-shadow-lg" title="Chatly" />
+          <span className="text-2xl font-bold tracking-tight">Chatly</span>
+        </Link>
+
+        <div className="relative z-10 my-auto max-w-xl py-12">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-white/90 backdrop-blur">
+            <Sparkles className="h-4 w-4 text-cyan-200" />
+            <LocalizedText translationKey="auth.brandEyebrow" />
           </div>
-          <h1 className="mt-8 text-4xl font-bold text-white">
+          <h1 className="text-4xl leading-tight font-bold tracking-tight xl:text-5xl xl:leading-[1.1]">
             <LocalizedText translationKey="auth.welcome" />
           </h1>
-          <p className="mt-4 text-lg text-white/80">
+          <p className="mt-5 max-w-lg text-lg leading-8 text-white/75">
             <LocalizedText translationKey="auth.tagline" />
           </p>
-        </div>
-        <div className="space-y-4">
-          <div className="flex items-center gap-3 text-white/80">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                />
-              </svg>
-            </div>
-            <span>
-              <LocalizedText translationKey="auth.encrypted" />
-            </span>
-          </div>
-          <div className="flex items-center gap-3 text-white/80">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </div>
-            <span>
-              <LocalizedText translationKey="auth.realtime" />
-            </span>
-          </div>
-          <div className="flex items-center gap-3 text-white/80">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
-            </div>
-            <span>
-              <LocalizedText translationKey="auth.share" />
-            </span>
-          </div>
-        </div>
-      </div>
 
-      {/* Right side - Auth form */}
-      <div className="flex flex-1 items-center justify-center p-4 sm:p-8">
-        <div className="w-full max-w-md">{children}</div>
-      </div>
+          <div className="mt-10 max-w-md space-y-3" aria-hidden>
+            <div className="mr-14 rounded-2xl rounded-bl-md border border-white/15 bg-white/10 p-4 shadow-xl backdrop-blur-md">
+              <div className="mb-2 flex items-center gap-2 text-xs text-white/60">
+                <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                Chatly
+              </div>
+              <p className="text-sm text-white/90">
+                <LocalizedText translationKey="auth.previewMessageOne" />
+              </p>
+            </div>
+            <div className="ml-16 rounded-2xl rounded-br-md bg-white p-4 text-sm font-medium text-violet-950 shadow-xl">
+              <LocalizedText translationKey="auth.previewMessageTwo" />
+            </div>
+          </div>
+        </div>
+
+        <div className="relative z-10 grid grid-cols-3 gap-3 text-sm text-white/75">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm">
+            <ShieldCheck className="mb-2 h-5 w-5 text-cyan-200" />
+            <LocalizedText translationKey="auth.encrypted" />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm">
+            <Zap className="mb-2 h-5 w-5 text-cyan-200" />
+            <LocalizedText translationKey="auth.realtime" />
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm">
+            <ImageIcon className="mb-2 h-5 w-5 text-cyan-200" />
+            <LocalizedText translationKey="auth.share" />
+          </div>
+        </div>
+      </section>
+
+      <section className="relative flex min-w-0 flex-1 items-center justify-center px-4 py-8 sm:px-8 lg:px-10">
+        <div
+          aria-hidden
+          className="bg-primary-500/10 absolute top-[-8rem] right-[-8rem] h-80 w-80 rounded-full blur-3xl lg:hidden"
+        />
+        <div className="relative z-10 w-full max-w-md">
+          <Link href="/login" className="mb-8 flex w-fit items-center gap-2.5 lg:hidden">
+            <ChatlyLogo className="h-11 w-11 shadow-md" title="Chatly" />
+            <span className="text-xl font-bold tracking-tight text-[var(--text-primary)]">
+              Chatly
+            </span>
+          </Link>
+          <div className="rounded-3xl border border-[var(--border-default)] bg-[var(--bg-panel)] p-5 shadow-xl shadow-violet-950/5 sm:p-8">
+            {children}
+          </div>
+        </div>
+      </section>
     </main>
   )
 }

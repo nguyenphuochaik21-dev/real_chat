@@ -19,6 +19,7 @@ import { useSearch, type Profile, type SearchResult } from '@/hooks/use-search'
 import { Avatar } from '@/components/ui/avatar'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { useI18n } from '@/lib/i18n'
+import { getSearchSnippet } from '@/lib/search-text'
 
 interface SearchModalProps {
   isOpen: boolean
@@ -48,21 +49,19 @@ function formatSearchDate(dateStr: string | null, dateLocale: string, yesterday:
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) return <>{text}</>
-
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  if (!normalizedQuery) return <>{text}</>
+  const matchIndex = text.toLocaleLowerCase().indexOf(normalizedQuery)
+  if (matchIndex < 0) return <>{text}</>
+  const matchEnd = matchIndex + query.trim().length
 
   return (
     <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase() ? (
-          <mark key={i} className="rounded bg-yellow-200 px-0.5 dark:bg-yellow-800">
-            {part}
-          </mark>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
+      {text.slice(0, matchIndex)}
+      <mark className="rounded bg-yellow-200 px-0.5 dark:bg-yellow-800">
+        {text.slice(matchIndex, matchEnd)}
+      </mark>
+      {text.slice(matchEnd)}
     </>
   )
 }
@@ -164,6 +163,8 @@ function SearchResultItem({
   const { t, dateLocale } = useI18n()
   const isFromMe = result.sender_id === currentUserId
   const isMedia = result.content_type && result.content_type !== 'text'
+  const resultText = isMedia && result.media_name ? result.media_name : result.content
+  const snippet = getSearchSnippet(resultText, query)
 
   return (
     <button
@@ -195,15 +196,9 @@ function SearchResultItem({
             </span>
           </div>
 
-          {isMedia && result.media_name ? (
-            <p className="mt-0.5 truncate text-sm text-[var(--text-primary)]">
-              <HighlightedText text={result.media_name} query={query} />
-            </p>
-          ) : (
-            <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-primary)]">
-              <HighlightedText text={result.content} query={query} />
-            </p>
-          )}
+          <p className="mt-0.5 line-clamp-2 text-sm text-[var(--text-primary)]">
+            <HighlightedText text={snippet} query={query} />
+          </p>
 
           {isFromMe && (
             <span className="mt-1 text-xs text-[var(--text-muted)]">{t('common.you')}</span>
@@ -373,7 +368,7 @@ export function SearchModal({
                   <SearchResultItem
                     key={result.id}
                     result={result}
-                    query={inputValue}
+                    query={state.query}
                     currentUserId={currentUserId}
                     onClick={() => handleSelectMessage(result)}
                   />

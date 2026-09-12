@@ -25,6 +25,7 @@ interface ChatCacheStore {
   getCached: (conversationId: string) => ConversationCache | undefined
   setCached: (conversationId: string, cache: Partial<ConversationCache>) => void
   clearCache: (conversationId: string) => void
+  reset: () => void
   getInput: (conversationId: string) => string
   setInput: (conversationId: string, value: string) => void
 }
@@ -73,6 +74,8 @@ export const useChatCacheStore = create<ChatCacheStore>((set, get) => ({
       return { cache: newCache }
     })
   },
+
+  reset: () => set({ cache: new Map(), inputValues: new Map() }),
 
   getInput: (conversationId) => {
     return get().inputValues.get(conversationId) || ''

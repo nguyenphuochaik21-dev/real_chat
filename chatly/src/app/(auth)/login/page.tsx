@@ -1,13 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, MessageSquare } from 'lucide-react'
+import { Eye, EyeOff, Sparkles } from 'lucide-react'
+import { AuthFeedback } from '@/components/auth/auth-feedback'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { useHydrated } from '@/hooks/use-hydrated'
+import { consumeAuthNotice, saveAuthNotice } from '@/lib/auth-notice'
+import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useI18n } from '@/lib/i18n'
 
 export default function LoginPage() {
@@ -19,11 +22,30 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const authNotice = consumeAuthNotice(['signed-out', 'check-email'])
+      if (authNotice === 'signed-out') setNotice(t('auth.noticeSignedOut'))
+      if (authNotice === 'check-email') setNotice(t('auth.noticeCheckEmail'))
+
+      const callbackError = new URLSearchParams(window.location.search).get('error')
+      if (callbackError === 'provider_not_supported') {
+        setError(t('auth.providerNotSupported'))
+      } else if (callbackError === 'auth_callback_error') {
+        setError(t('auth.callbackError'))
+      }
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [t])
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError('')
+    setNotice('')
 
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
@@ -33,18 +55,20 @@ export default function LoginPage() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(getAuthErrorMessage(error, t))
       setIsLoading(false)
       return
     }
 
-    router.push('/chats')
+    saveAuthNotice('signed-in')
+    router.replace('/chats')
     router.refresh()
   }
 
   const handleOAuthLogin = async () => {
     setIsLoading(true)
     setError('')
+    setNotice('')
 
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
@@ -56,41 +80,31 @@ export default function LoginPage() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(getAuthErrorMessage(error, t))
       setIsLoading(false)
     }
   }
 
   return (
     <div>
-      <div className="mb-8 flex justify-center lg:hidden">
-        <div className="bg-primary-500 flex h-12 w-12 items-center justify-center rounded-xl text-white">
-          <MessageSquare className="h-6 w-6" />
-        </div>
+      <div className="text-primary-500 mb-3 flex items-center gap-2 text-sm font-semibold">
+        <Sparkles className="h-4 w-4" />
+        {t('auth.welcomeBack')}
       </div>
 
-      <h2 className="text-2xl font-bold text-[var(--text-primary)]">{t('auth.signInTitle')}</h2>
-      <p className="mt-2 text-[var(--text-secondary)]">
-        {t('auth.noAccount')}{' '}
-        <Link href="/register" className="text-primary-500 font-medium hover:underline">
-          {t('auth.createOne')}
-        </Link>
-      </p>
+      <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+        {t('auth.signInTitle')}
+      </h1>
+      <p className="mt-2 leading-6 text-[var(--text-secondary)]">{t('auth.signInSubtitle')}</p>
 
-      {error && (
-        <div
-          role="alert"
-          className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
-        >
-          {error}
-        </div>
-      )}
+      {notice && <AuthFeedback message={notice} tone="success" />}
+      {error && <AuthFeedback message={error} />}
 
       {/* OAuth Buttons */}
-      <div className="mt-6 space-y-3">
+      <div className="mt-7 space-y-3">
         <Button
           variant="outline"
-          className="w-full justify-center"
+          className="h-11 w-full justify-center rounded-xl"
           onClick={handleOAuthLogin}
           disabled={!hydrated || isLoading}
         >
@@ -134,6 +148,7 @@ export default function LoginPage() {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             required
             className="mt-1"
           />
@@ -158,6 +173,7 @@ export default function LoginPage() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
               className="pr-12"
             />
@@ -172,12 +188,12 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <Button type="submit" className="w-full" disabled={!hydrated || isLoading}>
+        <Button type="submit" className="h-11 w-full rounded-xl" disabled={!hydrated || isLoading}>
           {isLoading ? t('auth.signingIn') : t('auth.signIn')}
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
+      <p className="mt-7 text-center text-sm text-[var(--text-muted)]">
         {t('auth.noAccount')}{' '}
         <Link href="/register" className="text-primary-500 font-medium hover:underline">
           {t('auth.signUp')}
