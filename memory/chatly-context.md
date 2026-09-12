@@ -1,6 +1,6 @@
 # Chatly: current context
 
-Last reviewed: 2026-09-11
+Last reviewed: 2026-09-12
 
 ## Runtime
 
@@ -97,8 +97,8 @@ Last reviewed: 2026-09-11
 - Friendship changes use private per-user Database Broadcast topics.
 - Incoming-call recovery ignores sessions older than 60 seconds; a database cleanup RPC and
   one-minute cron job expire abandoned pending calls.
-- The credential-free Playwright suite passed 14 tests on desktop and a Pixel 7 viewport on
-  2026-09-11. The authenticated group mutation test remains opt-in and was skipped because no
+- The credential-free Playwright suite passed 16 tests on desktop and a Pixel 7 viewport on
+  2026-09-12. The authenticated group mutation test remains opt-in and was skipped because no
   dedicated E2E credentials are configured. It can now provision and remove three temporary users
   when explicitly enabled with a dedicated E2E service-role key.
 - The 2026-09-10 production audit added bounded link-preview image reads, stronger CSP directives,
@@ -113,6 +113,15 @@ Last reviewed: 2026-09-11
 - WebRTC signaling uses a private Broadcast topic authorized through Realtime RLS for only the
   caller and callee. Migration `20260911010000` was applied to production on 2026-09-12 after the
   matching client deployment briefly preceded its database policy.
+- Client chat caches are scoped to the authenticated user and cleared with drafts, call state,
+  notifications, friendship state, and message actions at sign-out/account changes. Async results
+  from an old account are rejected by the chat-list store.
+- Blocking a user immediately removes their direct conversations and message cache; blocked users
+  are also excluded from contact search. Message search now debounces both request types, initially
+  renders 20 results, and uses bounded snippets with one highlighted match.
+- The auth experience uses the redesigned Chatly logo, responsive login/register panels, localized
+  success/error notices, and refreshed Vietnamese and English product copy. The mobile chat loading
+  state now spans the full viewport width so its indicator remains centered.
 
 ## Validation
 

@@ -197,7 +197,7 @@ export async function searchConversations(query: string): Promise<PublicProfile[
   if (!user) return []
 
   const selectFields = 'id, username, display_name, avatar_url, status, is_verified' as const
-  const [nameResult, usernameResult] = await Promise.all([
+  const [nameResult, usernameResult, blockedResult] = await Promise.all([
     supabase
       .from('profiles')
       .select(selectFields)
@@ -210,9 +210,17 @@ export async function searchConversations(query: string): Promise<PublicProfile[
       .ilike('username', `%${searchQuery}%`)
       .neq('id', user.id)
       .limit(10),
+    supabase.from('user_blocks').select('blocked_id').eq('blocker_id', user.id).limit(500),
   ])
 
   if (nameResult.error || usernameResult.error) return []
+  const blockedUserIds = new Set(
+    (blockedResult.data ?? [])
+      .map((block) => block.blocked_id)
+      .filter((id): id is string => Boolean(id))
+  )
   const profiles = [...(nameResult.data || []), ...(usernameResult.data || [])]
-  return [...new Map(profiles.map((profile) => [profile.id, profile])).values()].slice(0, 10)
+  return [...new Map(profiles.map((profile) => [profile.id, profile])).values()]
+    .filter((profile) => !blockedUserIds.has(profile.id))
+    .slice(0, 10)
 }

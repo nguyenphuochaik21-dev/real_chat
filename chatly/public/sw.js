@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chatly-shell-v7'
+const CACHE_NAME = 'chatly-shell-v8'
 const SHELL_ASSETS = [
   '/offline',
   '/manifest.webmanifest',
