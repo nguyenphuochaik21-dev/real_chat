@@ -31,9 +31,8 @@ Last reviewed: 2026-09-11
 
 ## Database migration baseline
 
-- The production baseline contains 47 committed migrations through
-  `20260909070000_support_push_deduplication.sql`. The worktree adds the pending append-only
-  `20260911010000_private_call_signaling.sql` migration.
+- There are 48 committed, append-only SQL migrations, ending at
+  `20260911010000_private_call_signaling.sql`.
 - The `202501...` names are migration sequence identifiers, not evidence that the files are safe
   to remove. They create the base schema needed by fresh databases.
 - Do not delete, rename, reorder, edit, or squash an existing migration during normal feature
@@ -111,9 +110,9 @@ Last reviewed: 2026-09-11
   production `/login` then scored 97 Performance and 100 for Accessibility, Best Practices, and SEO.
 - Remaining release checks are physical-device PWA/push/TURN testing and the opt-in authenticated
   group mutation test with an account that has at least two accepted friends.
-- WebRTC signaling now has a pending hardening change that switches the call Broadcast topic to a
-  private channel and authorizes only the caller and callee through Realtime RLS. Apply its migration
-  before deploying the matching client change.
+- WebRTC signaling uses a private Broadcast topic authorized through Realtime RLS for only the
+  caller and callee. Migration `20260911010000` was applied to production on 2026-09-12 after the
+  matching client deployment briefly preceded its database policy.
 
 ## Validation
 
