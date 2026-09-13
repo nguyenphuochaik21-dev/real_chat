@@ -23,7 +23,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
-import { createConversation } from '@/lib/actions/conversations'
+import { openDirectConversation } from '@/lib/actions/conversations'
 import {
   removeFriendship,
   respondFriendRequest,
@@ -57,11 +57,15 @@ export function PublicProfileView({
     if (friendshipRevision > 0) router.refresh()
   }, [friendshipRevision, router])
 
-  const runAction = async (action: () => Promise<void>) => {
+  const runAction = async (action: () => Promise<{ error: string | null }>) => {
     setBusy(true)
     setError(null)
     try {
-      await action()
+      const result = await action()
+      if (result.error) {
+        setError(result.error)
+        return
+      }
       router.refresh()
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t('common.unknownError'))
@@ -74,8 +78,13 @@ export function PublicProfileView({
     setBusy(true)
     setError(null)
     try {
-      const conversation = await createConversation(profile.id)
-      router.push(`/chats/${conversation.id}`)
+      const result = await openDirectConversation(profile.id)
+      if (result.error !== undefined) {
+        setError(result.error)
+        setBusy(false)
+        return
+      }
+      router.push(`/chats/${result.data.id}`)
     } catch (chatError) {
       setError(chatError instanceof Error ? chatError.message : t('common.unknownError'))
       setBusy(false)

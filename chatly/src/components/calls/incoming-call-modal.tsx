@@ -6,15 +6,26 @@ import { Avatar } from '@/components/ui/avatar'
 import { useCallStore } from '@/stores/call-store'
 import { useI18n } from '@/lib/i18n'
 import { startIncomingCallAlert } from '@/lib/notification-sounds'
+import { showIncomingCallNotification } from '@/lib/incoming-call-notification'
 
 export function IncomingCallModal() {
   const { t } = useI18n()
-  const { status, type, remoteUser } = useCallStore()
+  const { status, type, remoteUser, sessionId, conversationId } = useCallStore()
 
   useEffect(() => {
     if (status !== 'ringing') return
     return startIncomingCallAlert()
   }, [status])
+
+  useEffect(() => {
+    if (status !== 'ringing' || !sessionId || !conversationId) return
+    return showIncomingCallNotification(
+      sessionId,
+      conversationId,
+      remoteUser?.displayName ?? 'Chatly',
+      type === 'video'
+    )
+  }, [status, sessionId, conversationId, remoteUser?.displayName, type])
 
   if (status !== 'ringing') return null
 

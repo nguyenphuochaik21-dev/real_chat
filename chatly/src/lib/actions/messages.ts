@@ -35,7 +35,7 @@ export async function editMessage(
   // Get existing message
   const { data: existing, error: fetchError } = await supabase
     .from('messages')
-    .select('id, sender_id, created_at, conversation_id')
+    .select('id, sender_id, created_at, conversation_id, content_type')
     .eq('id', id)
     .single()
 
@@ -44,6 +44,9 @@ export async function editMessage(
   }
 
   // Verify ownership
+  if (existing.content_type === 'call') {
+    return { success: false, error: 'Không thể chỉnh sửa lịch sử cuộc gọi' }
+  }
   if (existing.sender_id !== user.id) {
     return { success: false, error: 'Not authorized to edit this message' }
   }
@@ -160,6 +163,10 @@ export async function forwardMessage(
 
   if (!originalMessage.conversation_id) {
     return { success: false, error: 'Original message has no conversation' }
+  }
+
+  if (originalMessage.content_type === 'call') {
+    return { success: false, error: 'Không thể chuyển tiếp lịch sử cuộc gọi' }
   }
 
   // Verify user is participant of the source conversation

@@ -85,7 +85,7 @@ export function GroupDetailsPanel({
     const timeoutId = window.setTimeout(() => {
       void loadDetails()
       void getFriendshipOverview()
-        .then((overview) => setFriends(overview.friends))
+        .then((result) => setFriends(result.data?.friends ?? []))
         .catch(() => setFriends([]))
     }, 0)
     return () => window.clearTimeout(timeoutId)

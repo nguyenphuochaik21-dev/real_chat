@@ -1,7 +1,6 @@
-const CACHE_NAME = 'chatly-shell-v8'
+const CACHE_NAME = 'chatly-shell-v9'
 const SHELL_ASSETS = [
   '/offline',
-  '/manifest.webmanifest',
   '/icons/chatly-192.png',
   '/icons/chatly-512.png',
   '/icons/notification-badge.png',
@@ -23,7 +22,9 @@ self.addEventListener('activate', (event) => {
         .keys()
         .then((names) =>
           Promise.all(
-            names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+            names
+              .filter((name) => name.startsWith('chatly-shell-') && name !== CACHE_NAME)
+              .map((name) => caches.delete(name))
           )
         ),
       self.clients.claim(),
@@ -49,7 +50,7 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached
         return fetch(request).then((response) => {
           const copy = response.clone()
-          void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+          if (response.ok) void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
           return response
         })
       })
@@ -85,7 +86,12 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const isIncomingCall = data.data?.type === 'call'
+      const expiredCall = data.data?.type === 'call' && Number(data.data.expiresAt) <= Date.now()
+      const isIncomingCall = data.data?.type === 'call' && !expiredCall
+      if (expiredCall) {
+        data.body = 'Cuộc gọi nhỡ'
+        data.data = { ...data.data, type: 'missed-call' }
+      }
       if (isIncomingCall) {
         clients.forEach((client) => {
           client.postMessage({
@@ -95,9 +101,7 @@ self.addEventListener('push', (event) => {
           })
         })
       }
-      if (!isIncomingCall && clients.some((client) => client.visibilityState === 'visible')) {
-        return undefined
-      }
+      // Every received push must produce a visible notification (required by Web Push on Safari).
       return self.registration.showNotification(data.title, {
         body: data.body,
         icon: data.icon,
@@ -106,7 +110,7 @@ self.addEventListener('push', (event) => {
         data: data.data,
         timestamp: Date.now(),
         renotify: true,
-        requireInteraction: data.data?.type === 'call',
+        requireInteraction: isIncomingCall,
         silent: false,
         vibrate: data.data?.type === 'call' ? [800, 300, 800, 300, 800] : [200, 100, 200],
         actions: [
@@ -129,13 +133,27 @@ self.addEventListener('notificationclick', (event) => {
         messageId ? `?scrollTo=${encodeURIComponent(messageId)}` : ''
       }`
     : '/chats'
-  const targetUrl = new URL(event.notification.data?.url || fallbackPath, self.location.origin).href
+  const target = new URL(event.notification.data?.url || fallbackPath, self.location.origin)
+  const targetUrl =
+    target.origin === self.location.origin
+      ? target.href
+      : new URL('/chats', self.location.origin).href
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if ('navigate' in client && 'focus' in client) {
-          client.postMessage({ type: 'CHATLY_NAVIGATE', url: targetUrl })
+          if (
+            event.notification.data?.type === 'call' &&
+            !new URL(client.url).pathname.startsWith('/login')
+          ) {
+            client.postMessage({
+              type: 'CHATLY_INCOMING_CALL',
+              sessionId: event.notification.data.sessionId,
+              conversationId,
+            })
+            return client.focus()
+          }
           return client
             .navigate(targetUrl)
             .catch(() => client)

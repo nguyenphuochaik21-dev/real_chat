@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
-import { createConversation } from '@/lib/actions/conversations'
+import { openDirectConversation } from '@/lib/actions/conversations'
 import {
   getFriendshipOverview,
   removeFriendship,
@@ -82,12 +82,17 @@ export default function ContactsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const nextOverview = await getFriendshipOverview()
+      const result = await getFriendshipOverview()
+      if (result.error !== undefined) {
+        setError(result.error)
+        return
+      }
+      const nextOverview = result.data
       setOverview(nextOverview)
       setCachedOverview(nextOverview)
       setError(null)
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : t('common.unknownError'))
+    } catch {
+      setError(t('common.unknownError'))
     } finally {
       setLoading(false)
     }
@@ -106,14 +111,18 @@ export default function ContactsPage() {
     return () => window.clearTimeout(timeoutId)
   }, [friendshipRevision, refresh])
 
-  const runAction = async (id: string, action: () => Promise<void>) => {
+  const runAction = async (id: string, action: () => Promise<{ error: string | null }>) => {
     setBusyId(id)
     setError(null)
     try {
-      await action()
+      const result = await action()
+      if (result.error) {
+        setError(result.error)
+        return
+      }
       await refresh()
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : t('common.unknownError'))
+    } catch {
+      setError(t('common.unknownError'))
     } finally {
       setBusyId(null)
     }
@@ -123,10 +132,15 @@ export default function ContactsPage() {
     if (!overview) return
     setBusyId(profileId)
     try {
-      const conversation = await createConversation(profileId)
-      router.push(`/chats/${conversation.id}`)
-    } catch (chatError) {
-      setError(chatError instanceof Error ? chatError.message : t('common.unknownError'))
+      const result = await openDirectConversation(profileId)
+      if (result.error !== undefined) {
+        setError(result.error)
+        setBusyId(null)
+        return
+      }
+      router.push(`/chats/${result.data.id}`)
+    } catch {
+      setError('Không thể mở cuộc trò chuyện. Vui lòng thử lại.')
       setBusyId(null)
     }
   }
@@ -173,7 +187,14 @@ export default function ContactsPage() {
             className="pl-10"
           />
         </div>
-        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+        {error && (
+          <div role="alert" className="mt-3 text-sm text-red-500">
+            {error}
+            <button className="ml-2 underline" onClick={() => void refresh()}>
+              Thử lại
+            </button>
+          </div>
+        )}
       </header>
 
       <ScrollArea className="flex-1">

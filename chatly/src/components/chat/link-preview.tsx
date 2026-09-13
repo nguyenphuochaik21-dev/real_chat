@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { useI18n } from '@/lib/i18n'
+import { supportedPreviewUrl } from '@/lib/preview-url'
 
 interface Preview {
   url: string
@@ -18,10 +19,13 @@ const URL_PATTERN = /https?:\/\/[^\s<>()]+/i
 
 export function LinkPreview({ content }: { content: string }) {
   const { t } = useI18n()
-  const url = content.match(URL_PATTERN)?.[0] ?? null
-  const [preview, setPreview] = useState<Preview | null>(() =>
-    url ? (previewCache.get(url) ?? null) : null
-  )
+  const url = supportedPreviewUrl(content.match(URL_PATTERN)?.[0] ?? null)?.href ?? null
+  const [loaded, setLoaded] = useState<{ url: string; value: Preview | null } | null>(null)
+  const preview = url
+    ? loaded?.url === url
+      ? loaded.value
+      : (previewCache.get(url) ?? null)
+    : null
 
   useEffect(() => {
     if (!url || previewCache.has(url)) return
@@ -29,8 +33,10 @@ export function LinkPreview({ content }: { content: string }) {
     void fetch(`/api/link-preview?url=${encodeURIComponent(url)}`, { signal: controller.signal })
       .then(async (response) => (response.ok ? ((await response.json()) as Preview) : null))
       .then((value) => {
+        if (controller.signal.aborted) return
+        if (previewCache.size >= 200) previewCache.delete(previewCache.keys().next().value!)
         previewCache.set(url, value)
-        setPreview(value)
+        setLoaded({ url, value })
       })
       .catch(() => undefined)
     return () => controller.abort()

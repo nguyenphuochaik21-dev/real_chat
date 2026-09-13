@@ -1,14 +1,8 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import { LanguageProvider } from '@/lib/i18n'
 import { PwaProvider } from '@/components/pwa-provider'
 import './globals.css'
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-})
 
 export const metadata: Metadata = {
   title: {
@@ -18,8 +12,8 @@ export const metadata: Metadata = {
   description: 'Ứng dụng nhắn tin thời gian thực cho bạn bè và nhóm.',
   applicationName: 'Chatly',
   icons: {
-    icon: '/icons/chatly-192.png',
-    apple: '/icons/chatly-apple-180.png',
+    icon: [{ url: '/icons/chatly-32.png?v=2', sizes: '32x32', type: 'image/png' }],
+    apple: '/icons/chatly-apple-180.png?v=2',
   },
   appleWebApp: {
     capable: true,
@@ -42,7 +36,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi" suppressHydrationWarning>
-      <body className={`${inter.variable} h-full font-sans antialiased`}>
+      <body className="h-full font-sans antialiased">
         <ThemeProvider>
           <LanguageProvider>
             <PwaProvider>{children}</PwaProvider>

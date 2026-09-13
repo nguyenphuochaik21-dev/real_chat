@@ -42,13 +42,7 @@ export async function POST(request: Request) {
     .upsert(record, { onConflict: 'endpoint' })
   if (!endpointResult.error) return new Response(null, { status: 204 })
 
-  const legacyResult = await database
-    .from('push_subscriptions')
-    .upsert(record, { onConflict: 'user_id' })
-  if (legacyResult.error) {
-    return Response.json({ error: 'Could not save subscription' }, { status: 500 })
-  }
-  return new Response(null, { status: 204 })
+  return Response.json({ error: 'Could not save subscription' }, { status: 500 })
 }
 
 export async function DELETE(request: Request) {

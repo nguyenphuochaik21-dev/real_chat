@@ -45,8 +45,10 @@ export function CreateGroupModal({
       setError(null)
 
       void getFriendshipOverview()
-        .then((overview) => {
-          if (!cancelled) setFriends(overview.friends)
+        .then((result) => {
+          if (cancelled) return
+          if (result.data) setFriends(result.data.friends)
+          else setError(result.error)
         })
         .catch((loadError: unknown) => {
           if (!cancelled) {

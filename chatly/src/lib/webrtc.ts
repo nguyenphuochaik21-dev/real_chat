@@ -52,6 +52,7 @@ export class WebRTCService {
   private channel: RealtimeChannel | null = null
   private channelName: string
   private pendingIceCandidates: RTCIceCandidateInit[] = []
+  private disposed = false
 
   private userId: string
   private remoteUserId: string
@@ -78,6 +79,7 @@ export class WebRTCService {
     await this.acquireLocalStream()
     this.createPeerConnection()
     await this.connectSignaling()
+    if (this.disposed) throw new Error('Call was cancelled')
     if (this.isInitiator) await this.createOffer()
   }
 
@@ -87,7 +89,12 @@ export class WebRTCService {
       video: this.callType === 'video' ? { width: 1280, height: 720 } : false,
     }
 
-    this.localStream = await navigator.mediaDevices.getUserMedia(constraints)
+    const stream = await navigator.mediaDevices.getUserMedia(constraints)
+    if (this.disposed) {
+      stream.getTracks().forEach((track) => track.stop())
+      throw new Error('Call was cancelled')
+    }
+    this.localStream = stream
     return this.localStream
   }
 
@@ -139,6 +146,7 @@ export class WebRTCService {
       error: sessionError,
     } = await supabase.auth.getSession()
 
+    if (this.disposed) throw new Error('Call was cancelled')
     if (sessionError) throw new Error(`Could not authorize WebRTC: ${sessionError.message}`)
     if (!session) throw new Error('Authentication is required for WebRTC signaling')
     supabase.realtime.setAuth(session.access_token)
@@ -160,9 +168,14 @@ export class WebRTCService {
 
     this.channel = channel
     await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('WebRTC signaling timed out')), 15_000)
       channel.subscribe((status, error) => {
-        if (status === 'SUBSCRIBED') resolve()
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (status === 'SUBSCRIBED') {
+          clearTimeout(timeout)
+          resolve()
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          clearTimeout(timeout)
           reject(new Error(`WebRTC signaling channel failed: ${status}`, { cause: error }))
         }
       })
@@ -170,7 +183,7 @@ export class WebRTCService {
   }
 
   private async handleSignal(message: SignalingMessage): Promise<void> {
-    if (!message || message.fromUserId === this.userId) return
+    if (this.disposed || !message || message.fromUserId !== this.remoteUserId) return
     if (message.toUserId !== this.userId) return
     if (message.sessionId !== this.sessionId) return
 
@@ -287,6 +300,10 @@ export class WebRTCService {
       video: { deviceId: { exact: nextCam.deviceId } },
       audio: false,
     })
+    if (this.disposed || !this.localStream) {
+      newStream.getTracks().forEach((track) => track.stop())
+      return
+    }
     const newTrack = newStream.getVideoTracks()[0]
 
     const sender = this.peerConnection?.getSenders().find((s) => s.track?.kind === 'video')
@@ -312,12 +329,16 @@ export class WebRTCService {
   }
 
   cleanup(): void {
+    this.disposed = true
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => t.stop())
       this.localStream = null
     }
 
     if (this.peerConnection) {
+      this.peerConnection.onconnectionstatechange = null
+      this.peerConnection.ontrack = null
+      this.peerConnection.onicecandidate = null
       this.peerConnection.close()
       this.peerConnection = null
     }

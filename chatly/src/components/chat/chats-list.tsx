@@ -481,13 +481,21 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     selectedConversationId,
   ])
 
-  // Subscribe to profile status changes for all participants
+  const participantKey = [
+    ...new Set(
+      conversations.flatMap((conversation) =>
+        conversation.type === 'direct' && conversation.participant
+          ? [conversation.participant.id]
+          : []
+      )
+    ),
+  ]
+    .sort()
+    .join(',')
+
+  // Message updates do not change the set of profile subscriptions.
   useEffect(() => {
-    const participantIds = conversations.flatMap((conversation) =>
-      conversation.type === 'direct' && conversation.participant
-        ? [conversation.participant.id]
-        : []
-    )
+    const participantIds = participantKey ? participantKey.split(',') : []
     if (participantIds.length === 0) return
 
     const channel = supabase
@@ -518,7 +526,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       supabase.removeChannel(channel)
       statusChannelRef.current = null
     }
-  }, [currentUserId, supabase, conversations, setParticipantStatus])
+  }, [currentUserId, supabase, participantKey, setParticipantStatus])
 
   const normalizedSearch = search.toLocaleLowerCase()
   const filteredConversations = useMemo(

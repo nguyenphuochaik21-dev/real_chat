@@ -95,7 +95,7 @@ export function RealtimeNotifications({ userId, isAdmin }: RealtimeNotifications
           )
           const senderName = sender?.display_name || t('common.user')
           const body =
-            message.content_type === 'text'
+            message.content_type === 'text' || message.content_type === 'call'
               ? message.content.slice(0, 100)
               : t('notifications.attachment', { name: senderName })
 

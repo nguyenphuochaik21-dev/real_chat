@@ -119,7 +119,7 @@ export function MessageContextMenu({ currentUserId, onEdit, onDelete }: MessageC
             icon={Copy}
             label={t('message.copy')}
             onClick={handleCopy}
-            disabled={isDeleted}
+            disabled={isDeleted || contextMenuTarget.content_type === 'call'}
           />
 
           {/* Forward */}
@@ -127,15 +127,18 @@ export function MessageContextMenu({ currentUserId, onEdit, onDelete }: MessageC
             icon={Share2}
             label={t('message.forward')}
             onClick={handleForward}
-            disabled={isDeleted}
+            disabled={isDeleted || contextMenuTarget.content_type === 'call'}
           />
 
           <div className="my-1 h-px bg-[var(--border-default)]" />
 
           {/* Edit (own messages only, within 15 min) */}
-          {isOwnMessage && !isDeleted && withinEditWindow && (
-            <MenuItem icon={Pencil} label={t('message.edit')} onClick={handleEdit} />
-          )}
+          {isOwnMessage &&
+            !isDeleted &&
+            contextMenuTarget.content_type !== 'call' &&
+            withinEditWindow && (
+              <MenuItem icon={Pencil} label={t('message.edit')} onClick={handleEdit} />
+            )}
 
           {/* Delete (own messages only) */}
           {isOwnMessage && !isDeleted && (

@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   const { data: session } = await supabase
     .from('call_sessions')
-    .select('id, caller_id, callee_id, conversation_id, call_type, status')
+    .select('id, caller_id, callee_id, conversation_id, call_type, status, created_at')
     .eq('id', values.data.sessionId)
     .eq('caller_id', user.id)
     .in('status', ['pending', 'ringing'])
@@ -45,6 +45,9 @@ export async function POST(request: Request) {
   const admin = createAdminClient<Database>(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+  const expiresAt = Date.parse(session.created_at ?? '') + 45_000
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now())
+    return new Response(null, { status: 204 })
   const [{ data: caller }, { data: participation }, { data: blocks }, { data: subscriptions }] =
     await Promise.all([
       admin
@@ -75,9 +78,24 @@ export async function POST(request: Request) {
     return new Response(null, { status: 204 })
   }
 
+  if (!subscriptions?.length) return new Response(null, { status: 204 })
+  const { data: claimed, error: claimError } = await admin
+    .from('call_sessions')
+    .update({ push_sent_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .is('push_sent_at', null)
+    .in('status', ['pending', 'ringing'])
+    .select('id')
+    .maybeSingle()
+  if (claimError)
+    return Response.json({ error: 'Could not queue call notification' }, { status: 503 })
+  if (!claimed) return new Response(null, { status: 204 })
+
   webPush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
   const callerName = caller?.display_name || 'Chatly'
   const expiredSubscriptionIds: string[] = []
+  let delivered = 0
+  let transientFailures = 0
 
   await Promise.allSettled(
     (subscriptions ?? []).map(async (subscription) => {
@@ -104,25 +122,37 @@ export async function POST(request: Request) {
             badge: '/icons/notification-badge.png',
             data: {
               type: 'call',
+              expiresAt,
               sessionId: session.id,
               conversationId: session.conversation_id,
               url: `/chats/${session.conversation_id}?incomingCall=${session.id}`,
             },
           }),
-          { TTL: 60, urgency: 'high' }
+          {
+            TTL: Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000)),
+            urgency: 'high',
+            timeout: 10_000,
+          }
         )
+        delivered++
       } catch (error) {
         const statusCode =
           typeof error === 'object' && error !== null && 'statusCode' in error
             ? Number(error.statusCode)
             : 0
         if (statusCode === 404 || statusCode === 410) expiredSubscriptionIds.push(subscription.id)
+        else transientFailures++
       }
     })
   )
 
   if (expiredSubscriptionIds.length > 0) {
     await admin.from('push_subscriptions').delete().in('id', expiredSubscriptionIds)
+  }
+
+  if (!delivered && transientFailures > 0) {
+    await admin.from('call_sessions').update({ push_sent_at: null }).eq('id', session.id)
+    return Response.json({ error: 'Push delivery temporarily unavailable' }, { status: 503 })
   }
 
   return new Response(null, { status: 204 })

@@ -17,6 +17,16 @@ async function getAuthenticatedClient() {
   return { supabase, user }
 }
 
+export async function openDirectConversation(
+  otherUserId: string
+): Promise<{ data: Conversation; error?: never } | { data?: never; error: string }> {
+  try {
+    return { data: await createConversation(otherUserId) }
+  } catch {
+    return { error: 'Không thể mở cuộc trò chuyện. Hãy kiểm tra kết nối và trạng thái tài khoản.' }
+  }
+}
+
 export async function createConversation(otherUserId: string): Promise<Conversation> {
   const targetUserId = parseInput(uuidSchema, otherUserId)
   const { supabase, user } = await getAuthenticatedClient()

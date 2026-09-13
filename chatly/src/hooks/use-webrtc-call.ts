@@ -6,7 +6,7 @@ import { WebRTCService, type CallType, isWebRTCSupported } from '@/lib/webrtc'
 import { useCallStore } from '@/stores/call-store'
 import { queueCallPushNotification } from '@/lib/push'
 
-const CALL_RING_TIMEOUT_MS = 60_000
+const CALL_RING_TIMEOUT_MS = 45_000
 
 export interface UseWebRTCCallOptions {
   userId: string
@@ -23,6 +23,8 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
 
   const webrtcRef = useRef<WebRTCService | null>(null)
+  const initiatingRef = useRef(false)
+  const ringTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Ref so the useEffect closure can call startWebRTC without circular deps
   const startWebRTCRef = useRef<((isInitiator: boolean) => Promise<boolean>) | null>(null)
   const onCallStartedRef = useRef(onCallStarted)
@@ -43,6 +45,7 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (ringTimerRef.current) clearTimeout(ringTimerRef.current)
       webrtcRef.current?.cleanup()
       webrtcRef.current = null
     }
@@ -72,21 +75,32 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
           {
             onRemoteStream: (stream) => setRemoteStream(stream),
             onConnectionStateChange: (state) => {
+              if (useCallStore.getState().sessionId !== s.sessionId) return
               if (state === 'connected') {
                 useCallStore.getState().setConnected()
                 onCallStartedRef.current?.()
               } else if (state === 'failed' || state === 'closed') {
                 const cur = useCallStore.getState()
                 if (cur.status === 'connected' || cur.status === 'connecting') {
+                  useCallStore.getState().endCall()
+                  void supabase.rpc('end_call', {
+                    p_session_id: s.sessionId!,
+                    p_status: state === 'failed' ? 'failed' : 'ended',
+                  })
                   webrtcRef.current?.cleanup()
                   webrtcRef.current = null
                   setRemoteStream(null)
                   setLocalStream(null)
-                  useCallStore.getState().endCall()
                 }
               }
             },
             onError: (error) => {
+              if (useCallStore.getState().sessionId !== s.sessionId) return
+              webrtcRef.current?.cleanup()
+              webrtcRef.current = null
+              setRemoteStream(null)
+              setLocalStream(null)
+              void supabase.rpc('end_call', { p_session_id: s.sessionId!, p_status: 'failed' })
               console.error('[WebRTC error]', error)
               onErrorRef.current?.(error)
             },
@@ -95,10 +109,23 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
 
         webrtcRef.current = webrtc
         await webrtc.initialize()
+        if (
+          useCallStore.getState().sessionId !== s.sessionId ||
+          !['connecting', 'connected'].includes(useCallStore.getState().status)
+        ) {
+          webrtc.cleanup()
+          return false
+        }
         const ls = webrtc.getLocalStream()
         if (ls) setLocalStream(ls)
         return true
       } catch (error) {
+        void supabase.rpc('end_call', { p_session_id: s.sessionId, p_status: 'failed' })
+        if (
+          useCallStore.getState().sessionId !== s.sessionId ||
+          !['connecting', 'connected'].includes(useCallStore.getState().status)
+        )
+          return false
         console.error('[startWebRTC failed]', error)
         onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to start WebRTC'))
         webrtcRef.current?.cleanup()
@@ -109,13 +136,37 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         return false
       }
     },
-    [userId]
+    [userId, supabase]
   )
 
   // Keep ref updated
   useEffect(() => {
     startWebRTCRef.current = startWebRTC
   }, [startWebRTC])
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = useCallStore.subscribe((state, previous) => {
+      if (state.status === previous.status && state.sessionId === previous.sessionId) return
+      clearTimeout(timeout)
+      if (state.status !== 'connecting' || !state.sessionId) return
+      const sessionId = state.sessionId
+      timeout = setTimeout(() => {
+        const active = useCallStore.getState()
+        if (active.sessionId !== sessionId || active.status !== 'connecting') return
+        active.setError('Không kết nối được cuộc gọi. Vui lòng thử lại.')
+        webrtcRef.current?.cleanup()
+        webrtcRef.current = null
+        setLocalStream(null)
+        setRemoteStream(null)
+        void supabase.rpc('end_call', { p_session_id: sessionId, p_status: 'failed' })
+      }, 30_000)
+    })
+    return () => {
+      clearTimeout(timeout)
+      unsubscribe()
+    }
+  }, [supabase])
 
   // Subscribe to call sessions (incoming calls + status changes)
   useEffect(() => {
@@ -128,6 +179,8 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       conversation_id: string
       created_at: string
     }
+
+    let disposed = false
 
     const receiveIncomingCall = async (session: IncomingSession) => {
       const createdAt = Date.parse(session.created_at)
@@ -144,6 +197,21 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         .eq('id', session.caller_id)
         .single()
 
+      const { data: confirmed } = await supabase
+        .from('call_sessions')
+        .select('status')
+        .eq('id', session.id)
+        .maybeSingle()
+      const latest = useCallStore.getState()
+      if (
+        disposed ||
+        !confirmed ||
+        !['pending', 'ringing'].includes(confirmed.status ?? '') ||
+        ['calling', 'ringing', 'connecting', 'connected'].includes(latest.status) ||
+        Date.now() >= createdAt + CALL_RING_TIMEOUT_MS
+      )
+        return
+
       useCallStore.getState().receiveCall(
         session.id,
         session.conversation_id,
@@ -155,23 +223,59 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         session.call_type
       )
 
-      window.setTimeout(() => {
-        const latest = useCallStore.getState()
-        if (latest.sessionId !== session.id || latest.status !== 'ringing') return
+      if (ringTimerRef.current) clearTimeout(ringTimerRef.current)
+      ringTimerRef.current = setTimeout(
+        () => {
+          const latest = useCallStore.getState()
+          if (latest.sessionId !== session.id || latest.status !== 'ringing') return
 
-        void supabase
-          .rpc('end_call', { p_session_id: session.id, p_status: 'missed' })
-          .then(({ error }) => {
-            const active = useCallStore.getState()
-            if (!error && active.sessionId === session.id && active.status === 'ringing') {
-              active.markMissed()
-            }
-          })
-      }, remainingRingTime)
+          void supabase
+            .rpc('end_call', { p_session_id: session.id, p_status: 'missed' })
+            .abortSignal(AbortSignal.timeout(3000))
+            .then(({ data }) => {
+              const active = useCallStore.getState()
+              const answered =
+                data && typeof data === 'object' && 'status' in data && data.status === 'answered'
+              if (!answered && active.sessionId === session.id && active.status === 'ringing') {
+                active.markMissed()
+              }
+            })
+        },
+        Math.max(0, createdAt + CALL_RING_TIMEOUT_MS - Date.now())
+      )
     }
 
     const recoverIncomingCall = async (sessionId?: string) => {
       await supabase.rpc('expire_stale_calls_for_current_user')
+      if (disposed) return
+      const current = useCallStore.getState()
+      if (
+        current.sessionId &&
+        ['calling', 'ringing', 'connecting', 'connected'].includes(current.status)
+      ) {
+        const { data: active } = await supabase
+          .from('call_sessions')
+          .select('status, caller_id')
+          .eq('id', current.sessionId)
+          .maybeSingle()
+        if (disposed || useCallStore.getState().sessionId !== current.sessionId) return
+        if (active && ['declined', 'missed', 'ended', 'failed'].includes(active.status ?? '')) {
+          useCallStore.getState().endCall()
+          webrtcRef.current?.cleanup()
+          webrtcRef.current = null
+          setRemoteStream(null)
+          setLocalStream(null)
+        } else if (
+          active?.status === 'answered' &&
+          useCallStore.getState().status === 'calling' &&
+          active.caller_id === userId
+        ) {
+          useCallStore.getState().setConnecting()
+          await startWebRTCRef.current?.(true)
+        } else if (active?.status === 'answered' && useCallStore.getState().status === 'ringing') {
+          useCallStore.getState().endCall()
+        }
+      }
       const cutoff = new Date(Date.now() - CALL_RING_TIMEOUT_MS).toISOString()
       const baseQuery = supabase
         .from('call_sessions')
@@ -202,6 +306,9 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
     window.addEventListener('focus', handleResume)
     window.addEventListener('online', handleResume)
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    const reconcileTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void recoverIncomingCall()
+    }, 15_000)
 
     const channel = supabase
       .channel(`call-sessions:${userId}:${crypto.randomUUID()}`)
@@ -231,6 +338,8 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
           const session = payload.new as { id: string; status: string }
           const current = useCallStore.getState()
           if (current.sessionId !== session.id) return
+
+          if (session.status === 'answered' && current.status === 'ringing') current.endCall()
 
           const terminal = ['declined', 'missed', 'ended', 'failed']
           if (terminal.includes(session.status)) {
@@ -288,6 +397,8 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       })
 
     return () => {
+      disposed = true
+      window.clearInterval(reconcileTimer)
       window.removeEventListener('chatly:incoming-call', handleIncomingCallPush)
       window.removeEventListener('focus', handleResume)
       window.removeEventListener('online', handleResume)
@@ -305,15 +416,20 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
     const started = await startWebRTC(false)
     if (!started) return
 
-    const { error } = await supabase.rpc('update_call_status', {
+    const { data, error } = await supabase.rpc('update_call_status', {
       p_session_id: s.sessionId,
       p_status: 'answered',
     })
-    if (error) {
+    if (useCallStore.getState().sessionId !== s.sessionId) return
+    const answered =
+      data && typeof data === 'object' && 'status' in data && data.status === 'answered'
+    if (error || !answered) {
       webrtcRef.current?.cleanup()
       webrtcRef.current = null
       setLocalStream(null)
-      useCallStore.getState().setError(error.message)
+      useCallStore
+        .getState()
+        .setError(error ? 'Không thể nhận cuộc gọi. Vui lòng thử lại.' : 'Cuộc gọi đã kết thúc.')
     }
   }, [supabase, startWebRTC])
 
@@ -324,6 +440,12 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       remoteUser: { id: string; displayName: string; avatarUrl?: string },
       type: CallType
     ) => {
+      if (
+        initiatingRef.current ||
+        ['calling', 'ringing', 'connecting', 'connected'].includes(useCallStore.getState().status)
+      )
+        return
+      initiatingRef.current = true
       try {
         if (!isWebRTCSupported()) throw new Error('WebRTC is not supported in this browser')
 
@@ -344,25 +466,41 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
 
         useCallStore.getState().initiateCall(conversationId, sessionId, remoteUser, type)
         queueCallPushNotification(sessionId)
-        window.setTimeout(() => {
-          const current = useCallStore.getState()
-          if (current.sessionId !== sessionId || current.status !== 'calling') return
+        if (ringTimerRef.current) clearTimeout(ringTimerRef.current)
+        const createdAt =
+          session && typeof session === 'object' && 'created_at' in session
+            ? Date.parse(String(session.created_at))
+            : Date.now()
+        ringTimerRef.current = setTimeout(
+          () => {
+            const current = useCallStore.getState()
+            if (current.sessionId !== sessionId || current.status !== 'calling') return
 
-          void supabase
-            .rpc('end_call', { p_session_id: sessionId, p_status: 'missed' })
-            .then(({ error: timeoutError }) => {
-              const active = useCallStore.getState()
-              if (!timeoutError && active.sessionId === sessionId && active.status === 'calling') {
-                active.markMissed()
-              }
-            })
-        }, CALL_RING_TIMEOUT_MS)
+            void supabase
+              .rpc('end_call', { p_session_id: sessionId, p_status: 'missed' })
+              .abortSignal(AbortSignal.timeout(3000))
+              .then(({ data }) => {
+                const active = useCallStore.getState()
+                const answered =
+                  data && typeof data === 'object' && 'status' in data && data.status === 'answered'
+                if (answered && active.sessionId === sessionId && active.status === 'calling') {
+                  active.setConnecting()
+                  void startWebRTCRef.current?.(true)
+                } else if (active.sessionId === sessionId && active.status === 'calling') {
+                  active.markMissed()
+                }
+              })
+          },
+          Math.max(0, CALL_RING_TIMEOUT_MS - (Date.now() - createdAt))
+        )
       } catch (error) {
         console.error('[initiateCall]', error)
         onErrorRef.current?.(error instanceof Error ? error : new Error('Failed to initiate call'))
         useCallStore
           .getState()
           .setError(error instanceof Error ? error.message : 'Failed to initiate call')
+      } finally {
+        initiatingRef.current = false
       }
     },
     [supabase]
@@ -371,6 +509,8 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
   // Decline an incoming call
   const declineCall = useCallback(async () => {
     const s = useCallStore.getState()
+    if (s.status !== 'ringing') return
+    useCallStore.getState().declineCall()
     if (s.sessionId) {
       try {
         const { error } = await supabase.rpc('update_call_status', {
@@ -382,12 +522,18 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
         console.error('[declineCall] DB update failed', err)
       }
     }
-    useCallStore.getState().declineCall()
   }, [supabase])
 
   // End an active call
   const endCall = useCallback(async () => {
     const s = useCallStore.getState()
+
+    useCallStore.getState().endCall()
+    void webrtcRef.current?.sendEndCall()
+    webrtcRef.current?.cleanup()
+    webrtcRef.current = null
+    setRemoteStream(null)
+    setLocalStream(null)
 
     if (s.sessionId) {
       try {
@@ -401,14 +547,7 @@ export function useWebRTCCall(options: UseWebRTCCallOptions) {
       }
     }
 
-    await webrtcRef.current?.sendEndCall()
-    webrtcRef.current?.cleanup()
-    webrtcRef.current = null
-    setRemoteStream(null)
-    setLocalStream(null)
-
     onCallEndedRef.current?.(s.duration)
-    useCallStore.getState().endCall()
   }, [supabase])
 
   const toggleMute = useCallback((muted: boolean) => {

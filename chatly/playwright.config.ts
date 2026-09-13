@@ -29,7 +29,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev -- --hostname localhost --port ${port}`,
+    command: `npm run ${process.env.PLAYWRIGHT_PRODUCTION ? 'start' : 'dev'} -- --hostname localhost --port ${port}`,
     url: `http://localhost:${port}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

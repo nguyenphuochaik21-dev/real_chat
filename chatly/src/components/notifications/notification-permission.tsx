@@ -10,16 +10,22 @@ export function NotificationPermission() {
   const { t } = useI18n()
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const [mounted, setMounted] = useState(false)
+  const [supported, setSupported] = useState(true)
+  const [pushReady, setPushReady] = useState<boolean | null>(null)
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setMounted(true)
+      setSupported('Notification' in window && 'PushManager' in window)
       if ('Notification' in window) {
         setPermission(Notification.permission)
         if (Notification.permission === 'granted') {
-          void ensurePushSubscription().catch((error: unknown) => {
-            console.warn('[Push] Could not save subscription:', error)
-          })
+          void ensurePushSubscription()
+            .then(setPushReady)
+            .catch((error: unknown) => {
+              setPushReady(false)
+              console.warn('[Push] Could not save subscription:', error)
+            })
         }
       }
     }, 0)
@@ -35,15 +41,31 @@ export function NotificationPermission() {
     try {
       const result = await Notification.requestPermission()
       setPermission(result)
-      if (result === 'granted') await ensurePushSubscription()
+      if (result === 'granted') setPushReady(await ensurePushSubscription())
     } catch (error) {
+      setPushReady(false)
       console.warn('Failed to enable push notifications:', error)
     }
   }
 
   // Don't render anything if already granted or denied
-  if (!mounted || permission === 'granted' || permission === 'denied') {
+  if (!mounted || (permission === 'granted' && pushReady !== false)) {
     return null
+  }
+
+  if (!supported || permission === 'denied' || pushReady === false) {
+    return (
+      <p
+        role="status"
+        className="mx-3 mb-2 rounded-lg border border-[var(--border-default)] p-3 text-xs text-[var(--text-muted)]"
+      >
+        {!supported
+          ? 'Trên iPhone/iPad: thêm Chatly vào Màn hình chính, mở ứng dụng rồi bật thông báo. Thiết bị cần hỗ trợ Web Push.'
+          : permission === 'denied'
+            ? 'Thông báo đang bị chặn. Hãy bật quyền thông báo cho Chatly trong cài đặt trình duyệt.'
+            : 'Thông báo khi đóng ứng dụng chưa sẵn sàng. Bạn vẫn nhận cuộc gọi khi đang mở Chatly.'}
+      </p>
+    )
   }
 
   return (

@@ -115,6 +115,8 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
       sessionId,
       conversationId,
       remoteUser,
+      duration: 0,
+      startedAt: null,
       isVideoOff: type === 'voice',
       isSpeakerOn: true,
       error: null,
@@ -124,7 +126,7 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
   acceptCall: () => {
     set({
       status: 'connecting',
-      startedAt: new Date(),
+      startedAt: null,
       duration: 0,
       error: null,
     })
@@ -182,7 +184,9 @@ export const useCallStore = create<CallState & CallActions>((set, get) => ({
 
   updateDuration: () => {
     if (get().status === 'connected') {
-      set((s) => ({ duration: s.duration + 1 }))
+      const startedAt = get().startedAt
+      if (startedAt)
+        set({ duration: Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000)) })
     }
   },
 

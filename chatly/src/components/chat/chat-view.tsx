@@ -31,6 +31,7 @@ import { useMediaUpload } from '@/hooks/use-media-upload'
 import { isValidMediaFile } from '@/lib/supabase/storage'
 import { MediaMessageBubble } from './media-message-bubble'
 import { LinkPreview } from './link-preview'
+import { CallMessage } from './call-message'
 import { MediaAttachmentButton } from './media-attachment-button'
 import { PendingAttachments, type PendingAttachment } from './pending-attachments'
 import { MessageContextMenu } from './message-context-menu'
@@ -56,7 +57,7 @@ type Message = Tables<'messages'>
 type Profile = PublicProfile
 type Conversation = Tables<'conversations'>
 type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'is_verified'>
-type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file'
+type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'call'
 
 const MESSAGE_PAGE_SIZE = 50
 const MAX_PENDING_ATTACHMENTS = 12
@@ -324,6 +325,17 @@ function MessageBubble({
             </div>
             {renderTimeAndStatus()}
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (contentType === 'call') {
+    return (
+      <div className={cn('flex', isFromMe ? 'justify-end' : 'justify-start')}>
+        <div>
+          <CallMessage metadata={message.metadata} outgoing={isFromMe} />
+          {renderTimeAndStatus()}
         </div>
       </div>
     )
@@ -916,15 +928,21 @@ export function ChatView({
               .from('messages')
               .select('*')
               .eq('conversation_id', conversationId)
-              .lte('created_at', targetMessage.created_at)
+              .or(
+                `created_at.lt.${targetMessage.created_at},and(created_at.eq.${targetMessage.created_at},id.lte.${targetMessage.id})`
+              )
               .order('created_at', { ascending: false })
+              .order('id', { ascending: false })
               .limit(MESSAGE_PAGE_SIZE / 2 + 1),
             supabase
               .from('messages')
               .select('*')
               .eq('conversation_id', conversationId)
-              .gt('created_at', targetMessage.created_at)
+              .or(
+                `created_at.gt.${targetMessage.created_at},and(created_at.eq.${targetMessage.created_at},id.gt.${targetMessage.id})`
+              )
               .order('created_at', { ascending: true })
+              .order('id', { ascending: true })
               .limit(MESSAGE_PAGE_SIZE / 2),
           ])
 
@@ -939,6 +957,7 @@ export function ChatView({
             .select('*')
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
             .limit(MESSAGE_PAGE_SIZE + 1)
 
           if (error) throw error
@@ -979,8 +998,11 @@ export function ChatView({
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .lt('created_at', oldestMessage.created_at)
+        .or(
+          `created_at.lt.${oldestMessage.created_at},and(created_at.eq.${oldestMessage.created_at},id.lt.${oldestMessage.id})`
+        )
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
         .limit(MESSAGE_PAGE_SIZE + 1)
 
       if (error) throw error
@@ -1047,7 +1069,10 @@ export function ChatView({
           const newMessage = payload.new as Message
           setMessages((prev) => {
             if (prev.some((m) => m.id === newMessage.id)) return prev
-            return [...prev, newMessage]
+            return [...prev, newMessage].sort(
+              (a, b) =>
+                (a.created_at ?? '').localeCompare(b.created_at ?? '') || a.id.localeCompare(b.id)
+            )
           })
 
           // Mark as read if from other user
@@ -1502,6 +1527,8 @@ export function ChatView({
         media_mime_type: null,
         media_group_id: null,
         push_sent_at: null,
+        metadata: {},
+        call_session_id: null,
       }
       setMessages((prev) => [...prev, optimisticMessage])
 
@@ -1522,7 +1549,12 @@ export function ChatView({
         if (error) throw error
 
         // Replace optimistic message with real one
-        setMessages((prev) => prev.map((m) => (m.id === optimisticMessage.id ? data : m)))
+        setMessages((prev) =>
+          [...prev.filter((m) => m.id !== optimisticMessage.id && m.id !== data.id), data].sort(
+            (a, b) =>
+              (a.created_at ?? '').localeCompare(b.created_at ?? '') || a.id.localeCompare(b.id)
+          )
+        )
         queuePushNotification(data.id)
 
         // Clear reply state and draft
@@ -2069,6 +2101,10 @@ export function ChatView({
                   if (el) {
                     ;(mediaGroup ?? [message]).forEach((groupedMessage) =>
                       messageRefs.current.set(groupedMessage.id, el)
+                    )
+                  } else {
+                    ;(mediaGroup ?? [message]).forEach((groupedMessage) =>
+                      messageRefs.current.delete(groupedMessage.id)
                     )
                   }
                 }}

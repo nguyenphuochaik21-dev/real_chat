@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:db:calls": "node scripts/test-call-database.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -38,8 +40,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@next/env": "16.3.4",
     "@axe-core/playwright": "^4.13.0",
+    "@next/env": "16.3.4",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -51,8 +53,10 @@
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
+    "pg": "^8.23.0",
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
+    "sharp": "^0.35.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -74,10 +74,19 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
   }, [status])
 
   // Only render for active call states
-  const visibleStatuses = ['calling', 'connecting', 'connected']
+  const visibleStatuses = [
+    'calling',
+    'connecting',
+    'connected',
+    'missed',
+    'declined',
+    'failed',
+    'ended',
+  ]
   if (!visibleStatuses.includes(status)) return null
 
   const isVideo = type === 'video'
+  const isActiveCall = ['calling', 'connecting', 'connected'].includes(status)
   const showLocalVideo = isVideo && localStream
   const showRemoteVideo = isVideo && remoteStream
 
@@ -101,6 +110,14 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
         return t('call.connecting')
       case 'connected':
         return formatCallDuration(duration)
+      case 'missed':
+        return 'Không có người trả lời'
+      case 'declined':
+        return 'Cuộc gọi bị từ chối'
+      case 'ended':
+        return 'Cuộc gọi đã kết thúc'
+      case 'failed':
+        return 'Không kết nối được cuộc gọi'
       default:
         return ''
     }
@@ -141,7 +158,7 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
           {remoteUserData && (
             <div className="relative">
               <Avatar user={remoteUserData} size="2xl" className="ring-4 ring-white/20" />
-              {status !== 'connected' && (
+              {(status === 'calling' || status === 'connecting') && (
                 <>
                   <div className="absolute inset-0 animate-ping rounded-full bg-indigo-500/30" />
                   <div className="absolute inset-0 animate-pulse rounded-full bg-indigo-500/20" />
@@ -213,40 +230,42 @@ export function CallScreen({ remoteStream, localStream }: CallScreenProps) {
       )}
 
       {/* Call controls */}
-      <div className="relative z-10 mt-auto flex items-center justify-center gap-4 pb-12">
-        <ControlButton
-          icon={isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
-          label={isMuted ? t('call.unmute') : t('call.mute')}
-          onClick={handleToggleMute}
-          variant={isMuted ? 'danger' : 'secondary'}
-        />
-
-        {isVideo && (
+      {isActiveCall && (
+        <div className="relative z-10 mt-auto flex items-center justify-center gap-4 pb-12">
           <ControlButton
-            icon={isVideoOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
-            label={isVideoOff ? t('call.cameraOn') : t('call.cameraOffAction')}
-            onClick={handleToggleVideo}
-            variant={isVideoOff ? 'danger' : 'secondary'}
+            icon={isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+            label={isMuted ? t('call.unmute') : t('call.mute')}
+            onClick={handleToggleMute}
+            variant={isMuted ? 'danger' : 'secondary'}
           />
-        )}
 
-        <ControlButton
-          icon={isSpeakerOn ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
-          label={isSpeakerOn ? t('call.speakerOff') : t('call.speakerOn')}
-          onClick={() =>
-            window.dispatchEvent(new CustomEvent('call:speaker', { detail: !isSpeakerOn }))
-          }
-          variant={isSpeakerOn ? 'secondary' : 'danger'}
-        />
+          {isVideo && (
+            <ControlButton
+              icon={isVideoOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
+              label={isVideoOff ? t('call.cameraOn') : t('call.cameraOffAction')}
+              onClick={handleToggleVideo}
+              variant={isVideoOff ? 'danger' : 'secondary'}
+            />
+          )}
 
-        <ControlButton
-          icon={<PhoneOff className="h-6 w-6" />}
-          label={t('call.end')}
-          onClick={handleEndCall}
-          variant="danger"
-          className="h-16 w-16 shadow-lg"
-        />
-      </div>
+          <ControlButton
+            icon={isSpeakerOn ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
+            label={isSpeakerOn ? t('call.speakerOff') : t('call.speakerOn')}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent('call:speaker', { detail: !isSpeakerOn }))
+            }
+            variant={isSpeakerOn ? 'secondary' : 'danger'}
+          />
+
+          <ControlButton
+            icon={<PhoneOff className="h-6 w-6" />}
+            label={t('call.end')}
+            onClick={handleEndCall}
+            variant="danger"
+            className="h-16 w-16 shadow-lg"
+          />
+        </div>
+      )}
     </div>
   )
 }

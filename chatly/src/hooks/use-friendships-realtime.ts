@@ -25,7 +25,8 @@ export function useFriendshipsRealtime(userId: string | null) {
       return
     }
     try {
-      store.setOverview(await getFriendshipOverview())
+      const result = await getFriendshipOverview()
+      if (result.data) store.setOverview(result.data)
     } catch {
       // The contacts page can retry and surface an error if preloading fails.
     }

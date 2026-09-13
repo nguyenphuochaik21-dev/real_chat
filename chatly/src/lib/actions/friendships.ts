@@ -1,11 +1,10 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { parseInput, uuidSchema } from '@/lib/actions/validation'
+import { uuidSchema } from '@/lib/actions/validation'
 import type { PublicProfile } from '@/types'
 
 export type FriendProfile = PublicProfile
-
 export interface FriendshipItem {
   id: string
   requesterId: string
@@ -13,7 +12,6 @@ export interface FriendshipItem {
   status: 'pending' | 'accepted' | 'declined'
   profile: FriendProfile
 }
-
 export interface FriendshipOverview {
   currentUserId: string
   friends: FriendshipItem[]
@@ -22,110 +20,64 @@ export interface FriendshipOverview {
   discover: FriendProfile[]
 }
 
-interface FriendshipRow {
-  id: string
-  requester_id: string
-  addressee_id: string
-  status: 'pending' | 'accepted' | 'declined'
-}
-
-interface FriendshipRowWithProfiles extends FriendshipRow {
-  requester: FriendProfile | FriendProfile[] | null
-  addressee: FriendProfile | FriendProfile[] | null
-}
-
-const PROFILE_COLUMNS =
-  'id, username, display_name, avatar_url, bio, status, last_seen, created_at, is_verified'
-
-async function getAuthenticatedUser() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) throw new Error('Authentication required')
-  return { supabase, user }
-}
-
-export async function getFriendshipOverview(): Promise<FriendshipOverview> {
-  const { supabase, user } = await getAuthenticatedUser()
-
-  const [relationsResult, discoveryResult] = await Promise.all([
-    supabase
-      .from('friendships')
-      .select(
-        `id, requester_id, addressee_id, status, requester:profiles!friendships_requester_id_fkey(${PROFILE_COLUMNS}), addressee:profiles!friendships_addressee_id_fkey(${PROFILE_COLUMNS})`
-      )
-      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`),
-    supabase
-      .from('profiles')
-      .select(PROFILE_COLUMNS)
-      .neq('id', user.id)
-      .order('display_name')
-      .limit(200),
-  ])
-
-  if (relationsResult.error) throw new Error(relationsResult.error.message)
-  if (discoveryResult.error) throw new Error(discoveryResult.error.message)
-
-  const relations = (relationsResult.data ?? []) as unknown as FriendshipRowWithProfiles[]
-
-  const toItem = (relation: FriendshipRowWithProfiles): FriendshipItem | null => {
-    const relatedProfile =
-      relation.requester_id === user.id ? relation.addressee : relation.requester
-    const profile = Array.isArray(relatedProfile) ? relatedProfile[0] : relatedProfile
-    if (!profile) return null
-    return {
-      id: relation.id,
-      requesterId: relation.requester_id,
-      addresseeId: relation.addressee_id,
-      status: relation.status,
-      profile,
+export async function getFriendshipOverview(): Promise<
+  { data: FriendshipOverview; error?: never } | { data?: never; error: string }
+> {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return { error: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }
+    const { data, error } = await supabase.rpc('get_friendship_overview')
+    if (error || !data) {
+      console.error('[contacts:overview]', error?.code)
+      return { error: 'Không tải được danh bạ. Vui lòng thử lại.' }
     }
+    return { data: data as unknown as FriendshipOverview }
+  } catch {
+    return { error: 'Không thể kết nối. Vui lòng thử lại.' }
   }
+}
 
-  const items = relations.map(toItem).filter((item): item is FriendshipItem => item !== null)
-  const relatedUserIds = new Set(
-    relations
-      .filter((relation) => relation.status !== 'declined')
-      .map((relation) =>
-        relation.requester_id === user.id ? relation.addressee_id : relation.requester_id
-      )
-  )
-
-  return {
-    currentUserId: user.id,
-    friends: items.filter((item) => item.status === 'accepted'),
-    incoming: items.filter((item) => item.status === 'pending' && item.addresseeId === user.id),
-    outgoing: items.filter((item) => item.status === 'pending' && item.requesterId === user.id),
-    discover: ((discoveryResult.data ?? []) as FriendProfile[])
-      .filter((profile) => !relatedUserIds.has(profile.id))
-      .slice(0, 50),
+async function mutateFriendship(
+  action: 'send' | 'respond' | 'remove',
+  value: string,
+  accept = false
+) {
+  const parsed = uuidSchema.safeParse(value)
+  if (!parsed.success) return { error: 'Thông tin bạn bè không hợp lệ.' }
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return { error: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }
+    const { error } =
+      action === 'send'
+        ? await supabase.rpc('send_friend_request', { p_addressee_id: parsed.data })
+        : action === 'respond'
+          ? await supabase.rpc('respond_friend_request', {
+              p_friendship_id: parsed.data,
+              p_accept: accept,
+            })
+          : await supabase.rpc('remove_friendship', { p_friendship_id: parsed.data })
+    if (error) {
+      console.error('[contacts:mutation]', action, error.code)
+      return { error: 'Không thể thực hiện yêu cầu. Hãy tải lại danh bạ và thử lại.' }
+    }
+    return { error: null }
+  } catch {
+    return { error: 'Không thể kết nối. Vui lòng thử lại.' }
   }
 }
 
 export async function sendFriendRequest(profileId: string) {
-  const id = parseInput(uuidSchema, profileId)
-  const { supabase } = await getAuthenticatedUser()
-  const { error } = await supabase.rpc('send_friend_request', { p_addressee_id: id })
-  if (error) throw new Error(error.message)
+  return mutateFriendship('send', profileId)
 }
-
 export async function respondFriendRequest(friendshipId: string, accept: boolean) {
-  const id = parseInput(uuidSchema, friendshipId)
-  const { supabase } = await getAuthenticatedUser()
-  const { error } = await supabase.rpc('respond_friend_request', {
-    p_friendship_id: id,
-    p_accept: accept,
-  })
-  if (error) throw new Error(error.message)
+  return mutateFriendship('respond', friendshipId, accept)
 }
-
 export async function removeFriendship(friendshipId: string) {
-  const id = parseInput(uuidSchema, friendshipId)
-  const { supabase } = await getAuthenticatedUser()
-  const { error } = await supabase.rpc('remove_friendship', {
-    p_friendship_id: id,
-  })
-  if (error) throw new Error(error.message)
+  return mutateFriendship('remove', friendshipId)
 }

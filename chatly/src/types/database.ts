@@ -105,6 +105,8 @@ export type Database = {
       }
       messages: {
         Row: {
+          metadata: Json
+          call_session_id: string | null
           content: string
           conversation_id: string | null
           content_type: Database['public']['Enums']['message_content_type'] | null
@@ -125,6 +127,8 @@ export type Database = {
         }
         Insert: {
           content: string
+          metadata?: Json
+          call_session_id?: string | null
           content_type?: Database['public']['Enums']['message_content_type'] | null
           conversation_id?: string | null
           created_at?: string | null
@@ -144,6 +148,8 @@ export type Database = {
         }
         Update: {
           content?: string
+          metadata?: Json
+          call_session_id?: string | null
           content_type?: Database['public']['Enums']['message_content_type'] | null
           conversation_id?: string | null
           created_at?: string | null
@@ -725,6 +731,7 @@ export type Database = {
       }
       call_sessions: {
         Row: {
+          push_sent_at: string | null
           id: string
           caller_id: string
           callee_id: string
@@ -740,6 +747,7 @@ export type Database = {
           created_at: string | null
         }
         Insert: {
+          push_sent_at?: string | null
           id?: string
           caller_id: string
           callee_id: string
@@ -755,6 +763,7 @@ export type Database = {
           created_at?: string | null
         }
         Update: {
+          push_sent_at?: string | null
           id?: string
           caller_id?: string
           callee_id?: string
@@ -898,6 +907,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_friendship_overview: {
+        Args: { p_discover_limit?: number }
+        Returns: Json
+      }
       admin_list_users: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -1165,7 +1178,7 @@ export type Database = {
     Enums: {
       conversation_type: 'direct' | 'group'
       group_member_role: 'owner' | 'admin' | 'member'
-      message_content_type: 'text' | 'image' | 'video' | 'audio' | 'file'
+      message_content_type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'call'
       message_status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
       scheduled_message_status: 'pending' | 'sent' | 'cancelled'
       call_type: 'voice' | 'video'
@@ -1296,7 +1309,7 @@ export const Constants = {
     Enums: {
       conversation_type: ['direct', 'group'],
       group_member_role: ['owner', 'admin', 'member'],
-      message_content_type: ['text', 'image', 'video', 'audio', 'file'],
+      message_content_type: ['text', 'image', 'video', 'audio', 'file', 'call'],
       message_status: ['sending', 'sent', 'delivered', 'read', 'failed'],
       scheduled_message_status: ['pending', 'sent', 'cancelled'],
       call_type: ['voice', 'video'],
