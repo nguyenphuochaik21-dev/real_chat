@@ -14,6 +14,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:db:calls": "node scripts/test-call-database.mjs",
     "icons:generate": "node scripts/generate-icons.mjs",
+    "storage:cleanup": "node scripts/cleanup-storage.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -45,6 +46,7 @@
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",

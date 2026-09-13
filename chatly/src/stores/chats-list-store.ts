@@ -79,14 +79,9 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
     set((state) => {
       if (state.ownerUserId !== userId) return state
 
-      const isVisible = (conversation: ConversationWithDetails) =>
-        conversation.type !== 'direct' ||
-        !conversation.participant ||
-        !state.blockedUserIds.has(conversation.participant.id)
-
       return {
-        conversations: data.conversations.filter(isVisible),
-        archivedConversations: data.archivedConversations.filter(isVisible),
+        conversations: data.conversations,
+        archivedConversations: data.archivedConversations,
         participantStatuses: data.participantStatuses,
         lastFetchedAt: Date.now(),
       }
@@ -98,15 +93,8 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
   setBlockedUserIds: (userId, ids) =>
     set((state) => {
       if (state.ownerUserId !== userId) return state
-      const isVisible = (conversation: ConversationWithDetails) =>
-        conversation.type !== 'direct' ||
-        !conversation.participant ||
-        !ids.has(conversation.participant.id)
-
       return {
         blockedUserIds: ids,
-        conversations: state.conversations.filter(isVisible),
-        archivedConversations: state.archivedConversations.filter(isVisible),
       }
     }),
 
@@ -114,15 +102,11 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
     set((state) => {
       const blockedUserIds = new Set(state.blockedUserIds)
       blockedUserIds.add(blockedUserId)
-      const isVisible = (conversation: ConversationWithDetails) =>
-        conversation.type !== 'direct' || conversation.participant?.id !== blockedUserId
       const participantStatuses = new Map(state.participantStatuses)
       participantStatuses.delete(blockedUserId)
 
       return {
         blockedUserIds,
-        conversations: state.conversations.filter(isVisible),
-        archivedConversations: state.archivedConversations.filter(isVisible),
         participantStatuses,
       }
     }),
@@ -136,13 +120,6 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
 
   upsertConversation: (conv) =>
     set((state) => {
-      if (
-        conv.type === 'direct' &&
-        conv.participant &&
-        state.blockedUserIds.has(conv.participant.id)
-      ) {
-        return state
-      }
       const existsInActive = state.conversations.some((c) => c.id === conv.id)
       const existsInArchived = state.archivedConversations.some((c) => c.id === conv.id)
 

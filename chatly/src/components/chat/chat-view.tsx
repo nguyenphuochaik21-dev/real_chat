@@ -2361,7 +2361,6 @@ export function ChatView({
           clearReply()
           useChatsListStore.getState().markUserBlocked(userToBlock.id)
           useChatCacheStore.getState().clearCache(conversationId)
-          router.replace('/chats')
         }}
       />
 

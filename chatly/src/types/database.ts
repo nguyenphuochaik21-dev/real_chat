@@ -8,6 +8,12 @@ export type Database = {
   }
   public: {
     Tables: {
+      storage_cleanup_queue: {
+        Row: { object_id: string; bucket_id: string; object_name: string; queued_at: string }
+        Insert: { object_id: string; bucket_id: string; object_name: string; queued_at?: string }
+        Update: { object_id?: string; bucket_id?: string; object_name?: string; queued_at?: string }
+        Relationships: []
+      }
       conversation_participants: {
         Row: {
           conversation_id: string

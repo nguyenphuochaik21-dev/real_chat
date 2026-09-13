@@ -211,7 +211,9 @@ try {
       await db.query(`select
     (select count(*) from public.call_sessions s left join public.call_history h on h.session_id=s.id where s.ended_at is not null and h.id is null) as missing_history,
     (select count(*) from public.call_history h left join public.messages m on m.call_session_id=h.session_id where h.session_id is not null and h.conversation_id is not null and m.id is null) as missing_timeline,
-    (select count(*) from public.call_sessions where status in ('pending','ringing') and started_at < now()-interval '50 seconds') as stale_ringing`)
+    (select count(*) from public.call_sessions where status in ('pending','ringing') and started_at < now()-interval '50 seconds') as stale_ringing,
+    (select count(*) from auth.users where raw_user_meta_data ? 'chatly_e2e_run' and email like 'call-test-%@example.invalid') as temporary_call_users,
+    (select count(*) from public.storage_cleanup_queue) as queued_storage_objects`)
     ).rows[0]
   )
   const { rows: jobs } = await db.query(

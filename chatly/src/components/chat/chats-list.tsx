@@ -201,7 +201,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const storedConversations = useChatsListStore((s) => s.conversations)
   const storedArchivedConversations = useChatsListStore((s) => s.archivedConversations)
   const participantStatuses = useChatsListStore((s) => s.participantStatuses)
-  const blockedUserIds = useChatsListStore((s) => s.blockedUserIds)
   const storedLoading = useChatsListStore((s) => s.loading)
   const lastFetchedAt = useChatsListStore((s) => s.lastFetchedAt)
   const beginUserSession = useChatsListStore((s) => s.beginUserSession)
@@ -532,7 +531,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const filteredConversations = useMemo(
     () =>
       conversations.filter((conv) => {
-        if (conv.participant && blockedUserIds.has(conv.participant.id)) return false
         const displayName =
           conv.type === 'group'
             ? conv.title || t('group.tab')
@@ -548,13 +546,12 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         }
         return matchesSearch && matchesTab
       }),
-    [activeTab, blockedUserIds, conversations, normalizedSearch, t]
+    [activeTab, conversations, normalizedSearch, t]
   )
 
   const filteredArchived = useMemo(
     () =>
       archivedConversations.filter((conv) => {
-        if (conv.participant && blockedUserIds.has(conv.participant.id)) return false
         return (
           conv.type === 'group'
             ? conv.title || t('group.tab')
@@ -563,7 +560,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           .toLocaleLowerCase()
           .includes(normalizedSearch)
       }),
-    [archivedConversations, blockedUserIds, normalizedSearch, t]
+    [archivedConversations, normalizedSearch, t]
   )
 
   const sortedConversations = useMemo(
