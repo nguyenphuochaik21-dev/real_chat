@@ -63,7 +63,7 @@ export function NotificationPermission() {
           ? 'Trên iPhone/iPad: thêm Chatly vào Màn hình chính, mở ứng dụng rồi bật thông báo. Thiết bị cần hỗ trợ Web Push.'
           : permission === 'denied'
             ? 'Thông báo đang bị chặn. Hãy bật quyền thông báo cho Chatly trong cài đặt trình duyệt.'
-            : 'Thông báo khi đóng ứng dụng chưa sẵn sàng. Bạn vẫn nhận cuộc gọi khi đang mở Chatly.'}
+            : 'Ứng dụng đang phát triển thêm AI Agent và các tính năng khác. Thông báo sẽ được bật khi các tính năng này sẵn sàng.'}
       </p>
     )
   }
