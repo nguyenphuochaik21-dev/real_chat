@@ -182,7 +182,13 @@ export function ConversationActions({
       {/* Header */}
       <div className="flex items-center justify-between p-3">
         <span className="text-sm font-medium text-[var(--text-primary)]">{t('actions.title')}</span>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} className="h-6 w-6">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onClose}
+          className="h-6 w-6"
+          aria-label={t('common.close')}
+        >
           <X className="h-4 w-4" />
         </Button>
       </div>

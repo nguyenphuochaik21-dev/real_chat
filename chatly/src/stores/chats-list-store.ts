@@ -169,12 +169,24 @@ export const useChatsListStore = create<ChatsListStore>((set) => ({
     })),
 
   updateConversation: (id, patch) =>
-    set((state) => ({
-      conversations: state.conversations.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-      archivedConversations: state.archivedConversations.map((c) =>
+    set((state) => {
+      const conversations = state.conversations.map((c) => (c.id === id ? { ...c, ...patch } : c))
+      const archivedConversations = state.archivedConversations.map((c) =>
         c.id === id ? { ...c, ...patch } : c
-      ),
-    })),
+      )
+      if (patch.is_archived === undefined) return { conversations, archivedConversations }
+
+      return {
+        conversations: [
+          ...conversations.filter((c) => !c.is_archived),
+          ...archivedConversations.filter((c) => !c.is_archived),
+        ],
+        archivedConversations: [
+          ...archivedConversations.filter((c) => c.is_archived),
+          ...conversations.filter((c) => c.is_archived),
+        ],
+      }
+    }),
 
   incrementUnread: (id, lastMessage, fromOther) =>
     set((state) => ({

@@ -2400,6 +2400,7 @@ export function ChatView({
                     }
               }
               onAction={(updates) => {
+                useChatsListStore.getState().updateConversation(conversationId, updates)
                 setConversationFlags((prev) => ({
                   ...prev,
                   ...updates,
