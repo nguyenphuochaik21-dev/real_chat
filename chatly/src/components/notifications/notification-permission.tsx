@@ -49,11 +49,11 @@ export function NotificationPermission() {
   }
 
   // Don't render anything if already granted or denied
-  if (!mounted || (permission === 'granted' && pushReady !== false)) {
+  if (!mounted || pushReady === false || permission === 'granted') {
     return null
   }
 
-  if (!supported || permission === 'denied' || pushReady === false) {
+  if (!supported || permission === 'denied') {
     return (
       <p
         role="status"
@@ -61,9 +61,7 @@ export function NotificationPermission() {
       >
         {!supported
           ? 'Trên iPhone/iPad: thêm Chatly vào Màn hình chính, mở ứng dụng rồi bật thông báo. Thiết bị cần hỗ trợ Web Push.'
-          : permission === 'denied'
-            ? 'Thông báo đang bị chặn. Hãy bật quyền thông báo cho Chatly trong cài đặt trình duyệt.'
-            : 'Chatly: Ứng dụng đang phát triển AI Agent >.<'}
+          : 'Thông báo đang bị chặn. Hãy bật quyền thông báo cho Chatly trong cài đặt trình duyệt.'}
       </p>
     )
   }

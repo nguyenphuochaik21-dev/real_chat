@@ -136,11 +136,14 @@ export async function removeCurrentPushSubscription() {
   const subscription = await registration.pushManager.getSubscription()
   if (!subscription) return
 
-  await fetch('/api/push/subscription', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ endpoint: subscription.endpoint }),
-    credentials: 'same-origin',
-  })
-  await subscription.unsubscribe()
+  await Promise.all([
+    fetch('/api/push/subscription', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: subscription.endpoint }),
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(5000),
+    }),
+    subscription.unsubscribe(),
+  ])
 }

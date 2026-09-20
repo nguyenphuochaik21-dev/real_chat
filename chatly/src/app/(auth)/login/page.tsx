@@ -12,6 +12,7 @@ import { useHydrated } from '@/hooks/use-hydrated'
 import { consumeAuthNotice, saveAuthNotice } from '@/lib/auth-notice'
 import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useI18n } from '@/lib/i18n'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const { t } = useI18n()
@@ -47,7 +48,6 @@ export default function LoginPage() {
     setError('')
     setNotice('')
 
-    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -62,7 +62,6 @@ export default function LoginPage() {
 
     saveAuthNotice('signed-in')
     router.replace('/chats')
-    router.refresh()
   }
 
   const handleOAuthLogin = async () => {

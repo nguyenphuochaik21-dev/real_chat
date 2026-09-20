@@ -103,6 +103,7 @@ export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [signingOut, setSigningOut] = useState(false)
   const [supabase] = useState(() => createClient())
   const currentUserId = useCurrentUserId()
   const addToast = useNotificationStore((state) => state.addToast)
@@ -122,21 +123,24 @@ export default function SettingsPage() {
   }, [currentUserId, supabase])
 
   const handleSignOut = async () => {
-    await removeCurrentPushSubscription().catch(() => undefined)
-    const { error } = await supabase.auth.signOut()
-    if (error) {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await removeCurrentPushSubscription().catch(() => undefined)
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+
+      resetUserSessionState()
+      saveAuthNotice('signed-out')
+      router.replace('/login')
+    } catch {
+      setSigningOut(false)
       addToast({
         type: 'system',
         title: t('auth.noticeSignOutFailedTitle'),
         body: t('auth.noticeSignOutFailedBody'),
       })
-      return
     }
-
-    resetUserSessionState()
-    saveAuthNotice('signed-out')
-    router.replace('/login')
-    router.refresh()
   }
 
   const userForAvatar = profile || {
@@ -146,7 +150,7 @@ export default function SettingsPage() {
     avatar_url: null,
   }
 
-  if (loading) {
+  if (loading || signingOut) {
     return (
       <div className="flex h-full flex-1 items-center justify-center bg-[var(--bg-app)]">
         <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-3 border-t-transparent" />

@@ -12,6 +12,8 @@ import { useHydrated } from '@/hooks/use-hydrated'
 import { saveAuthNotice } from '@/lib/auth-notice'
 import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useI18n } from '@/lib/i18n'
+import { FULL_NAME_MAX, USERNAME_MAX, registrationSchema } from '@/lib/registration'
+import { createClient } from '@/lib/supabase/client'
 
 export default function RegisterPage() {
   const { t } = useI18n()
@@ -21,6 +23,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
@@ -39,21 +42,38 @@ export default function RegisterPage() {
     setIsLoading(true)
     setError('')
 
+    if (password !== confirmPassword) {
+      setError(t('auth.passwordMismatch'))
+      setIsLoading(false)
+      return
+    }
+    const input = registrationSchema.safeParse({
+      fullName,
+      username,
+      email,
+      password,
+      confirmPassword,
+    })
+    if (!input.success) {
+      setError(t('auth.registrationLimits'))
+      setIsLoading(false)
+      return
+    }
+
     if (!allRequirementsMet) {
       setError(t('auth.passwordRequirements'))
       setIsLoading(false)
       return
     }
 
-    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: input.data.email,
       password,
       options: {
         data: {
-          full_name: fullName,
-          username,
+          full_name: input.data.fullName,
+          username: input.data.username,
         },
         emailRedirectTo: `${window.location.origin}/callback`,
       },
@@ -68,13 +88,11 @@ export default function RegisterPage() {
     if (!data.session) {
       saveAuthNotice('check-email')
       router.replace('/login')
-      router.refresh()
       return
     }
 
     saveAuthNotice('account-created')
     router.replace('/chats')
-    router.refresh()
   }
 
   const handleOAuthRegister = async () => {
@@ -157,6 +175,7 @@ export default function RegisterPage() {
           </label>
           <Input
             id="fullName"
+            maxLength={FULL_NAME_MAX}
             type="text"
             placeholder={t('auth.fullNamePlaceholder')}
             value={fullName}
@@ -165,6 +184,9 @@ export default function RegisterPage() {
             autoComplete="name"
             className="mt-1"
           />
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            {fullName.length}/{FULL_NAME_MAX}
+          </p>
         </div>
 
         <div>
@@ -176,6 +198,9 @@ export default function RegisterPage() {
           </label>
           <Input
             id="username"
+            minLength={3}
+            maxLength={USERNAME_MAX}
+            pattern="[a-z0-9_]{3,30}"
             type="text"
             placeholder={t('auth.usernamePlaceholder')}
             value={username}
@@ -246,6 +271,28 @@ export default function RegisterPage() {
           </div>
         </div>
 
+        <div>
+          <label
+            htmlFor="confirmPassword"
+            className="block text-sm font-medium text-[var(--text-primary)]"
+          >
+            {t('auth.confirmPassword')}
+          </label>
+          <Input
+            id="confirmPassword"
+            type={showPassword ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            required
+            aria-invalid={Boolean(confirmPassword && password !== confirmPassword)}
+            className="mt-1"
+          />
+          {confirmPassword && password !== confirmPassword && (
+            <p className="mt-1 text-sm text-red-500">{t('auth.passwordMismatch')}</p>
+          )}
+        </div>
+        <p className="text-xs text-[var(--text-muted)]">{t('auth.registrationLimits')}</p>
         <Button
           type="submit"
           className="h-11 w-full rounded-xl"

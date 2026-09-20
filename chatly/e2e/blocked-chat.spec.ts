@@ -59,6 +59,12 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
     const [owner, peer] = fixture.users
     const history = 'Message before blocking'
     await fixture.db.query(
+      `insert into public.messages(conversation_id,sender_id,content,created_at)
+       select $1,$2,'Earlier message ' || n,now() - (100-n) * interval '1 second'
+       from generate_series(1,80) n`,
+      [fixture.conversationId, peer.id]
+    )
+    await fixture.db.query(
       'insert into public.messages(conversation_id,sender_id,content) values ($1,$2,$3)',
       [fixture.conversationId, peer.id, history]
     )
@@ -70,6 +76,19 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
     const chatPath = `/chats/${fixture.conversationId}`
     const chatLink = page.locator(`a[href="${chatPath}"]`)
     await chatLink.click()
+    const bottomDistance = () =>
+      page.getByRole('log').evaluate((log) => {
+        const viewport = log.parentElement!
+        return viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop
+      })
+    await expect.poll(bottomDistance).toBeLessThan(3)
+    await page.getByRole('log').evaluate((log) => {
+      log.parentElement!.scrollTop = 0
+    })
+    await page.getByRole('link', { name: 'Bạn bè', exact: true }).click()
+    await page.getByRole('link', { name: 'Tin nhắn', exact: true }).click()
+    await chatLink.click()
+    await expect.poll(bottomDistance).toBeLessThan(3)
     await page.getByRole('button', { name: 'Tùy chọn cuộc trò chuyện' }).click()
     await page.getByRole('button', { name: 'Chặn người dùng', exact: true }).click()
     await page.getByRole('button', { name: 'Chặn', exact: true }).click()
@@ -77,11 +96,23 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
     await expect(unblock).toBeVisible()
     await expect(page).toHaveURL(new RegExp(`${chatPath}$`))
     await expect(chatLink).toBeVisible()
+    await page.addInitScript(() => {
+      const seen = { composer: false }
+      Object.assign(window, { blockFlash: seen })
+      new MutationObserver(() => {
+        if (document.querySelector('textarea')) seen.composer = true
+      }).observe(document, { childList: true, subtree: true })
+    })
     await page.reload()
     await expect(chatLink).toBeVisible()
     await expect(unblock).toBeVisible()
     await expect(page.getByText(history, { exact: true }).last()).toBeVisible()
     await expect(page.locator('textarea')).toHaveCount(0)
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { blockFlash: { composer: boolean } }).blockFlash.composer
+      )
+    ).toBe(false)
     await expect(page.getByRole('button', { name: 'Gọi thoại', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Gọi video', exact: true })).toBeDisabled()
 
@@ -99,6 +130,11 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
     await expect(page.locator('textarea')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Gọi thoại', exact: true })).toBeEnabled()
     await expect(chatLink).toBeVisible()
+    await page.goto('/settings')
+    await page.getByText('Đăng xuất', { exact: true }).click()
+    await expect(page).toHaveURL(/\/login/, { timeout: 20_000 })
+    await page.goto(chatPath)
+    await expect(page).toHaveURL(/\/login/)
   } finally {
     await page.context().close()
     await fixture.cleanup()

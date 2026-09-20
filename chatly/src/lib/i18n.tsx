@@ -178,6 +178,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'auth.newPasswordHint': 'Mật khẩu mới phải có ít nhất 8 ký tự.',
     'auth.newPassword': 'Mật khẩu mới',
     'auth.confirmPassword': 'Xác nhận mật khẩu',
+    'auth.registrationLimits':
+      'Họ tên: 1–100 ký tự. Tên tài khoản: 3–30 ký tự, chỉ gồm chữ thường, số và dấu gạch dưới.',
     'auth.passwordMin': 'Mật khẩu phải có ít nhất 8 ký tự.',
     'auth.passwordMismatch': 'Hai mật khẩu không trùng khớp.',
     'auth.updatePassword': 'Cập nhật mật khẩu',
@@ -696,6 +698,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'auth.newPasswordHint': 'Your new password must contain at least 8 characters.',
     'auth.newPassword': 'New password',
     'auth.confirmPassword': 'Confirm password',
+    'auth.registrationLimits':
+      'Full name: 1–100 characters. Username: 3–30 lowercase letters, numbers or underscores.',
     'auth.passwordMin': 'Password must contain at least 8 characters.',
     'auth.passwordMismatch': 'Passwords do not match.',
     'auth.updatePassword': 'Update password',

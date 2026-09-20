@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import {
@@ -620,7 +620,18 @@ export function ChatView({
 
   // Block user modal
   const [blockModalOpen, setBlockModalOpen] = useState(false)
-  const [isParticipantBlocked, setIsParticipantBlocked] = useState(false)
+  const [blockCheck, setBlockCheck] = useState<{ id: string; blocked: boolean } | null>(null)
+  const knownBlocked = useChatsListStore((s) =>
+    s.ownerUserId === currentUserId && participant ? s.blockedUserIds.has(participant.id) : false
+  )
+  const blocksLoaded = useChatsListStore(
+    (s) => s.ownerUserId === currentUserId && s.lastFetchedAt > 0
+  )
+  const isParticipantBlocked = Boolean(
+    participant && (blockCheck?.id === participant.id ? blockCheck.blocked : knownBlocked)
+  )
+  const checkingBlock =
+    !isGroup && Boolean(participant) && !blocksLoaded && blockCheck?.id !== participant?.id
   const [userToBlock, setUserToBlock] = useState<{
     id: string
     display_name: string
@@ -642,10 +653,18 @@ export function ChatView({
     let cancelled = false
     const participantId = isGroup ? null : participant?.id
     const blockedUsersPromise = participantId ? getBlockedUsers() : Promise.resolve([])
-    void blockedUsersPromise.then((blockedIds) => {
-      if (!cancelled)
-        setIsParticipantBlocked(Boolean(participantId && blockedIds.includes(participantId)))
-    })
+    void blockedUsersPromise
+      .then((blockedIds) => {
+        if (!cancelled)
+          setBlockCheck(
+            participantId
+              ? { id: participantId, blocked: blockedIds.includes(participantId) }
+              : null
+          )
+      })
+      .catch(() => {
+        // Keep the composer closed until a block check succeeds.
+      })
     return () => {
       cancelled = true
     }
@@ -1184,11 +1203,28 @@ export function ChatView({
   }, [messages])
 
   // Scroll only when the newest message changes. Prepending history must preserve position.
-  useEffect(() => {
-    if (!scrollToMessageId) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  useLayoutEffect(() => {
+    if (loading || scrollToMessageId) return
+    const end = messagesEndRef.current
+    const content = end?.parentElement
+    const viewport = content?.parentElement
+    if (!content || !viewport) return
+    let pinned = true
+    const toBottom = () => {
+      if (pinned) viewport.scrollTop = viewport.scrollHeight
     }
-  }, [latestMessageId, scrollToMessageId])
+    const onScroll = () => {
+      pinned = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop < 48
+    }
+    toBottom()
+    const observer = new ResizeObserver(toBottom)
+    observer.observe(content)
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      observer.disconnect()
+      viewport.removeEventListener('scroll', onScroll)
+    }
+  }, [conversationId, loading, latestMessageId, scrollToMessageId])
 
   // Scroll to specific message when scrollToMessageId is set
   useEffect(() => {
@@ -1852,7 +1888,7 @@ export function ChatView({
       return
     }
 
-    setIsParticipantBlocked(false)
+    setBlockCheck({ id: participant.id, blocked: false })
     useChatsListStore.getState().unmarkUserBlocked(participant.id)
     addToast({
       type: 'system',
@@ -1988,7 +2024,7 @@ export function ChatView({
                 size="icon"
                 className="h-9 w-9 sm:h-10 sm:w-10"
                 aria-label={t('chat.voiceCall')}
-                disabled={isParticipantBlocked}
+                disabled={isParticipantBlocked || checkingBlock}
                 onClick={() => {
                   if (conversationId && participant) {
                     window.dispatchEvent(
@@ -2014,7 +2050,7 @@ export function ChatView({
                 size="icon"
                 className="h-9 w-9 sm:h-10 sm:w-10"
                 aria-label={t('chat.videoCall')}
-                disabled={isParticipantBlocked}
+                disabled={isParticipantBlocked || checkingBlock}
                 onClick={() => {
                   if (conversationId && participant) {
                     window.dispatchEvent(
@@ -2155,7 +2191,12 @@ export function ChatView({
       </ScrollArea>
 
       {/* Input */}
-      {isParticipantBlocked && participant && !isGroup ? (
+      {checkingBlock ? (
+        <div
+          className="h-20 animate-pulse border-t border-[var(--border-default)]"
+          aria-busy="true"
+        />
+      ) : isParticipantBlocked && participant && !isGroup ? (
         <div className="flex items-center gap-3 border-t border-[var(--border-default)] bg-[var(--bg-panel)] p-3 sm:px-4">
           <Ban className="h-5 w-5 shrink-0 text-[var(--text-muted)]" />
           <p className="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
@@ -2357,7 +2398,7 @@ export function ChatView({
         userToBlock={userToBlock}
         onBlocked={() => {
           if (!userToBlock) return
-          setIsParticipantBlocked(true)
+          setBlockCheck({ id: userToBlock.id, blocked: true })
           clearReply()
           useChatsListStore.getState().markUserBlocked(userToBlock.id)
           useChatCacheStore.getState().clearCache(conversationId)
