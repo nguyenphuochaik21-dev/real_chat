@@ -7,7 +7,10 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getCompactDisplayName(name: string, maxWords = 2): string {
   const words = name.trim().split(/\s+/).filter(Boolean)
-  const visibleWords = words.length > maxWords ? words.slice(-maxWords) : words
+  const visibleWords =
+    words.length > maxWords && maxWords > 1
+      ? [words[0], ...words.slice(-(maxWords - 1))]
+      : words.slice(0, maxWords)
 
   return visibleWords
     .map((word) => word.charAt(0).toLocaleUpperCase('vi-VN') + word.slice(1))

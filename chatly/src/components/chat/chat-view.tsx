@@ -37,8 +37,6 @@ import { PendingAttachments, type PendingAttachment } from './pending-attachment
 import { MessageContextMenu } from './message-context-menu'
 import { ReplyPreview } from './reply-preview'
 import { MessageReactions } from './message-reactions'
-import { ConversationActions } from './conversation-actions'
-import { EmojiPicker } from './emoji-picker'
 import { useMessageActionsStore } from '@/stores/message-actions-store'
 import { useNotificationStore } from '@/stores/notification-store'
 import { useDraftStore } from '@/stores/draft-store'
@@ -51,7 +49,6 @@ import { useI18n } from '@/lib/i18n'
 import { queuePushNotification } from '@/lib/push'
 import { getBlockedUsers, unblockUser } from '@/lib/actions/block'
 import type { PublicProfile, Tables } from '@/types'
-import { ConversationProfilePanel } from './conversation-profile-panel'
 
 type Message = Tables<'messages'>
 type Profile = PublicProfile
@@ -71,6 +68,18 @@ const CreateGroupModal = dynamic(
   () => import('@/components/groups/create-group-modal').then((module) => module.CreateGroupModal),
   { ssr: false }
 )
+const ConversationActions = dynamic(
+  () => import('./conversation-actions').then((module) => module.ConversationActions),
+  { ssr: false }
+)
+const ConversationProfilePanel = dynamic(
+  () =>
+    import('./conversation-profile-panel').then((module) => module.ConversationProfilePanel),
+  { ssr: false }
+)
+const EmojiPicker = dynamic(() => import('./emoji-picker').then((module) => module.EmojiPicker), {
+  ssr: false,
+})
 const MediaGalleryViewer = dynamic(() =>
   import('./media-gallery').then((module) => module.MediaGalleryViewer)
 )
@@ -193,7 +202,7 @@ function MessageBubble({
   const { t, dateLocale } = useI18n()
   const [isHovered, setIsHovered] = useState(false)
   const lastBubbleTapRef = useRef(0)
-  const { openContextMenu } = useMessageActionsStore()
+  const openContextMenu = useMessageActionsStore((state) => state.openContextMenu)
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
   const isDeleted = !!message.deleted_at
@@ -567,7 +576,9 @@ export function ChatView({
   const reactionFetchedIdsRef = useRef<Set<string>>(new Set())
   const reactionFetchConversationRef = useRef<string | null>(null)
   // Store hooks
-  const { replyToMessage, clearReply } = useMessageActionsStore()
+  const replyToMessage = useMessageActionsStore((state) => state.replyToMessage)
+  const clearReply = useMessageActionsStore((state) => state.clearReply)
+  const forwardModalOpen = useMessageActionsStore((state) => state.forwardModalOpen)
   const addToast = useNotificationStore((state) => state.addToast)
 
   const handleUploadComplete = useCallback((message: Message) => {
@@ -704,7 +715,7 @@ export function ChatView({
   const loadedMessageIdsRef = useRef<Set<string>>(new Set())
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([])
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments
@@ -729,8 +740,12 @@ export function ChatView({
   const {
     mediaItems,
     totalCount: mediaTotalCount,
-    refetch: refetchMedia,
-  } = useConversationMedia({ conversationId })
+    loading: mediaLoading,
+  } = useConversationMedia({
+    conversationId,
+    enabled: showMediaGallery || showProfilePanel || showGroupDetails,
+    limit: showMediaGallery ? 200 : 6,
+  })
   const previewMediaItems = useMemo(
     () =>
       messages.flatMap((message) => {
@@ -2354,6 +2369,7 @@ export function ChatView({
             size: item.size,
             mimeType: item.mimeType,
           }))}
+          loading={mediaLoading}
           onClose={() => setShowMediaGallery(false)}
         />
       )}
@@ -2384,29 +2400,26 @@ export function ChatView({
       />
 
       {/* Forward Modal */}
-      <ForwardModal
-        currentUserId={currentUserId}
-        onForwardComplete={() => {
-          // Optionally scroll or do something after forward
-        }}
-      />
+      {forwardModalOpen && <ForwardModal currentUserId={currentUserId} />}
 
       {/* Block User Modal */}
-      <BlockUserModal
-        isOpen={blockModalOpen}
-        onClose={() => setBlockModalOpen(false)}
-        userToBlock={userToBlock}
-        onBlocked={() => {
-          if (!userToBlock) return
-          setBlockCheck({ id: userToBlock.id, blocked: true })
-          clearReply()
-          useChatsListStore.getState().markUserBlocked(userToBlock.id)
-          useChatCacheStore.getState().clearCache(conversationId)
-        }}
-      />
+      {blockModalOpen && (
+        <BlockUserModal
+          isOpen
+          onClose={() => setBlockModalOpen(false)}
+          userToBlock={userToBlock}
+          onBlocked={() => {
+            if (!userToBlock) return
+            setBlockCheck({ id: userToBlock.id, blocked: true })
+            clearReply()
+            useChatsListStore.getState().markUserBlocked(userToBlock.id)
+            useChatCacheStore.getState().clearCache(conversationId)
+          }}
+        />
+      )}
 
       {/* Conversation Actions Menu */}
-      {showConversationActions && participant && (
+      {showConversationActions && (participant || (isGroup && conversation)) && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowConversationActions(false)} />
           <div
@@ -2415,7 +2428,11 @@ export function ChatView({
           >
             <ConversationActions
               conversationId={conversationId}
-              conversationTitle={participant.display_name}
+              conversationTitle={
+                isGroup
+                  ? conversation?.title || t('group.tab')
+                  : participant?.display_name || t('common.user')
+              }
               isPinned={conversationFlags.is_pinned}
               isMuted={conversationFlags.is_muted}
               isArchived={conversationFlags.is_archived}
@@ -2423,9 +2440,8 @@ export function ChatView({
               onSearch={() => setShowSearch(true)}
               onOpenMedia={() => {
                 setShowMediaGallery(true)
-                void refetchMedia(200)
               }}
-              onCreateGroup={() => setShowCreateGroup(true)}
+              onCreateGroup={isGroup ? undefined : () => setShowCreateGroup(true)}
               onDeleted={() => {
                 useChatsListStore.getState().removeConversation(conversationId)
                 useChatCacheStore.getState().clearCache(conversationId)
@@ -2433,13 +2449,14 @@ export function ChatView({
                 router.refresh()
               }}
               onBlock={
-                isParticipantBlocked
+                isGroup || !participant || isParticipantBlocked
                   ? undefined
                   : () => {
                       setUserToBlock(participant)
                       setBlockModalOpen(true)
-                    }
+                  }
               }
+              allowDelete={!isGroup}
               onAction={(updates) => {
                 useChatsListStore.getState().updateConversation(conversationId, updates)
                 setConversationFlags((prev) => ({
@@ -2456,6 +2473,30 @@ export function ChatView({
         <GroupDetailsPanel
           conversationId={conversationId}
           currentUserId={currentUserId}
+          mediaItems={mediaItems.map((item) => ({
+            id: item.id,
+            url: item.url,
+            type: item.type,
+            name: item.name,
+            size: item.size,
+            mimeType: item.mimeType,
+          }))}
+          mediaTotalCount={mediaTotalCount}
+          mediaLoading={mediaLoading}
+          isPinned={conversationFlags.is_pinned}
+          isMuted={conversationFlags.is_muted}
+          onOpenMedia={() => {
+            setShowGroupDetails(false)
+            setShowMediaGallery(true)
+          }}
+          onOpenSearch={() => {
+            setShowGroupDetails(false)
+            setShowSearch(true)
+          }}
+          onOpenActions={() => {
+            setShowGroupDetails(false)
+            setShowConversationActions(true)
+          }}
           onClose={() => setShowGroupDetails(false)}
           onLeft={handleGroupLeft}
           onUpdated={handleGroupUpdated}
@@ -2488,6 +2529,7 @@ export function ChatView({
             mimeType: item.mimeType,
           }))}
           mediaTotalCount={mediaTotalCount}
+          mediaLoading={mediaLoading}
           isPinned={conversationFlags.is_pinned}
           isMuted={conversationFlags.is_muted}
           onOpenMedia={() => {
@@ -2506,31 +2548,34 @@ export function ChatView({
         />
       )}
 
-      <SearchModal
-        isOpen={showSearch}
-        onClose={() => setShowSearch(false)}
-        conversationId={conversationId}
-        currentUserId={currentUserId}
-        onSelectMessage={(result) => {
-          const messageElement = messageRefs.current.get(result.id)
-          if (!messageElement) {
-            router.replace(`/chats/${conversationId}?scrollTo=${result.id}`)
-            return
-          }
+      {showSearch && (
+        <SearchModal
+          isOpen
+          onClose={() => setShowSearch(false)}
+          conversationId={conversationId}
+          currentUserId={currentUserId}
+          onSelectMessage={(result) => {
+            const messageElement = messageRefs.current.get(result.id)
+            if (!messageElement) {
+              router.replace(`/chats/${conversationId}?scrollTo=${result.id}`)
+              return
+            }
 
-          messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          messageElement.classList.add('ring-2', 'ring-primary-500', 'ring-offset-2')
-          window.setTimeout(() => {
-            messageElement.classList.remove('ring-2', 'ring-primary-500', 'ring-offset-2')
-          }, 2000)
-        }}
-      />
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            messageElement.classList.add('ring-2', 'ring-primary-500', 'ring-offset-2')
+            window.setTimeout(() => {
+              messageElement.classList.remove('ring-2', 'ring-primary-500', 'ring-offset-2')
+            }, 2000)
+          }}
+        />
+      )}
 
       {/* Schedule Picker Modal */}
-      <SchedulePicker
-        isOpen={showSchedulePicker}
-        onClose={() => setShowSchedulePicker(false)}
-        onSchedule={async (scheduledAt) => {
+      {showSchedulePicker && (
+        <SchedulePicker
+          isOpen
+          onClose={() => setShowSchedulePicker(false)}
+          onSchedule={async (scheduledAt) => {
           if (conversationId && inputValue.trim()) {
             const result = await createSchedule(conversationId, inputValue.trim(), scheduledAt, {
               replyTo: replyToMessage?.id,
@@ -2554,9 +2599,10 @@ export function ChatView({
               })
             }
           }
-          setShowSchedulePicker(false)
-        }}
-      />
+            setShowSchedulePicker(false)
+          }}
+        />
+      )}
     </div>
   )
 }

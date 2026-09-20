@@ -12,9 +12,9 @@ test('registration validates name limits and matching passwords', () => {
   expect(registrationSchema.safeParse(valid).success).toBe(true)
   for (const change of [
     { fullName: ' ' },
-    { fullName: 'a'.repeat(101) },
+    { fullName: 'a'.repeat(26) },
     { username: 'ab' },
-    { username: 'a'.repeat(31) },
+    { username: 'a'.repeat(26) },
     { username: 'invalid name' },
     { confirmPassword: 'different' },
   ])
@@ -32,8 +32,8 @@ test('registration caps input and rejects mismatched passwords before signup', a
   const username = page.locator('#username')
   await name.fill('a'.repeat(120))
   await username.fill('a'.repeat(40))
-  await expect(name).toHaveValue('a'.repeat(100))
-  await expect(username).toHaveValue('a'.repeat(30))
+  await expect(name).toHaveValue('a'.repeat(25))
+  await expect(username).toHaveValue('a'.repeat(25))
   await page.locator('#email').fill('test@example.invalid')
   await page.locator('#password').fill('Example123')
   await page.locator('#confirmPassword').fill('Different123')

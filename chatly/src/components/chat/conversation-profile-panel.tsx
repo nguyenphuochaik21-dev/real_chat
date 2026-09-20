@@ -30,6 +30,7 @@ interface ConversationProfilePanelProps {
   status: PresenceStatus
   mediaItems: MediaItem[]
   mediaTotalCount: number
+  mediaLoading: boolean
   isPinned: boolean
   isMuted: boolean
   onOpenMedia: () => void
@@ -43,6 +44,7 @@ export function ConversationProfilePanel({
   status,
   mediaItems,
   mediaTotalCount,
+  mediaLoading,
   isPinned,
   isMuted,
   onOpenMedia,
@@ -171,6 +173,7 @@ export function ConversationProfilePanel({
           <MediaGallery
             mediaItems={mediaItems}
             totalCount={mediaTotalCount}
+            loading={mediaLoading}
             onShowAll={onOpenMedia}
           />
         </section>

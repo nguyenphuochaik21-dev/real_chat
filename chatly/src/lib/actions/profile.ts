@@ -3,6 +3,7 @@
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
+import { FULL_NAME_MAX } from '@/lib/registration'
 import type { Json, PublicProfile } from '@/types'
 
 export interface PublicProfileDetails extends PublicProfile {
@@ -25,7 +26,7 @@ const httpUrlSchema = z
   .max(500)
   .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), 'Invalid URL')
 const profileUpdateSchema = z.object({
-  displayName: z.string().trim().min(1).max(100),
+  displayName: z.string().trim().min(1).max(FULL_NAME_MAX),
   bio: z.string().trim().max(500),
   phone: z.string().trim().max(30),
   phoneVisibility: visibilitySchema,

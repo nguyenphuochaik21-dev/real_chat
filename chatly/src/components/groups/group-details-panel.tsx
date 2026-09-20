@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Bell,
   Crown,
+  Images,
   LogOut,
   MoreVertical,
   Pencil,
+  Pin,
   Search,
   Share2,
   Shield,
+  SlidersHorizontal,
   Trash2,
   UserMinus,
   UserPlus,
@@ -37,10 +41,19 @@ import { createClient } from '@/lib/supabase/client'
 import { deleteConversation } from '@/lib/actions/conversations'
 import { useI18n } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
+import { MediaGallery, type MediaItem } from '@/components/chat/media-gallery'
 
 interface GroupDetailsPanelProps {
   conversationId: string
   currentUserId: string
+  mediaItems: MediaItem[]
+  mediaTotalCount: number
+  mediaLoading: boolean
+  isPinned: boolean
+  isMuted: boolean
+  onOpenMedia: () => void
+  onOpenSearch: () => void
+  onOpenActions: () => void
   onClose: () => void
   onLeft: () => void
   onUpdated: (title: string, memberCount: number) => void
@@ -49,6 +62,14 @@ interface GroupDetailsPanelProps {
 export function GroupDetailsPanel({
   conversationId,
   currentUserId,
+  mediaItems,
+  mediaTotalCount,
+  mediaLoading,
+  isPinned,
+  isMuted,
+  onOpenMedia,
+  onOpenSearch,
+  onOpenActions,
   onClose,
   onLeft,
   onUpdated,
@@ -66,7 +87,7 @@ export function GroupDetailsPanel({
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [openMemberId, setOpenMemberId] = useState<string | null>(null)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   const loadDetails = useCallback(async () => {
     try {
@@ -282,8 +303,8 @@ export function GroupDetailsPanel({
                       </Button>
                     </div>
                   ) : (
-                    <div className="mt-3 flex items-center gap-2">
-                      <h3 className="text-xl font-semibold text-[var(--text-primary)]">
+                    <div className="mt-3 flex max-w-full min-w-0 items-center gap-2 px-4">
+                      <h3 className="truncate text-xl font-semibold text-[var(--text-primary)]">
                         {details.conversation.title}
                       </h3>
                       {canManage && (
@@ -301,16 +322,65 @@ export function GroupDetailsPanel({
                   <p className="mt-1 text-sm text-[var(--text-muted)]">
                     {t('group.membersCount', { count: details.members.length })}
                   </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={() => void handleShare()}
+                  <div
+                    className="mt-6 grid w-full grid-cols-4 gap-2"
+                    aria-label={t('profilePanel.quickActions')}
                   >
-                    <Share2 className="h-4 w-4" />
-                    {t('share.group')}
-                  </Button>
+                    <GroupQuickAction
+                      icon={Share2}
+                      label={t('share.group')}
+                      onClick={() => void handleShare()}
+                    />
+                    <GroupQuickAction
+                      icon={Search}
+                      label={t('profilePanel.search')}
+                      onClick={onOpenSearch}
+                    />
+                    <GroupQuickAction
+                      icon={Images}
+                      label={t('profilePanel.media')}
+                      onClick={onOpenMedia}
+                    />
+                    <GroupQuickAction
+                      icon={SlidersHorizontal}
+                      label={t('profilePanel.options')}
+                      onClick={onOpenActions}
+                    />
+                  </div>
                   {notice && <p className="mt-2 text-xs text-emerald-500">{notice}</p>}
+                </section>
+
+                <section>
+                  <h3 className="mb-2 text-sm font-semibold text-[var(--text-muted)]">
+                    {t('profilePanel.chatInfo')}
+                  </h3>
+                  <div className="overflow-hidden rounded-2xl bg-[var(--bg-app)]">
+                    <GroupSettingRow
+                      icon={Bell}
+                      label={
+                        isMuted
+                          ? t('profilePanel.muted')
+                          : t('profilePanel.notificationsOn')
+                      }
+                      onClick={onOpenActions}
+                    />
+                    <GroupSettingRow
+                      icon={Pin}
+                      label={
+                        isPinned ? t('profilePanel.pinned') : t('profilePanel.notPinned')
+                      }
+                      onClick={onOpenActions}
+                    />
+                  </div>
+                </section>
+
+                <section>
+                  <MediaGallery
+                    mediaItems={mediaItems}
+                    totalCount={mediaTotalCount}
+                    loading={mediaLoading}
+                    onShowAll={onOpenMedia}
+                  />
                 </section>
 
                 {details.currentUserRole === 'owner' && (
@@ -584,5 +654,53 @@ export function GroupDetailsPanel({
         )}
       </aside>
     </div>
+  )
+}
+
+function GroupQuickAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-w-0 flex-col items-center gap-2 rounded-xl p-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+    >
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bg-hover)]">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="line-clamp-2 min-h-8 max-w-full leading-4">{label}</span>
+    </button>
+  )
+}
+
+function GroupSettingRow({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 border-b border-[var(--border-default)] p-3 text-left last:border-0 hover:bg-[var(--bg-hover)]"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-hover)]">
+        <Icon className="h-4 w-4 text-[var(--text-secondary)]" />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--text-primary)]">
+        {label}
+      </span>
+    </button>
   )
 }

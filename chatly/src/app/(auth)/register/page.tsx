@@ -200,7 +200,7 @@ export default function RegisterPage() {
             id="username"
             minLength={3}
             maxLength={USERNAME_MAX}
-            pattern="[a-z0-9_]{3,30}"
+            pattern="[a-z0-9_]{3,25}"
             type="text"
             placeholder={t('auth.usernamePlaceholder')}
             value={username}

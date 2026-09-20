@@ -35,10 +35,13 @@ function matchesSearch(profile: FriendProfile, search: string) {
 function ProfileIdentity({ profile }: { profile: FriendProfile }) {
   const { t } = useI18n()
   return (
-    <Link href={`/profile/${profile.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-      <Avatar user={profile} size="md" showStatus />
-      <div className="min-w-0">
-        <p className="flex items-center gap-1 truncate font-medium text-[var(--text-primary)]">
+    <Link
+      href={`/profile/${profile.id}`}
+      className="flex min-w-0 items-center gap-3 overflow-hidden"
+    >
+      <Avatar user={profile} size="md" showStatus className="shrink-0" />
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <p className="flex min-w-0 items-center gap-1 font-medium text-[var(--text-primary)]">
           <span className="truncate">{profile.display_name}</span>
           {profile.is_verified && <VerifiedBadge label={t('verified.label')} />}
         </p>
@@ -58,9 +61,9 @@ interface ContactRowProps {
 
 function ContactRow({ profile, children }: ContactRowProps) {
   return (
-    <div className="list-render-row flex items-center gap-3 rounded-xl bg-[var(--bg-panel)] p-3 shadow-sm">
+    <div className="list-render-row grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-xl bg-[var(--bg-panel)] p-3 shadow-sm sm:gap-3">
       <ProfileIdentity profile={profile} />
-      <div className="flex shrink-0 items-center gap-1">{children}</div>
+      <div className="flex min-w-0 items-center gap-1">{children}</div>
     </div>
   )
 }
@@ -197,8 +200,8 @@ export default function ContactsPage() {
         )}
       </header>
 
-      <ScrollArea className="flex-1">
-        <div className="mx-auto w-full max-w-4xl space-y-7 p-4 sm:p-6">
+      <ScrollArea className="min-w-0 flex-1">
+        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-7 p-4 sm:p-6">
           {!!filtered?.incoming.length && (
             <section>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">

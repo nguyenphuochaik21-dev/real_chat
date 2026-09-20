@@ -23,7 +23,7 @@ interface ReplyPreviewProps {
 
 export function ReplyPreview({ replyingTo, replyingToProfile }: ReplyPreviewProps) {
   const { t } = useI18n()
-  const { clearReply } = useMessageActionsStore()
+  const clearReply = useMessageActionsStore((state) => state.clearReply)
 
   if (!replyingTo) return null
 

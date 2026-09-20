@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Tables } from '@/types'
 
@@ -21,41 +21,52 @@ interface MediaItem {
 interface UseConversationMediaOptions {
   conversationId: string | null
   limit?: number
+  enabled?: boolean
 }
 
-export function useConversationMedia({ conversationId, limit = 6 }: UseConversationMediaOptions) {
+export function useConversationMedia({
+  conversationId,
+  limit = 6,
+  enabled = true,
+}: UseConversationMediaOptions) {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [loadedConversationId, setLoadedConversationId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const [supabase] = useState(() => createClient())
+  const requestVersionRef = useRef(0)
 
   const fetchMedia = useCallback(
     async (requestedLimit = limit) => {
-      if (!conversationId) {
+      const requestVersion = ++requestVersionRef.current
+      if (!conversationId || !enabled) {
         setMediaItems([])
         setTotalCount(0)
+        setLoadedConversationId(null)
         setLoading(false)
         return
       }
 
+      const targetConversationId = conversationId
       setLoading(true)
       try {
         const [{ count }, { data, error }] = await Promise.all([
           supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
-            .eq('conversation_id', conversationId)
+            .eq('conversation_id', targetConversationId)
             .neq('content_type', 'text'),
           supabase
             .from('messages')
             .select('*')
-            .eq('conversation_id', conversationId)
+            .eq('conversation_id', targetConversationId)
             .neq('content_type', 'text')
             .order('created_at', { ascending: false })
             .limit(requestedLimit),
         ])
 
         if (error) throw error
+        if (requestVersion !== requestVersionRef.current) return
         setTotalCount(count || 0)
 
         const items: MediaItem[] = (data || []).map((msg: Message) => ({
@@ -71,24 +82,34 @@ export function useConversationMedia({ conversationId, limit = 6 }: UseConversat
         }))
 
         setMediaItems(items)
+        setLoadedConversationId(targetConversationId)
       } catch (err) {
+        if (requestVersion !== requestVersionRef.current) return
+        setMediaItems([])
+        setTotalCount(0)
+        setLoadedConversationId(targetConversationId)
         console.error('Failed to fetch media:', err)
       } finally {
-        setLoading(false)
+        if (requestVersion === requestVersionRef.current) setLoading(false)
       }
     },
-    [conversationId, limit, supabase]
+    [conversationId, enabled, limit, supabase]
   )
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void fetchMedia(), 0)
-    return () => window.clearTimeout(timeoutId)
+    return () => {
+      window.clearTimeout(timeoutId)
+      requestVersionRef.current++
+    }
   }, [fetchMedia])
 
+  const hasCurrentConversation = loadedConversationId === conversationId
+
   return {
-    mediaItems,
-    totalCount,
-    loading,
+    mediaItems: hasCurrentConversation ? mediaItems : [],
+    totalCount: hasCurrentConversation ? totalCount : 0,
+    loading: Boolean(enabled && conversationId && (loading || !hasCurrentConversation)),
     refetch: fetchMedia,
   }
 }

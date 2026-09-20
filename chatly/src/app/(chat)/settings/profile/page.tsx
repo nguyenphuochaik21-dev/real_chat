@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useI18n } from '@/lib/i18n'
 import { getMyProfile, updateMyProfile, type MyProfileDetails } from '@/lib/actions/profile'
+import { FULL_NAME_MAX } from '@/lib/registration'
 
 export default function ProfilePage() {
   const { t } = useI18n()
@@ -25,7 +26,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -211,7 +212,7 @@ export default function ProfilePage() {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              maxLength={100}
+              maxLength={FULL_NAME_MAX}
               className="border-0 bg-transparent p-0 text-lg focus:ring-0"
               placeholder={t('profile.namePlaceholder')}
             />
