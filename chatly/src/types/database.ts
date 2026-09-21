@@ -913,6 +913,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_send_message: {
+        Args: { p_conversation_id: string }
+        Returns: boolean
+      }
       get_friendship_overview: {
         Args: { p_discover_limit?: number }
         Returns: Json

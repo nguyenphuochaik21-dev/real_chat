@@ -13,7 +13,7 @@ export default function SuspendedPage() {
   const signOut = async () => {
     await removeCurrentPushSubscription().catch(() => undefined)
     const { createClient } = await import('@/lib/supabase/client')
-    await createClient().auth.signOut()
+    await createClient().auth.signOut({ scope: 'local' })
     router.replace('/login')
     router.refresh()
   }

@@ -150,15 +150,31 @@ function MediaGalleryItem({ item, onOpen }: { item: MediaItem; onOpen: (id: stri
 interface MediaGalleryViewerProps {
   items: MediaItem[]
   loading?: boolean
+  error?: boolean
+  onRetry?: () => void
   onClose: () => void
 }
 
 type FilterType = 'all' | 'image' | 'video' | 'audio' | 'file'
 
-export function MediaGalleryViewer({ items, loading = false, onClose }: MediaGalleryViewerProps) {
+export function MediaGalleryViewer({
+  items,
+  loading = false,
+  error = false,
+  onRetry,
+  onClose,
+}: MediaGalleryViewerProps) {
   const { t } = useI18n()
   const [filter, setFilter] = useState<FilterType>('all')
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !activeMediaId) onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [activeMediaId, onClose])
 
   const filteredItems = filter === 'all' ? items : items.filter((item) => item.type === filter)
 
@@ -238,6 +254,16 @@ export function MediaGalleryViewer({ items, loading = false, onClose }: MediaGal
           {loading && items.length === 0 ? (
             <div className="flex h-full items-center justify-center" aria-busy="true">
               <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" />
+            </div>
+          ) : error ? (
+            <div
+              role="alert"
+              className="flex h-full flex-col items-center justify-center gap-3 text-center"
+            >
+              <p>{t('common.unknownError')}</p>
+              <button type="button" onClick={onRetry} className="text-primary-500 underline">
+                {t('calls.retry')}
+              </button>
             </div>
           ) : items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-[var(--text-muted)]">

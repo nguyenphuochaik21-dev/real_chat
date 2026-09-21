@@ -57,7 +57,7 @@ export async function provisionGroupUsers(): Promise<ProvisionedGroupUsers> {
         user_metadata: {
           chatly_e2e: true,
           full_name: `E2E ${role}`,
-          username: `e2e_${role.replace('-', '_')}_${runId}`,
+          username: `e2e_${roles.indexOf(role)}_${runId}`,
         },
       })
 

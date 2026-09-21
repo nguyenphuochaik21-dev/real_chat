@@ -73,8 +73,7 @@ const ConversationActions = dynamic(
   { ssr: false }
 )
 const ConversationProfilePanel = dynamic(
-  () =>
-    import('./conversation-profile-panel').then((module) => module.ConversationProfilePanel),
+  () => import('./conversation-profile-panel').then((module) => module.ConversationProfilePanel),
   { ssr: false }
 )
 const EmojiPicker = dynamic(() => import('./emoji-picker').then((module) => module.EmojiPicker), {
@@ -741,6 +740,8 @@ export function ChatView({
     mediaItems,
     totalCount: mediaTotalCount,
     loading: mediaLoading,
+    error: mediaError,
+    refetch: refetchMedia,
   } = useConversationMedia({
     conversationId,
     enabled: showMediaGallery || showProfilePanel || showGroupDetails,
@@ -1508,6 +1509,25 @@ export function ChatView({
 
       stopTyping()
       setSending(true)
+      try {
+        const { data: canSend, error } = await supabase.rpc('can_send_message', {
+          p_conversation_id: conversationId,
+        })
+        if (error) throw error
+        if (!canSend) {
+          addToast({
+            type: 'system',
+            title: t('chat.sendFailed'),
+            body: t('chat.unavailable'),
+          })
+          setSending(false)
+          return
+        }
+      } catch {
+        addToast({ type: 'system', title: t('chat.sendFailed'), body: t('common.unknownError') })
+        setSending(false)
+        return
+      }
       const content = pendingContent.trim()
       if (contentOverride === undefined) setInputValue('')
 
@@ -1624,7 +1644,10 @@ export function ChatView({
         addToast({
           type: 'system',
           title: t('chat.sendFailed'),
-          body: err instanceof Error ? err.message : t('common.unknownError'),
+          body:
+            typeof err === 'object' && err !== null && 'code' in err && err.code === '42501'
+              ? t('chat.unavailable')
+              : t('common.unknownError'),
         })
       } finally {
         setSending(false)
@@ -2370,6 +2393,8 @@ export function ChatView({
             mimeType: item.mimeType,
           }))}
           loading={mediaLoading}
+          error={mediaError}
+          onRetry={() => void refetchMedia()}
           onClose={() => setShowMediaGallery(false)}
         />
       )}
@@ -2454,7 +2479,7 @@ export function ChatView({
                   : () => {
                       setUserToBlock(participant)
                       setBlockModalOpen(true)
-                  }
+                    }
               }
               allowDelete={!isGroup}
               onAction={(updates) => {
@@ -2576,29 +2601,29 @@ export function ChatView({
           isOpen
           onClose={() => setShowSchedulePicker(false)}
           onSchedule={async (scheduledAt) => {
-          if (conversationId && inputValue.trim()) {
-            const result = await createSchedule(conversationId, inputValue.trim(), scheduledAt, {
-              replyTo: replyToMessage?.id,
-            })
-            if (result.success) {
-              setInputValue('')
-              clearReply()
-              clearDraft(conversationId)
-              addToast({
-                type: 'system',
-                title: t('chat.scheduled'),
-                body: t('chat.scheduledAt', {
-                  time: scheduledAt.toLocaleString(dateLocale),
-                }),
+            if (conversationId && inputValue.trim()) {
+              const result = await createSchedule(conversationId, inputValue.trim(), scheduledAt, {
+                replyTo: replyToMessage?.id,
               })
-            } else {
-              addToast({
-                type: 'system',
-                title: t('chat.scheduleFailed'),
-                body: result.error || t('common.unknownError'),
-              })
+              if (result.success) {
+                setInputValue('')
+                clearReply()
+                clearDraft(conversationId)
+                addToast({
+                  type: 'system',
+                  title: t('chat.scheduled'),
+                  body: t('chat.scheduledAt', {
+                    time: scheduledAt.toLocaleString(dateLocale),
+                  }),
+                })
+              } else {
+                addToast({
+                  type: 'system',
+                  title: t('chat.scheduleFailed'),
+                  body: result.error || t('common.unknownError'),
+                })
+              }
             }
-          }
             setShowSchedulePicker(false)
           }}
         />

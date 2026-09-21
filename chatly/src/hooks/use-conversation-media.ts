@@ -33,8 +33,12 @@ export function useConversationMedia({
   const [totalCount, setTotalCount] = useState(0)
   const [loadedConversationId, setLoadedConversationId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
   const [supabase] = useState(() => createClient())
   const requestVersionRef = useRef(0)
+  const invalidateRequest = useCallback(() => {
+    requestVersionRef.current++
+  }, [])
 
   const fetchMedia = useCallback(
     async (requestedLimit = limit) => {
@@ -49,23 +53,29 @@ export function useConversationMedia({
 
       const targetConversationId = conversationId
       setLoading(true)
+      setError(false)
       try {
-        const [{ count }, { data, error }] = await Promise.all([
+        const [{ count, error: countError }, { data, error }] = await Promise.all([
           supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
             .eq('conversation_id', targetConversationId)
-            .neq('content_type', 'text'),
+            .in('content_type', ['image', 'video', 'audio', 'file'])
+            .is('deleted_at', null)
+            .not('media_url', 'is', null),
           supabase
             .from('messages')
             .select('*')
             .eq('conversation_id', targetConversationId)
-            .neq('content_type', 'text')
+            .in('content_type', ['image', 'video', 'audio', 'file'])
+            .is('deleted_at', null)
+            .not('media_url', 'is', null)
             .order('created_at', { ascending: false })
             .limit(requestedLimit),
         ])
 
         if (error) throw error
+        if (countError) throw countError
         if (requestVersion !== requestVersionRef.current) return
         setTotalCount(count || 0)
 
@@ -85,6 +95,7 @@ export function useConversationMedia({
         setLoadedConversationId(targetConversationId)
       } catch (err) {
         if (requestVersion !== requestVersionRef.current) return
+        setError(true)
         setMediaItems([])
         setTotalCount(0)
         setLoadedConversationId(targetConversationId)
@@ -100,9 +111,9 @@ export function useConversationMedia({
     const timeoutId = window.setTimeout(() => void fetchMedia(), 0)
     return () => {
       window.clearTimeout(timeoutId)
-      requestVersionRef.current++
+      invalidateRequest()
     }
-  }, [fetchMedia])
+  }, [fetchMedia, invalidateRequest])
 
   const hasCurrentConversation = loadedConversationId === conversationId
 
@@ -110,6 +121,7 @@ export function useConversationMedia({
     mediaItems: hasCurrentConversation ? mediaItems : [],
     totalCount: hasCurrentConversation ? totalCount : 0,
     loading: Boolean(enabled && conversationId && (loading || !hasCurrentConversation)),
+    error: hasCurrentConversation && error,
     refetch: fetchMedia,
   }
 }

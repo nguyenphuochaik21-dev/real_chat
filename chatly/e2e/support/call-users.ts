@@ -39,7 +39,7 @@ export async function provisionCallUsers() {
           JSON.stringify({
             chatly_e2e_run: runId,
             full_name: user.name,
-            username: `call_${user.id.replaceAll('-', '')}`,
+            username: `call_${user.id.replaceAll('-', '').slice(0, 20)}`,
           }),
         ]
       )

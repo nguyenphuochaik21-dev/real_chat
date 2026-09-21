@@ -17,7 +17,7 @@ export async function GET(request: Request) {
         data: { user },
       } = await supabase.auth.getUser()
       if (user?.app_metadata.provider === 'github') {
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: 'local' })
         return NextResponse.redirect(`${origin}/login?error=provider_not_supported`)
       }
       const oauthAvatar = user?.user_metadata.avatar_url ?? user?.user_metadata.picture
