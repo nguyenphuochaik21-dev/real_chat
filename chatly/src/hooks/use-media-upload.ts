@@ -56,10 +56,12 @@ export function useMediaUpload({
       }
 
       setUploadState({ uploading: true, progress: 0, error: null })
+      let uploadedPath: string | undefined
 
       try {
         // Upload file to storage
         const { path } = await uploadMedia(file, conversationId, userId)
+        uploadedPath = path
 
         // Determine content type
         let contentType: MessageContentType = 'file'
@@ -119,6 +121,12 @@ export function useMediaUpload({
 
         return message
       } catch (err) {
+        if (uploadedPath) {
+          await supabase.storage
+            .from('chat-media')
+            .remove([uploadedPath])
+            .catch(() => undefined)
+        }
         const errorMsg = err instanceof Error ? err.message : 'Upload failed'
         setUploadState({ uploading: false, progress: 0, error: errorMsg })
         onError?.(errorMsg)

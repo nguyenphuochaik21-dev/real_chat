@@ -1094,6 +1094,36 @@ export function ChatView({
       .channel(`messages-${conversationId}`)
       .on(
         'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'messages' },
+        (payload) => {
+          const id = payload.old.id as string | undefined
+          if (!id) return
+          setMessages((previous) =>
+            previous
+              .filter((message) => message.id !== id)
+              .map((message) =>
+                message.reply_to === id ? { ...message, reply_to: null } : message
+              )
+          )
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversation_participants',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          if (payload.new.conversation_id !== conversationId || !payload.new.hidden_at) return
+          useChatCacheStore.getState().clearCache(conversationId)
+          setMessages([])
+          router.replace('/chats')
+        }
+      )
+      .on(
+        'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
@@ -1148,7 +1178,7 @@ export function ChatView({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversationId, currentUserId, supabase, markAsRead])
+  }, [conversationId, currentUserId, supabase, markAsRead, router])
 
   useEffect(() => {
     loadedMessageIdsRef.current = new Set(
@@ -1405,12 +1435,7 @@ export function ChatView({
         const result = await deleteMessage(message.id)
 
         if (result.success) {
-          // Update local message list (mark as deleted)
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === message.id ? { ...m, deleted_at: new Date().toISOString() } : m
-            )
-          )
+          setMessages((prev) => prev.filter((m) => m.id !== message.id))
           addToast({ type: 'system', title: t('chat.messageDeletedToast'), body: '' })
         } else {
           addToast({

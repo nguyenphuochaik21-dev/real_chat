@@ -95,12 +95,31 @@ function extractPathFromUrl(urlOrPath: string): string | null {
 
   // Try to extract path from Supabase storage URL
   // Format: https://{project}.supabase.co/storage/v1/object/{public|sign}/{bucket}/{path}
-  const match = urlOrPath.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/[^/]+\/(.+)/)
-  if (match) {
-    return match[1]
+  try {
+    const url = new URL(urlOrPath)
+    const match = url.pathname.match(
+      /\/storage\/v1\/object\/(?:public|sign|authenticated)\/chat-media\/(.+)/
+    )
+    if (match) return decodeURIComponent(match[1])
+  } catch {
+    return null
   }
 
   return null
+}
+
+export async function downloadMedia(path: string, filename: string) {
+  const url = await getMediaUrl(path)
+  const response = await fetch(url)
+  if (!response.ok) throw new Error('Download failed')
+  const objectUrl = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename.replace(/[\\/\x00-\x1f]/g, '_') || 'download'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
 }
 
 export async function uploadMedia(
@@ -126,7 +145,16 @@ export async function uploadMedia(
   }
 
   // Create signed URL for the uploaded file (bucket is private)
-  const signedUrl = await createSignedUrl(data.path)
+  let signedUrl: string
+  try {
+    signedUrl = await createSignedUrl(data.path)
+  } catch (error) {
+    await supabase.storage
+      .from(BUCKET_NAME)
+      .remove([data.path])
+      .catch(() => undefined)
+    throw error
+  }
 
   return {
     url: signedUrl,

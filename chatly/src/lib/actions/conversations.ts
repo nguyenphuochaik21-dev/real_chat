@@ -1,5 +1,7 @@
 'use server'
 
+import { cleanupUnusedStorage } from '@/lib/supabase/cleanup'
+
 import { createClient } from '@/lib/supabase/server'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
 import type { Tables } from '@/types'
@@ -159,5 +161,6 @@ export async function deleteConversation(
     p_conversation_id: id,
   })
 
+  if (!error) await cleanupUnusedStorage(supabase)
   return error ? { success: false, error: error.message } : { success: true }
 }

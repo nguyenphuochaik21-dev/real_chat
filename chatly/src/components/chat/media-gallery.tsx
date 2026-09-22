@@ -7,7 +7,6 @@ import {
   Film,
   Music,
   FileText,
-  Download,
   X,
   ChevronLeft,
   ChevronRight,
@@ -16,6 +15,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useSignedUrl } from '@/hooks/use-signed-url'
 import { useI18n } from '@/lib/i18n'
+import { MediaDownloadButton } from './media-download-button'
 
 export interface MediaItem {
   id: string
@@ -358,17 +358,11 @@ function GalleryFileItem({ item, onOpen }: { item: MediaItem; onOpen: (id: strin
           )}
         </button>
       )}
-      {signedUrl && (
-        <a
-          href={signedUrl}
-          download={item.name || undefined}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[var(--bg-active)]"
-        >
-          <Download className="h-4 w-4 text-[var(--text-secondary)]" />
-        </a>
-      )}
+      <MediaDownloadButton
+        path={item.url}
+        filename={item.name}
+        className="text-[var(--text-secondary)] hover:bg-[var(--bg-active)]"
+      />
     </div>
   )
 }
@@ -425,6 +419,11 @@ export function MediaLightbox({ items, activeId, onSelect, onClose }: MediaLight
       }}
     >
       <div className="relative flex h-full w-full max-w-6xl items-center justify-center">
+        <MediaDownloadButton
+          path={activeItem.url}
+          filename={activeItem.name}
+          className="absolute top-2 right-14 z-20 bg-black/60 text-white hover:bg-black/80"
+        />
         <button
           type="button"
           onClick={onClose}

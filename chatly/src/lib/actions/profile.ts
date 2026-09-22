@@ -1,5 +1,7 @@
 'use server'
 
+import { cleanupUnusedStorage } from '@/lib/supabase/cleanup'
+
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
@@ -193,4 +195,5 @@ export async function updateMyProfile(input: z.input<typeof profileUpdateSchema>
 
   const { error } = await supabase.from('profiles').update(updates).eq('id', user.id)
   if (error) throw new Error(error.message)
+  await cleanupUnusedStorage(supabase)
 }

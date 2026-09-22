@@ -25,6 +25,8 @@ import { useI18n } from '@/lib/i18n'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { createConversation } from '@/lib/actions/conversations'
 import { getSearchSnippet } from '@/lib/search-text'
+import { useChatCacheStore } from '@/stores/chat-cache-store'
+import { retryStorageCleanup } from '@/lib/actions/storage'
 
 type Profile = PublicProfile
 
@@ -366,6 +368,10 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
   // Fetch conversations — but only if cache is stale or empty
   useEffect(() => {
+    if (currentUserId) void retryStorageCleanup().catch(() => undefined)
+  }, [currentUserId])
+
+  useEffect(() => {
     if (!currentUserId) return
 
     const isStale = Date.now() - lastFetchedAt > CACHE_STALE_MS
@@ -394,10 +400,21 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
           }
           const updated = payload.new as {
             conversation_id: string
+            hidden_at: string | null
             last_read_at: string
             is_pinned: boolean | null
             is_muted: boolean | null
             is_archived: boolean | null
+          }
+
+          if (updated.hidden_at) {
+            useChatCacheStore.getState().clearCache(updated.conversation_id)
+            useChatsListStore.getState().removeConversation(updated.conversation_id)
+            return
+          }
+          if (!storeConversationIdsRef.current.has(updated.conversation_id)) {
+            void fetchConversations()
+            return
           }
 
           updateConversation(updated.conversation_id, {
@@ -428,6 +445,13 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             const existing = [...store.conversations, ...store.archivedConversations].find(
               (conversation) => conversation.id === updated.id
             )
+            if (
+              existing?.last_message_at &&
+              (!updated.last_message_at || updated.last_message_at < existing.last_message_at)
+            ) {
+              void fetchConversations()
+              return
+            }
             const hasNewMessage = Boolean(
               updated.last_message_at && updated.last_message_at !== existing?.last_message_at
             )

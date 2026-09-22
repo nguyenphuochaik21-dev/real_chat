@@ -2,7 +2,8 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
-import { Play, Pause, Download, FileText } from 'lucide-react'
+import { Play, Pause, FileText } from 'lucide-react'
+import { MediaDownloadButton } from './media-download-button'
 import { cn } from '@/lib/utils'
 import type { Tables } from '@/types'
 import { isImage, isVideo, isAudio } from '@/lib/supabase/storage'
@@ -206,18 +207,14 @@ export function MediaMessageBubble({
           </p>
         )}
       </div>
-      <a
-        href={signedUrl}
-        download={fileName}
-        target="_blank"
-        rel="noopener noreferrer"
+      <MediaDownloadButton
+        path={mediaPath!}
+        filename={fileName}
         className={cn(
           'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
           isFromMe ? 'hover:bg-white/20' : 'hover:bg-[var(--bg-hover)]'
         )}
-      >
-        <Download className="h-4 w-4" />
-      </a>
+      />
     </div>
   )
 }

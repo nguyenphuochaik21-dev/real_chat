@@ -54,6 +54,7 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
   test.skip(process.env.E2E_DATABASE_CALLS !== 'true', 'Opt in to temporary database accounts')
   test.skip(testInfo.project.name !== 'chromium', 'Desktop sidebar and chat visible together')
   test.setTimeout(90_000)
+  page.setDefaultTimeout(15_000)
   const fixture = await provisionCallUsers()
   try {
     const [owner, peer] = fixture.users

@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { cleanupUnusedStorage } from '@/lib/supabase/cleanup'
 import { messageContentSchema, parseInput, uuidSchema } from '@/lib/actions/validation'
 import type { Tables } from '@/types'
 import { z } from 'zod'
@@ -82,7 +83,7 @@ export async function editMessage(
 }
 
 /**
- * Soft-delete a message (sets deleted_at timestamp)
+ * Delete an owned message and reclaim attachments that have no remaining references.
  */
 export async function deleteMessage(
   messageId: string
@@ -114,16 +115,13 @@ export async function deleteMessage(
     return { success: false, error: 'Not authorized to delete this message' }
   }
 
-  // Soft delete
-  const { error } = await supabase
-    .from('messages')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
+  const { error } = await supabase.rpc('delete_own_message', { p_message_id: id })
 
   if (error) {
     return { success: false, error: error.message }
   }
 
+  await cleanupUnusedStorage(supabase)
   return { success: true }
 }
 

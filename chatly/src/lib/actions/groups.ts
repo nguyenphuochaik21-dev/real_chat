@@ -1,5 +1,7 @@
 'use server'
 
+import { cleanupUnusedStorage } from '@/lib/supabase/cleanup'
+
 import { createClient } from '@/lib/supabase/server'
 import { parseInput, shortTextSchema, uuidSchema } from '@/lib/actions/validation'
 import type { PublicProfile, Tables } from '@/types'
@@ -205,6 +207,7 @@ export async function updateGroupDetails(
   })
 
   if (error) throw new Error(error.message)
+  await cleanupUnusedStorage(supabase)
 }
 
 export async function setGroupMemberRole(

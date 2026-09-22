@@ -41,13 +41,10 @@ try {
     }
     const {
       rows: [{ referenced }],
-    } = await db.query(
-      `select
-      exists(select 1 from public.messages where media_url=$1 or media_thumbnail_url=$1)
-      or exists(select 1 from public.scheduled_messages where media_url=$1)
-      or exists(select 1 from public.profiles p where position($1 in to_jsonb(p)::text)>0) as referenced`,
-      [job.object_name]
-    )
+    } = await db.query('select public.storage_object_referenced($1, $2) as referenced', [
+      job.bucket_id,
+      job.object_name,
+    ])
     if (referenced) {
       retained++
       await db.query('update public.storage_cleanup_queue set queued_at=now() where object_id=$1', [

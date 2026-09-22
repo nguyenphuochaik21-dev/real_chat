@@ -9,13 +9,33 @@ export type Database = {
   public: {
     Tables: {
       storage_cleanup_queue: {
-        Row: { object_id: string; bucket_id: string; object_name: string; queued_at: string }
-        Insert: { object_id: string; bucket_id: string; object_name: string; queued_at?: string }
-        Update: { object_id?: string; bucket_id?: string; object_name?: string; queued_at?: string }
+        Row: {
+          object_id: string
+          bucket_id: string
+          object_name: string
+          queued_at: string
+          requested_by: string | null
+        }
+        Insert: {
+          object_id: string
+          bucket_id: string
+          object_name: string
+          queued_at?: string
+          requested_by?: string | null
+        }
+        Update: {
+          object_id?: string
+          bucket_id?: string
+          object_name?: string
+          queued_at?: string
+          requested_by?: string | null
+        }
         Relationships: []
       }
       conversation_participants: {
         Row: {
+          cleared_at: string | null
+          hidden_at: string | null
           conversation_id: string
           is_archived: boolean | null
           is_muted: boolean | null
@@ -26,6 +46,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          cleared_at?: string | null
+          hidden_at?: string | null
           conversation_id: string
           is_archived?: boolean | null
           is_muted?: boolean | null
@@ -36,6 +58,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          cleared_at?: string | null
+          hidden_at?: string | null
           conversation_id?: string
           is_archived?: boolean | null
           is_muted?: boolean | null
@@ -982,6 +1006,14 @@ export type Database = {
       delete_conversation_permanently: {
         Args: { p_conversation_id: string }
         Returns: boolean
+      }
+      delete_own_message: {
+        Args: { p_message_id: string }
+        Returns: boolean
+      }
+      pending_storage_cleanup: {
+        Args: Record<string, never>
+        Returns: { bucket_id: string; object_name: string }[]
       }
       remove_friendship: {
         Args: { p_friendship_id: string }

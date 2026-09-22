@@ -115,6 +115,36 @@ export function useConversationMedia({
     }
   }, [fetchMedia, invalidateRequest])
 
+  useEffect(() => {
+    if (!enabled || !conversationId) return
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const refresh = () => {
+      clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(() => void fetchMedia(), 150)
+    }
+    const channel = supabase
+      .channel(`media-changes-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          if (payload.new.media_url) refresh()
+        }
+      )
+      // DELETE events contain only the primary key under RLS, not a conversation filter.
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, refresh)
+      .subscribe()
+    return () => {
+      clearTimeout(refreshTimer)
+      void supabase.removeChannel(channel)
+    }
+  }, [conversationId, enabled, fetchMedia, supabase])
+
   const hasCurrentConversation = loadedConversationId === conversationId
 
   return {
