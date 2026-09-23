@@ -27,6 +27,10 @@ const ALLOWED_MIME_TYPES: Record<MediaType, string[]> = {
     'application/zip',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/csv',
+    'text/plain',
   ],
 }
 

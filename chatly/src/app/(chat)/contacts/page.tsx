@@ -16,15 +16,17 @@ import {
   removeFriendship,
   respondFriendRequest,
   sendFriendRequest,
+  searchFriendCandidates,
   type FriendProfile,
   type FriendshipItem,
   type FriendshipOverview,
 } from '@/lib/actions/friendships'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
+import { useNotificationStore } from '@/stores/notification-store'
 
 const FRIEND_CACHE_STALE_MS = 60_000
-const FRIEND_PAGE_SIZE = 50
+const FRIEND_PAGE_SIZE = 20
 
 function matchesSearch(profile: FriendProfile, search: string) {
   const query = search.trim().toLocaleLowerCase()
@@ -75,8 +77,11 @@ export default function ContactsPage() {
   const cachedOverview = useFriendshipStore((state) => state.overview)
   const overviewFetchedAt = useFriendshipStore((state) => state.overviewFetchedAt)
   const setCachedOverview = useFriendshipStore((state) => state.setOverview)
-  const [overview, setOverview] = useState<FriendshipOverview | null>(cachedOverview)
+  const addToast = useNotificationStore((state) => state.addToast)
+  const overview = cachedOverview
   const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<FriendProfile[]>([])
+  const [searching, setSearching] = useState(false)
   const [visibleFriendCount, setVisibleFriendCount] = useState(FRIEND_PAGE_SIZE)
   const [loading, setLoading] = useState(!cachedOverview)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -91,7 +96,6 @@ export default function ContactsPage() {
         return
       }
       const nextOverview = result.data
-      setOverview(nextOverview)
       setCachedOverview(nextOverview)
       setError(null)
     } catch {
@@ -114,18 +118,51 @@ export default function ContactsPage() {
     return () => window.clearTimeout(timeoutId)
   }, [friendshipRevision, refresh])
 
-  const runAction = async (id: string, action: () => Promise<{ error: string | null }>) => {
+  useEffect(() => {
+    if (search.trim().length < 2) return
+    let active = true
+    const timeoutId = window.setTimeout(() => {
+      void searchFriendCandidates(search)
+        .then((profiles) => {
+          if (active) setSearchResults(profiles)
+        })
+        .catch(() => {
+          if (active) setSearchResults([])
+        })
+        .finally(() => {
+          if (active) setSearching(false)
+        })
+    }, 250)
+    return () => {
+      active = false
+      window.clearTimeout(timeoutId)
+    }
+  }, [search])
+
+  const runAction = async (
+    id: string,
+    action: () => Promise<{ error: string | null }>,
+    optimistic: (current: FriendshipOverview) => FriendshipOverview,
+    successMessage: string
+  ) => {
+    if (busyId || !overview) return
+    const previous = overview
     setBusyId(id)
     setError(null)
+    const optimisticOverview = optimistic(previous)
+    setCachedOverview(optimisticOverview)
     try {
       const result = await action()
       if (result.error) {
         setError(result.error)
+        setCachedOverview(previous)
         return
       }
+      addToast({ type: 'system', title: successMessage, body: '' })
       await refresh()
     } catch {
       setError(t('common.unknownError'))
+      setCachedOverview(previous)
     } finally {
       setBusyId(null)
     }
@@ -154,11 +191,22 @@ export default function ContactsPage() {
       friends: overview.friends.filter((item) => matchesSearch(item.profile, search)),
       incoming: overview.incoming.filter((item) => matchesSearch(item.profile, search)),
       outgoing: overview.outgoing.filter((item) => matchesSearch(item.profile, search)),
-      discover: overview.discover.filter((profile) => matchesSearch(profile, search)),
+      discover: (search.trim().length >= 2
+        ? searching
+          ? []
+          : searchResults
+        : overview.discover
+      ).filter(
+        (profile) =>
+          matchesSearch(profile, search) &&
+          !overview.friends.some((item) => item.profile.id === profile.id) &&
+          !overview.incoming.some((item) => item.profile.id === profile.id) &&
+          !overview.outgoing.some((item) => item.profile.id === profile.id)
+      ),
     }
-  }, [overview, search])
+  }, [overview, search, searchResults, searching])
 
-  if (loading) {
+  if (loading && !overview) {
     return (
       <div className="flex h-full flex-1 items-center justify-center bg-[var(--bg-app)]">
         <div className="border-primary-500 h-8 w-8 animate-spin rounded-full border-3 border-t-transparent" />
@@ -185,6 +233,7 @@ export default function ContactsPage() {
             value={search}
             onChange={(event) => {
               setSearch(event.target.value)
+              setSearching(event.target.value.trim().length >= 2)
               setVisibleFriendCount(FRIEND_PAGE_SIZE)
             }}
             className="pl-10"
@@ -201,7 +250,7 @@ export default function ContactsPage() {
       </header>
 
       <ScrollArea className="min-w-0 flex-1">
-        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-7 p-4 sm:p-6">
+        <div className="mx-auto w-full max-w-4xl min-w-0 space-y-7 p-4 sm:p-6">
           {!!filtered?.incoming.length && (
             <section>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">
@@ -214,9 +263,18 @@ export default function ContactsPage() {
                     <Button
                       size="icon-sm"
                       onClick={() =>
-                        void runAction(item.id, () => respondFriendRequest(item.id, true))
+                        void runAction(
+                          item.id,
+                          () => respondFriendRequest(item.id, true),
+                          (current) => ({
+                            ...current,
+                            incoming: current.incoming.filter((entry) => entry.id !== item.id),
+                            friends: [...current.friends, { ...item, status: 'accepted' }],
+                          }),
+                          t('friends.acceptedToast')
+                        )
                       }
-                      disabled={busyId === item.id}
+                      disabled={busyId !== null}
                       aria-label={t('friends.accept')}
                     >
                       <Check className="h-4 w-4" />
@@ -225,9 +283,17 @@ export default function ContactsPage() {
                       variant="ghost"
                       size="icon-sm"
                       onClick={() =>
-                        void runAction(item.id, () => respondFriendRequest(item.id, false))
+                        void runAction(
+                          item.id,
+                          () => respondFriendRequest(item.id, false),
+                          (current) => ({
+                            ...current,
+                            incoming: current.incoming.filter((entry) => entry.id !== item.id),
+                          }),
+                          t('friends.declinedToast')
+                        )
                       }
-                      disabled={busyId === item.id}
+                      disabled={busyId !== null}
                       aria-label={t('friends.decline')}
                     >
                       <X className="h-4 w-4" />
@@ -263,10 +329,18 @@ export default function ContactsPage() {
                         if (
                           confirm(t('friends.removeConfirm', { name: item.profile.display_name }))
                         ) {
-                          void runAction(item.id, () => removeFriendship(item.id))
+                          void runAction(
+                            item.id,
+                            () => removeFriendship(item.id),
+                            (current) => ({
+                              ...current,
+                              friends: current.friends.filter((entry) => entry.id !== item.id),
+                            }),
+                            t('friends.removedToast')
+                          )
                         }
                       }}
-                      disabled={busyId === item.id}
+                      disabled={busyId !== null}
                       aria-label={t('friends.remove')}
                     >
                       <UserMinus className="h-4 w-4" />
@@ -302,8 +376,18 @@ export default function ContactsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => void runAction(item.id, () => removeFriendship(item.id))}
-                      disabled={busyId === item.id}
+                      onClick={() =>
+                        void runAction(
+                          item.id,
+                          () => removeFriendship(item.id),
+                          (current) => ({
+                            ...current,
+                            outgoing: current.outgoing.filter((entry) => entry.id !== item.id),
+                          }),
+                          t('friends.cancelledToast')
+                        )
+                      }
+                      disabled={busyId !== null || item.id.startsWith('pending-')}
                     >
                       {t('friends.cancel')}
                     </Button>
@@ -335,9 +419,27 @@ export default function ContactsPage() {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        void runAction(profile.id, () => sendFriendRequest(profile.id))
+                        void runAction(
+                          profile.id,
+                          () => sendFriendRequest(profile.id),
+                          (current) => ({
+                            ...current,
+                            discover: current.discover.filter((entry) => entry.id !== profile.id),
+                            outgoing: [
+                              ...current.outgoing,
+                              {
+                                id: `pending-${profile.id}`,
+                                requesterId: current.currentUserId,
+                                addresseeId: profile.id,
+                                status: 'pending',
+                                profile,
+                              },
+                            ],
+                          }),
+                          t('friends.sentToast')
+                        )
                       }
-                      disabled={busyId === profile.id}
+                      disabled={busyId !== null}
                     >
                       <UserPlus className="h-4 w-4" />
                       <span className="hidden sm:inline">{t('friends.add')}</span>
@@ -345,6 +447,8 @@ export default function ContactsPage() {
                   </ContactRow>
                 ))}
               </div>
+            ) : searching ? (
+              <p className="text-sm text-[var(--text-muted)]">{t('common.loading')}</p>
             ) : (
               <p className="text-sm text-[var(--text-muted)]">{t('friends.noSuggestions')}</p>
             )}

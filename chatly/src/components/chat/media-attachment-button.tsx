@@ -16,7 +16,7 @@ interface MediaAttachmentButtonProps {
 const ACCEPTED_FILES: Record<AttachmentGroup, string> = {
   media: 'image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm',
   files:
-    'audio/mpeg,audio/ogg,audio/wav,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'audio/mpeg,audio/ogg,audio/wav,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain',
 }
 
 export function MediaAttachmentButton({

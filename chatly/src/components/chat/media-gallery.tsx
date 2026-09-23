@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Image as ImageIcon,
@@ -11,11 +12,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Play,
+  ArrowRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSignedUrl } from '@/hooks/use-signed-url'
 import { useI18n } from '@/lib/i18n'
 import { MediaDownloadButton } from './media-download-button'
+
+const FilePreviewDialog = dynamic(() =>
+  import('./file-preview-dialog').then((module) => module.FilePreviewDialog)
+)
 
 export interface MediaItem {
   id: string
@@ -64,6 +70,7 @@ export function MediaGallery({
 }: MediaGalleryProps) {
   const { t } = useI18n()
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
+  const activeItem = mediaItems.find((item) => item.id === activeMediaId)
   if (mediaItems.length === 0) {
     return (
       <div className={cn('py-4', className)}>
@@ -93,10 +100,28 @@ export function MediaGallery({
           <MediaGalleryItem key={item.id} item={item} onOpen={setActiveMediaId} />
         ))}
       </div>
-      {activeMediaId && (
+      {onShowAll && (
+        <button
+          type="button"
+          onClick={onShowAll}
+          className="text-primary-500 mt-3 flex w-full items-center justify-center gap-1 rounded-lg py-2 text-sm font-medium hover:bg-[var(--bg-hover)]"
+        >
+          {t('gallery.showAll')} <ArrowRight className="h-4 w-4" />
+        </button>
+      )}
+      {activeItem?.type === 'file' && (
+        <FilePreviewDialog
+          path={activeItem.url}
+          name={activeItem.name || t('gallery.untitled')}
+          mimeType={activeItem.mimeType}
+          size={activeItem.size}
+          onClose={() => setActiveMediaId(null)}
+        />
+      )}
+      {activeItem && activeItem.type !== 'file' && (
         <MediaLightbox
           items={mediaItems}
-          activeId={activeMediaId}
+          activeId={activeItem.id}
           onSelect={setActiveMediaId}
           onClose={() => setActiveMediaId(null)}
         />
@@ -133,7 +158,7 @@ function MediaGalleryItem({ item, onOpen }: { item: MediaItem; onOpen: (id: stri
   return (
     <button
       onClick={() => {
-        if (item.type === 'video') onOpen(item.id)
+        if (item.type !== 'image') onOpen(item.id)
       }}
       className={cn(
         'flex aspect-square items-center justify-center rounded-lg text-white transition-opacity hover:opacity-80',
@@ -167,6 +192,7 @@ export function MediaGalleryViewer({
   const { t } = useI18n()
   const [filter, setFilter] = useState<FilterType>('all')
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
+  const activeItem = items.find((item) => item.id === activeMediaId)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -291,10 +317,19 @@ export function MediaGalleryViewer({
           )}
         </div>
       </div>
-      {activeMediaId && (
+      {activeItem?.type === 'file' && (
+        <FilePreviewDialog
+          path={activeItem.url}
+          name={activeItem.name || t('gallery.untitled')}
+          mimeType={activeItem.mimeType}
+          size={activeItem.size}
+          onClose={() => setActiveMediaId(null)}
+        />
+      )}
+      {activeItem && activeItem.type !== 'file' && (
         <MediaLightbox
           items={items}
-          activeId={activeMediaId}
+          activeId={activeItem.id}
           onSelect={setActiveMediaId}
           onClose={() => setActiveMediaId(null)}
         />
@@ -332,18 +367,27 @@ function GalleryFileItem({ item, onOpen }: { item: MediaItem; onOpen: (id: strin
 
   return (
     <div className="flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-[var(--bg-hover)]">
-      <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-lg', color)}>
-        <FileTypeIcon type={item.type} className="h-6 w-6 text-white" />
-      </div>
-      <div className="flex-1 overflow-hidden">
-        <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-          {item.name || t('gallery.untitled')}
-        </p>
-        <p className="text-xs text-[var(--text-muted)]">
-          {formatFileSize(item.size)}
-          {item.mimeType && ` · ${item.mimeType.split('/').pop()?.toUpperCase()}`}
-        </p>
-      </div>
+      <button
+        type="button"
+        onClick={() => onOpen(item.id)}
+        className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden text-left"
+        aria-label={`${t('gallery.preview')} ${item.name || t('gallery.untitled')}`}
+      >
+        <span
+          className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-lg', color)}
+        >
+          <FileTypeIcon type={item.type} className="h-6 w-6 text-white" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+            {item.name || t('gallery.untitled')}
+          </p>
+          <p className="text-xs text-[var(--text-muted)]">
+            {formatFileSize(item.size)}
+            {item.mimeType && ` · ${item.mimeType.split('/').pop()?.toUpperCase()}`}
+          </p>
+        </span>
+      </button>
       {(item.type === 'image' || item.type === 'video') && signedUrl && (
         <button
           type="button"
@@ -376,10 +420,7 @@ interface MediaLightboxProps {
 
 export function MediaLightbox({ items, activeId, onSelect, onClose }: MediaLightboxProps) {
   const { t } = useI18n()
-  const previewItems = useMemo(
-    () => items.filter((item) => item.type === 'image' || item.type === 'video'),
-    [items]
-  )
+  const previewItems = useMemo(() => items.filter((item) => item.type !== 'file'), [items])
   const activeIndex = Math.max(
     0,
     previewItems.findIndex((item) => item.id === activeId)
@@ -465,6 +506,14 @@ export function MediaLightbox({ items, activeId, onSelect, onClose }: MediaLight
               controls
               autoPlay
               playsInline
+            />
+          ) : activeItem.type === 'audio' ? (
+            <audio
+              key={activeItem.id}
+              src={signedUrl}
+              controls
+              autoPlay
+              className="w-full max-w-lg"
             />
           ) : (
             <div className="relative h-full w-full">

@@ -945,6 +945,10 @@ export type Database = {
         Args: { p_discover_limit?: number }
         Returns: Json
       }
+      search_friend_candidates: {
+        Args: { p_query: string; p_limit?: number }
+        Returns: Json
+      }
       admin_list_users: {
         Args: Record<PropertyKey, never>
         Returns: {

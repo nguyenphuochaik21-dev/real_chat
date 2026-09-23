@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { Play, Pause, FileText } from 'lucide-react'
 import { MediaDownloadButton } from './media-download-button'
@@ -9,6 +10,10 @@ import type { Tables } from '@/types'
 import { isImage, isVideo, isAudio } from '@/lib/supabase/storage'
 import { useSignedUrl } from '@/hooks/use-signed-url'
 import { useI18n } from '@/lib/i18n'
+
+const FilePreviewDialog = dynamic(() =>
+  import('./file-preview-dialog').then((module) => module.FilePreviewDialog)
+)
 
 type Message = Tables<'messages'>
 
@@ -42,6 +47,7 @@ export function MediaMessageBubble({
   const { signedUrl, loading, error } = useSignedUrl(mediaPath)
   const [playing, setPlaying] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
+  const [showFilePreview, setShowFilePreview] = useState(false)
 
   if (error) {
     return (
@@ -183,38 +189,58 @@ export function MediaMessageBubble({
 
   // Generic file message
   return (
-    <div
-      className={cn(
-        'flex max-w-[280px] min-w-[200px] items-center gap-3 rounded-2xl px-4 py-3',
-        isFromMe
-          ? 'bg-primary-500 rounded-br-md text-white'
-          : 'rounded-bl-md bg-[var(--bg-message-in)]'
-      )}
-    >
+    <>
       <div
         className={cn(
-          'flex h-10 w-10 items-center justify-center rounded-lg',
-          isFromMe ? 'bg-white/20' : 'bg-[var(--bg-hover)]'
+          'flex max-w-[280px] min-w-[200px] items-center gap-3 rounded-2xl px-4 py-3',
+          isFromMe
+            ? 'bg-primary-500 rounded-br-md text-white'
+            : 'rounded-bl-md bg-[var(--bg-message-in)]'
         )}
       >
-        <FileText className={cn('h-5 w-5', isFromMe ? 'text-white' : 'text-[var(--text-muted)]')} />
+        <button
+          type="button"
+          onClick={() => setShowFilePreview(true)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-label={`Xem trước ${fileName}`}
+        >
+          <div
+            className={cn(
+              'flex h-10 w-10 items-center justify-center rounded-lg',
+              isFromMe ? 'bg-white/20' : 'bg-[var(--bg-hover)]'
+            )}
+          >
+            <FileText
+              className={cn('h-5 w-5', isFromMe ? 'text-white' : 'text-[var(--text-muted)]')}
+            />
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <p className="truncate text-sm font-medium">{fileName}</p>
+            {fileSize && (
+              <p className={cn('text-xs', isFromMe ? 'text-white/70' : 'text-[var(--text-muted)]')}>
+                {formatFileSize(fileSize)}
+              </p>
+            )}
+          </div>
+        </button>
+        <MediaDownloadButton
+          path={mediaPath!}
+          filename={fileName}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+            isFromMe ? 'hover:bg-white/20' : 'hover:bg-[var(--bg-hover)]'
+          )}
+        />
       </div>
-      <div className="flex-1 overflow-hidden">
-        <p className="truncate text-sm font-medium">{fileName}</p>
-        {fileSize && (
-          <p className={cn('text-xs', isFromMe ? 'text-white/70' : 'text-[var(--text-muted)]')}>
-            {formatFileSize(fileSize)}
-          </p>
-        )}
-      </div>
-      <MediaDownloadButton
-        path={mediaPath!}
-        filename={fileName}
-        className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
-          isFromMe ? 'hover:bg-white/20' : 'hover:bg-[var(--bg-hover)]'
-        )}
-      />
-    </div>
+      {showFilePreview && mediaPath && (
+        <FilePreviewDialog
+          path={mediaPath}
+          name={fileName}
+          mimeType={mimeType}
+          size={fileSize}
+          onClose={() => setShowFilePreview(false)}
+        />
+      )}
+    </>
   )
 }

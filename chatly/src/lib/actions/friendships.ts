@@ -29,7 +29,9 @@ export async function getFriendshipOverview(): Promise<
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return { error: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }
-    const { data, error } = await supabase.rpc('get_friendship_overview')
+    const { data, error } = await supabase.rpc('get_friendship_overview', {
+      p_discover_limit: 8,
+    })
     if (error || !data) {
       console.error('[contacts:overview]', error?.code)
       return { error: 'Không tải được danh bạ. Vui lòng thử lại.' }
@@ -38,6 +40,22 @@ export async function getFriendshipOverview(): Promise<
   } catch {
     return { error: 'Không thể kết nối. Vui lòng thử lại.' }
   }
+}
+
+export async function searchFriendCandidates(query: string): Promise<FriendProfile[]> {
+  const normalized = query.trim().slice(0, 50)
+  if (normalized.length < 2) return []
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data, error } = await supabase.rpc('search_friend_candidates', {
+    p_query: normalized,
+    p_limit: 20,
+  })
+  if (error) throw new Error('Không thể tìm kiếm người dùng. Vui lòng thử lại.')
+  return (data ?? []) as unknown as FriendProfile[]
 }
 
 async function mutateFriendship(
@@ -53,7 +71,7 @@ async function mutateFriendship(
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return { error: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }
-    const { error } =
+    const { data, error } =
       action === 'send'
         ? await supabase.rpc('send_friend_request', { p_addressee_id: parsed.data })
         : action === 'respond'
@@ -66,7 +84,8 @@ async function mutateFriendship(
       console.error('[contacts:mutation]', action, error.code)
       return { error: 'Không thể thực hiện yêu cầu. Hãy tải lại danh bạ và thử lại.' }
     }
-    return { error: null }
+    const record = data && typeof data === 'object' && !Array.isArray(data) ? data : null
+    return { error: null, id: record && 'id' in record ? String(record.id) : null }
   } catch {
     return { error: 'Không thể kết nối. Vui lòng thử lại.' }
   }
