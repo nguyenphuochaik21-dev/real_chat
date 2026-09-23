@@ -119,7 +119,10 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
 
     await page.getByRole('button', { name: 'Tùy chọn cuộc trò chuyện' }).click()
     page.once('dialog', (dialog) => dialog.accept())
-    await page.getByRole('button', { name: 'Lưu trữ', exact: true }).last().click()
+    await page
+      .getByTestId('conversation-actions')
+      .getByRole('button', { name: 'Lưu trữ', exact: true })
+      .click()
     await expect(page.getByRole('button', { name: 'Bỏ lưu trữ', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Đóng', exact: true }).click()
     await page.getByRole('button', { name: 'Lưu trữ', exact: true }).click()

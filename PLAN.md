@@ -80,12 +80,13 @@
 
 Release-environment follow-ups:
 
-### September 22 — personal deletion and storage lifecycle
-
-- [ ] Separate direct-chat clearing from group-owner deletion; enforce history boundaries in SQL.
-- [ ] Hard-delete removed messages; reclaim unreferenced files through Storage API, preserving forwards.
-- [ ] Fix gallery/chat downloads with fresh URLs and browser downloads.
-- [ ] Apply migration, test two independent accounts and physical storage deletion, then lint/typecheck/build.
-
 - [ ] Run the mutation-enabled group test with an account that has at least two accepted friends.
 - [ ] Smoke-test installation, offline navigation, and push notifications on physical mobile devices.
+
+### September 22 — personal deletion and storage lifecycle
+
+- [x] Separate direct-chat clearing from group-owner deletion; enforce history boundaries in SQL.
+- [x] Hard-delete removed messages; reclaim unreferenced files through Storage API, preserving forwards.
+- [x] Fix gallery/chat downloads with fresh URLs and browser downloads.
+- [x] Apply migration and test two independent accounts and physical storage deletion.
+- [x] Finish final production build and blocked-chat regression check.

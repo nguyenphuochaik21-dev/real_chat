@@ -178,6 +178,7 @@ export function ConversationActions({
 
   return (
     <div
+      data-testid="conversation-actions"
       className="absolute top-full right-0 z-50 mt-1 w-56 rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
