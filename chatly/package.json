@@ -15,6 +15,8 @@
     "test:db:calls": "node scripts/test-call-database.mjs",
     "icons:generate": "node scripts/generate-icons.mjs",
     "storage:cleanup": "node scripts/cleanup-storage.mjs",
+    "audit:unused": "node scripts/audit-unused-files.mjs",
+    "audit:db": "node scripts/audit-database.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

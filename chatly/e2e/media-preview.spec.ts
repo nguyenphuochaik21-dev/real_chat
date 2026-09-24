@@ -55,11 +55,24 @@ test('private document opens in chat and gallery while download still works', as
     expect((await download).suggestedFilename()).toBe(name)
     await preview.getByRole('button', { name: 'Đóng' }).click()
 
+    await fixture.db.query(
+      `insert into public.messages
+        (conversation_id,sender_id,content,content_type,media_url,media_name,media_mime_type,media_size,created_at)
+       select $1,$2,'page-test-' || n,'file',$3,'page-test-' || n || '.txt',
+         'text/plain',$4,now() + n * interval '1 second'
+       from generate_series(1,45) as n`,
+      [fixture.conversationId, owner.id, path, content.length]
+    )
+    await page.reload()
+
     await page.getByRole('heading', { name: /^Call Receiver$/i }).click({ timeout: 10_000 })
     await expect(page.getByRole('button', { name: 'Xem tất cả' })).toBeVisible()
     await page.getByRole('button', { name: 'Xem tất cả' }).click()
     const gallery = page.getByRole('dialog', { name: 'Ảnh, video và tệp' })
     await expect(gallery).toBeVisible()
+    await expect(gallery.getByText('Đã chia sẻ 46 tệp')).toBeVisible()
+    await gallery.getByRole('button', { name: 'Xem thêm tệp' }).click()
+    await expect(gallery.getByRole('button', { name: /Xem trước page-test-/ })).toHaveCount(45)
     await gallery.getByRole('button', { name: `Xem trước ${name}` }).click()
     await expect(
       page.getByRole('dialog', { name: `Xem trước ${name}` }).getByText(content)

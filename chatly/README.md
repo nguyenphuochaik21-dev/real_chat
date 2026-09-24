@@ -27,13 +27,23 @@ Apply pending local migrations to a linked development project with:
 npx supabase db push
 ```
 
+If the Supabase CLI cannot be linked, use `DIRECT_URL` from the ignored `.env.local` and apply one
+specific migration with `node scripts/apply-migration.mjs <filename.sql> --apply`. Without `--apply`,
+the command runs a transaction and rolls it back after validation. Never commit database credentials.
+
 ## Quality checks
 
 ```bash
 npm run lint
 npm run typecheck
 npm run build
+npm run audit:unused
+npm run audit:db
 ```
+
+The source audit reports unreferenced file candidates; inspect each result before removal. The
+database audit is read-only and checks RLS, function grants, migration history, duplicate indexes,
+and storage cleanup state.
 
 The authenticated group E2E test is intentionally opt-in because it mutates data. Configure it in
 an ignored `.env.local` (or `.env.test.local` when running with `NODE_ENV=test`) in one of two ways:

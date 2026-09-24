@@ -10,6 +10,9 @@ export function isAllowedPushEndpoint(value: string) {
     const url = new URL(value)
     return (
       url.protocol === 'https:' &&
+      !url.port &&
+      !url.username &&
+      !url.password &&
       (ALLOWED_PUSH_HOSTS.includes(url.hostname as (typeof ALLOWED_PUSH_HOSTS)[number]) ||
         url.hostname.endsWith('.notify.windows.com'))
     )

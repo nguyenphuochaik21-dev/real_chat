@@ -741,11 +741,15 @@ export function ChatView({
     totalCount: mediaTotalCount,
     loading: mediaLoading,
     error: mediaError,
+    loadingMore: mediaLoadingMore,
+    moreError: mediaMoreError,
+    hasMore: mediaHasMore,
+    loadMore: loadMoreMedia,
     refetch: refetchMedia,
   } = useConversationMedia({
     conversationId,
     enabled: showMediaGallery || showProfilePanel || showGroupDetails,
-    limit: showMediaGallery ? 200 : 6,
+    limit: showMediaGallery ? 40 : 6,
   })
   const previewMediaItems = useMemo(
     () =>
@@ -2419,6 +2423,11 @@ export function ChatView({
           }))}
           loading={mediaLoading}
           error={mediaError}
+          totalCount={mediaTotalCount}
+          loadingMore={mediaLoadingMore}
+          moreError={mediaMoreError}
+          hasMore={mediaHasMore}
+          onLoadMore={() => void loadMoreMedia()}
           onRetry={() => void refetchMedia()}
           onClose={() => setShowMediaGallery(false)}
         />

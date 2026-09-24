@@ -133,7 +133,7 @@ export function MediaGallery({
 // Individual gallery item that resolves signed URL
 function MediaGalleryItem({ item, onOpen }: { item: MediaItem; onOpen: (id: string) => void }) {
   const { t } = useI18n()
-  const { signedUrl } = useSignedUrl(item.url)
+  const { signedUrl } = useSignedUrl(item.type === 'image' ? item.url : null)
 
   if (item.type === 'image' && signedUrl) {
     return (
@@ -174,7 +174,12 @@ function MediaGalleryItem({ item, onOpen }: { item: MediaItem; onOpen: (id: stri
 // Full gallery viewer with tabs
 interface MediaGalleryViewerProps {
   items: MediaItem[]
+  totalCount: number
   loading?: boolean
+  loadingMore?: boolean
+  moreError?: boolean
+  hasMore?: boolean
+  onLoadMore?: () => void
   error?: boolean
   onRetry?: () => void
   onClose: () => void
@@ -184,15 +189,25 @@ type FilterType = 'all' | 'image' | 'video' | 'audio' | 'file'
 
 export function MediaGalleryViewer({
   items,
+  totalCount,
   loading = false,
+  loadingMore = false,
+  moreError = false,
+  hasMore = false,
+  onLoadMore,
   error = false,
   onRetry,
   onClose,
 }: MediaGalleryViewerProps) {
   const { t } = useI18n()
   const [filter, setFilter] = useState<FilterType>('all')
-  const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
-  const activeItem = items.find((item) => item.id === activeMediaId)
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
+  const activeItem = items.find((item) => item.id === selectedItem?.id) || selectedItem
+  const activeMediaId = activeItem?.id || null
+  const openItem = (id: string) => {
+    const item = items.find((candidate) => candidate.id === id)
+    if (item) setSelectedItem(item)
+  }
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -241,7 +256,7 @@ export function MediaGalleryViewer({
               {t('gallery.title')}
             </h2>
             <p className="text-xs text-[var(--text-muted)]">
-              {t('gallery.shared', { count: items.length })}
+              {t('gallery.shared', { count: totalCount })}
             </p>
           </div>
           <button
@@ -304,15 +319,32 @@ export function MediaGalleryViewer({
             // Image grid view
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {filteredItems.map((item) => (
-                <GalleryImageItem key={item.id} item={item} onOpen={setActiveMediaId} />
+                <GalleryImageItem key={item.id} item={item} onOpen={openItem} />
               ))}
             </div>
           ) : (
             // File list view for videos/audio/files
             <div className="space-y-2">
               {filteredItems.map((item) => (
-                <GalleryFileItem key={item.id} item={item} onOpen={setActiveMediaId} />
+                <GalleryFileItem key={item.id} item={item} onOpen={openItem} />
               ))}
+            </div>
+          )}
+          {hasMore && !error && (
+            <div className="mt-4 text-center">
+              {moreError && (
+                <p role="alert" className="mb-2 text-sm text-red-500">
+                  {t('gallery.loadMoreFailed')}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={loading || loadingMore}
+                className="text-primary-500 rounded-lg px-4 py-2 text-sm font-medium hover:bg-[var(--bg-hover)] disabled:opacity-50"
+              >
+                {loadingMore ? t('common.loading') : t('gallery.loadMore')}
+              </button>
             </div>
           )}
         </div>
@@ -323,15 +355,15 @@ export function MediaGalleryViewer({
           name={activeItem.name || t('gallery.untitled')}
           mimeType={activeItem.mimeType}
           size={activeItem.size}
-          onClose={() => setActiveMediaId(null)}
+          onClose={() => setSelectedItem(null)}
         />
       )}
       {activeItem && activeItem.type !== 'file' && (
         <MediaLightbox
           items={items}
           activeId={activeItem.id}
-          onSelect={setActiveMediaId}
-          onClose={() => setActiveMediaId(null)}
+          onSelect={openItem}
+          onClose={() => setSelectedItem(null)}
         />
       )}
     </div>
@@ -362,7 +394,6 @@ function GalleryImageItem({ item, onOpen }: { item: MediaItem; onOpen: (id: stri
 
 function GalleryFileItem({ item, onOpen }: { item: MediaItem; onOpen: (id: string) => void }) {
   const { t } = useI18n()
-  const { signedUrl } = useSignedUrl(item.url)
   const color = getFileColor(item.type)
 
   return (
@@ -388,7 +419,7 @@ function GalleryFileItem({ item, onOpen }: { item: MediaItem; onOpen: (id: strin
           </p>
         </span>
       </button>
-      {(item.type === 'image' || item.type === 'video') && signedUrl && (
+      {(item.type === 'image' || item.type === 'video') && (
         <button
           type="button"
           onClick={() => onOpen(item.id)}

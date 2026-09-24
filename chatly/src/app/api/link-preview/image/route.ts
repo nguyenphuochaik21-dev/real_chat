@@ -10,6 +10,13 @@ const IMAGE_HOSTS = new Set([
   'opengraph.githubassets.com',
 ])
 const MAX_IMAGE_BYTES = 5_000_000
+const SAFE_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+])
 
 async function readLimitedBody(
   body: ReadableStream<Uint8Array> | null,
@@ -50,19 +57,25 @@ export async function GET(request: Request) {
   try {
     if (!value || value.length > 2000) throw new Error('Invalid URL')
     const url = new URL(value)
-    if (url.protocol !== 'https:' || !IMAGE_HOSTS.has(url.hostname.toLowerCase())) {
+    if (
+      url.protocol !== 'https:' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      !IMAGE_HOSTS.has(url.hostname.toLowerCase())
+    ) {
       throw new Error('Unsupported image host')
     }
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5000)
     try {
       const response = await fetch(url, { signal: controller.signal, redirect: 'error' })
-      const contentType = response.headers.get('content-type') ?? ''
+      const contentType = (response.headers.get('content-type') ?? '').split(';')[0].toLowerCase()
       const lengthHeader = response.headers.get('content-length')
       const length = lengthHeader ? Number(lengthHeader) : null
       if (
         !response.ok ||
-        !contentType.startsWith('image/') ||
+        !SAFE_IMAGE_TYPES.has(contentType) ||
         (length !== null &&
           (!Number.isSafeInteger(length) || length < 0 || length > MAX_IMAGE_BYTES))
       ) {
@@ -74,6 +87,7 @@ export async function GET(request: Request) {
           'Content-Type': contentType,
           'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
           'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "default-src 'none'; sandbox",
         },
       })
     } finally {
