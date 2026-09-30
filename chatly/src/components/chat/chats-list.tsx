@@ -27,6 +27,7 @@ import { createConversation } from '@/lib/actions/conversations'
 import { getSearchSnippet } from '@/lib/search-text'
 import { useChatCacheStore } from '@/stores/chat-cache-store'
 import { retryStorageCleanup } from '@/lib/actions/storage'
+import { AssistantEntry } from './assistant-entry'
 
 type Profile = PublicProfile
 
@@ -64,12 +65,14 @@ function ConversationItem({
   const { t, dateLocale } = useI18n()
   const isFromMe = conversation.last_message?.sender_id === currentUserId
   const isGroup = conversation.type === 'group'
-  const displayName = isGroup
-    ? conversation.title || t('group.tab')
-    : conversation.participant?.display_name || t('common.user')
-  const avatarUser = isGroup
-    ? { id: conversation.id, display_name: displayName, avatar_url: conversation.avatar_url }
-    : conversation.participant
+  const displayName =
+    isGroup || conversation.type === 'ai'
+      ? conversation.title || t('group.tab')
+      : conversation.participant?.display_name || t('common.user')
+  const avatarUser =
+    isGroup || conversation.type === 'ai'
+      ? { id: conversation.id, display_name: displayName, avatar_url: conversation.avatar_url }
+      : conversation.participant
 
   const getStatusColor = (): string => {
     switch (participantStatus) {
@@ -556,7 +559,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     () =>
       conversations.filter((conv) => {
         const displayName =
-          conv.type === 'group'
+          conv.type === 'group' || conv.type === 'ai'
             ? conv.title || t('group.tab')
             : conv.participant?.display_name || ''
         const matchesSearch = displayName.toLocaleLowerCase().includes(normalizedSearch)
@@ -577,7 +580,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     () =>
       archivedConversations.filter((conv) => {
         return (
-          conv.type === 'group'
+          conv.type === 'group' || conv.type === 'ai'
             ? conv.title || t('group.tab')
             : conv.participant?.display_name || ''
         )
@@ -673,6 +676,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       <Separator className="mt-4" />
 
       <NotificationPermission />
+      <AssistantEntry />
 
       <ScrollArea className="flex-1">
         <div className="py-2">

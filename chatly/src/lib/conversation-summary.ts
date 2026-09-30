@@ -31,7 +31,7 @@ export function parseConversationSummaries(value: Json | null): ConversationSumm
     return [
       {
         id: item.id,
-        type: item.type === 'group' ? 'group' : 'direct',
+        type: item.type === 'ai' ? 'ai' : item.type === 'group' ? 'group' : 'direct',
         title: nullableString(item.title),
         avatar_url: nullableString(item.avatar_url),
         created_by: nullableString(item.created_by),

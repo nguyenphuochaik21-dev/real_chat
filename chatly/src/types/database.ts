@@ -1,6 +1,9 @@
+import type { AssistantTables, AssistantFunctions } from './assistant'
+import type { AiTables, AiFunctions } from './ai'
+
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
-export type Database = {
+type BaseDatabase = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
@@ -1222,7 +1225,7 @@ export type Database = {
       }
     }
     Enums: {
-      conversation_type: 'direct' | 'group'
+      conversation_type: 'direct' | 'group' | 'ai'
       group_member_role: 'owner' | 'admin' | 'member'
       message_content_type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'call'
       message_status: 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
@@ -1353,7 +1356,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      conversation_type: ['direct', 'group'],
+      conversation_type: ['direct', 'group', 'ai'],
       group_member_role: ['owner', 'admin', 'member'],
       message_content_type: ['text', 'image', 'video', 'audio', 'file', 'call'],
       message_status: ['sending', 'sent', 'delivered', 'read', 'failed'],
@@ -1373,3 +1376,10 @@ export const Constants = {
     },
   },
 } as const
+
+export type Database = Omit<BaseDatabase, 'public'> & {
+  public: Omit<BaseDatabase['public'], 'Tables' | 'Functions'> & {
+    Tables: BaseDatabase['public']['Tables'] & AssistantTables & AiTables
+    Functions: BaseDatabase['public']['Functions'] & AssistantFunctions & AiFunctions
+  }
+}

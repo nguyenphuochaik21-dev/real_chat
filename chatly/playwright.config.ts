@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
 loadEnvConfig(process.cwd(), true)
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3000)
+const host = process.env.PLAYWRIGHT_HOST ?? '127.0.0.1'
 
 export default defineConfig({
   testDir: './e2e',
@@ -13,7 +14,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: `http://${host}:${port}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -30,7 +31,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `npm run ${process.env.PLAYWRIGHT_PRODUCTION ? 'start' : 'dev'} -- --hostname localhost --port ${port}`,
-    url: `http://localhost:${port}/login`,
+    url: `http://${host}:${port}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

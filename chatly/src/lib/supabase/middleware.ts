@@ -2,6 +2,17 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import type { Database } from '@/types'
 
+export function redirectWithSession(url: URL, session: NextResponse) {
+  const response = NextResponse.redirect(url)
+  session.cookies.getAll().forEach((cookie) => response.cookies.set(cookie))
+  for (const name of ['Cache-Control', 'Pragma', 'Expires']) {
+    const value = session.headers.get(name)
+    if (value) response.headers.set(name, value)
+  }
+  response.headers.set('Cache-Control', 'private, no-store')
+  return response
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -61,25 +72,25 @@ export async function updateSession(request: NextRequest) {
   if (user && isSuspended && request.nextUrl.pathname !== '/suspended') {
     const url = request.nextUrl.clone()
     url.pathname = '/suspended'
-    return NextResponse.redirect(url)
+    return redirectWithSession(url, supabaseResponse)
   }
 
   if (user && !isSuspended && request.nextUrl.pathname === '/suspended') {
     const url = request.nextUrl.clone()
     url.pathname = '/chats'
-    return NextResponse.redirect(url)
+    return redirectWithSession(url, supabaseResponse)
   }
 
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    return redirectWithSession(url, supabaseResponse)
   }
 
   if (user && isAuthRoute && !isSuspended) {
     const url = request.nextUrl.clone()
     url.pathname = '/chats'
-    return NextResponse.redirect(url)
+    return redirectWithSession(url, supabaseResponse)
   }
 
   return supabaseResponse

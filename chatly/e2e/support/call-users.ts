@@ -1,6 +1,7 @@
 import pg from 'pg'
 
-export async function provisionCallUsers() {
+export async function provisionCallUsers(count = 2) {
+  if (!Number.isInteger(count) || count < 2 || count > 30) throw new Error('Invalid fixture count')
   if (process.env.E2E_DATABASE_CALLS !== 'true' || !process.env.DIRECT_URL) {
     throw new Error('Database call fixtures require explicit opt-in and DIRECT_URL')
   }
@@ -14,7 +15,10 @@ export async function provisionCallUsers() {
   })
   await db.connect()
   const runId = crypto.randomUUID()
-  const users = ['caller', 'receiver'].map((role) => ({
+  const users = Array.from(
+    { length: count },
+    (_, index) => ['caller', 'receiver'][index] ?? `user-${index}`
+  ).map((role) => ({
     id: crypto.randomUUID(),
     email: `call-test-${role}-${runId}@example.invalid`,
     password: `Call-${crypto.randomUUID()}-aA1!`,
@@ -55,11 +59,11 @@ export async function provisionCallUsers() {
     ])
     await db.query(
       'insert into public.conversation_participants(conversation_id,user_id) values ($1,$2),($1,$3)',
-      [conversationId, ...users.map((user) => user.id)]
+      [conversationId, ...users.slice(0, 2).map((user) => user.id)]
     )
     await db.query(
       "insert into public.friendships(requester_id,addressee_id,status,responded_at) values ($1,$2,'accepted',now())",
-      users.map((user) => user.id)
+      users.slice(0, 2).map((user) => user.id)
     )
     await db.query('commit')
   } catch (error) {

@@ -37,7 +37,7 @@ export function RealtimeNotifications({ userId, isAdmin }: RealtimeNotifications
           if (!active) return
           const message = payload.new as {
             id: string
-            sender_id: string
+            sender_id: string | null
             conversation_id: string
             content: string
             content_type: string | null
@@ -69,17 +69,31 @@ export function RealtimeNotifications({ userId, isAdmin }: RealtimeNotifications
                 .eq('conversation_id', message.conversation_id)
                 .eq('user_id', userId)
                 .maybeSingle(),
-              supabase
-                .from('user_blocks')
-                .select('id')
-                .eq('blocker_id', userId)
-                .eq('blocked_id', message.sender_id)
-                .maybeSingle(),
-              supabase
-                .from('profiles')
-                .select('display_name, avatar_url')
-                .eq('id', message.sender_id)
-                .maybeSingle(),
+              message.sender_id
+                ? supabase
+                    .from('user_blocks')
+                    .select('id')
+                    .eq('blocker_id', userId)
+                    .eq('blocked_id', message.sender_id)
+                    .maybeSingle()
+                : Promise.resolve({ data: null }),
+              message.sender_id
+                ? supabase
+                    .from('profiles')
+                    .select('display_name, avatar_url')
+                    .eq('id', message.sender_id)
+                    .maybeSingle()
+                : supabase
+                    .from('conversations')
+                    .select('type, title, avatar_url')
+                    .eq('id', message.conversation_id)
+                    .maybeSingle()
+                    .then(({ data }) => ({
+                      data:
+                        data?.type === 'ai'
+                          ? { display_name: data.title || 'Chatly AI', avatar_url: data.avatar_url }
+                          : null,
+                    })),
               supabase.from('profiles').select('username').eq('id', userId).maybeSingle(),
             ])
 
@@ -105,7 +119,7 @@ export function RealtimeNotifications({ userId, isAdmin }: RealtimeNotifications
             body,
             conversationId: message.conversation_id,
             messageId: message.id,
-            senderId: message.sender_id,
+            senderId: message.sender_id ?? undefined,
             senderName,
             senderAvatar: sender?.avatar_url,
           })

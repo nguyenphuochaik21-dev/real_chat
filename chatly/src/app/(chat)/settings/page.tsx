@@ -13,6 +13,7 @@ import {
   Languages,
   ShieldCheck,
   LifeBuoy,
+  Bot,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
@@ -208,6 +209,12 @@ export default function SettingsPage() {
                       title: t('admin.title'),
                       description: t('admin.subtitle'),
                       href: '/admin',
+                    },
+                    {
+                      icon: Bot,
+                      title: 'AI Assistant qua n8n',
+                      description: 'Cấu hình webhook và xem thông số các node n8n',
+                      href: '/admin/ai',
                     },
                   ]
                 : []),

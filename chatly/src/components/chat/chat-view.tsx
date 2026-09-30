@@ -33,6 +33,7 @@ import { MediaMessageBubble } from './media-message-bubble'
 import { LinkPreview } from './link-preview'
 import { CallMessage } from './call-message'
 import { MediaAttachmentButton } from './media-attachment-button'
+import { AssistantSources } from './assistant-sources'
 import { PendingAttachments, type PendingAttachment } from './pending-attachments'
 import { MessageContextMenu } from './message-context-menu'
 import { ReplyPreview } from './reply-preview'
@@ -488,6 +489,7 @@ function MessageBubble({
                   {isSticker ? message.content : <MessageText content={message.content} />}
                 </p>
                 {!isSticker && <LinkPreview content={message.content} />}
+                <AssistantSources metadata={message.metadata} />
               </div>
               <MessageReactions
                 reactions={reactions}
@@ -557,6 +559,7 @@ export function ChatView({
   })
   const participantStatus = resolvePresence(participantStatusRaw)
   const isGroup = conversation?.type === 'group'
+  const isAi = conversation?.type === 'ai'
   const [showMediaGallery, setShowMediaGallery] = useState(false)
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
@@ -1319,6 +1322,7 @@ export function ChatView({
     prevConversationIdRef.current = conversationId
 
     const frameId = window.requestAnimationFrame(() => {
+      setSending(false)
       if (!conversationId) {
         setMessages([])
         setHasOlderMessages(false)
@@ -1535,6 +1539,14 @@ export function ChatView({
       const pendingContent = contentOverride ?? inputValue
       const attachments = contentOverride === undefined ? pendingAttachments : []
       if ((!pendingContent.trim() && attachments.length === 0) || !conversationId || sending) return
+      if (isAi && (attachments.length > 0 || pendingContent.trim().length > 8000)) {
+        addToast({
+          type: 'system',
+          title: 'AI Assistant',
+          body: 'AI hỗ trợ tin nhắn văn bản tối đa 8000 ký tự.',
+        })
+        return
+      }
 
       stopTyping()
       setSending(true)
@@ -1610,7 +1622,7 @@ export function ChatView({
 
       // Optimistic update
       const optimisticMessage: Message = {
-        id: `temp-${Date.now()}`,
+        id: isAi ? crypto.randomUUID() : `temp-${Date.now()}`,
         conversation_id: conversationId,
         sender_id: currentUserId,
         content,
@@ -1631,6 +1643,52 @@ export function ChatView({
         call_session_id: null,
       }
       setMessages((prev) => [...prev, optimisticMessage])
+
+      if (isAi) {
+        try {
+          const response = await fetch('/api/assistant/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversationId,
+              requestId: optimisticMessage.id,
+              message: content,
+            }),
+            signal: AbortSignal.timeout(145000),
+          })
+          const result = await response.json()
+          if (prevConversationIdRef.current !== conversationId) return
+          if (result.saved) {
+            clearReply()
+            clearDraft(conversationId)
+          }
+          if (!response.ok || result.error) {
+            if (!result.saved) {
+              setMessages((previous) =>
+                previous.filter((message) => message.id !== optimisticMessage.id)
+              )
+              setInputValue(content)
+            }
+            addToast({
+              type: 'system',
+              title: 'AI Assistant',
+              body:
+                result.error === 'AI_DISABLED'
+                  ? 'Trợ lý AI hiện đang tạm ngừng hoạt động.'
+                  : 'Trợ lý hiện chưa thể phản hồi. Vui lòng thử lại.',
+            })
+          }
+        } catch {
+          addToast({
+            type: 'system',
+            title: 'AI Assistant',
+            body: 'Chưa xác định được kết quả gửi. Mở lại cuộc trò chuyện để kiểm tra lịch sử trước khi gửi lại.',
+          })
+        } finally {
+          if (prevConversationIdRef.current === conversationId) setSending(false)
+        }
+        return
+      }
 
       try {
         const insertPayload = {
@@ -1698,6 +1756,7 @@ export function ChatView({
       addToast,
       t,
       uploadBatch,
+      isAi,
     ]
   )
 
@@ -2004,6 +2063,22 @@ export function ChatView({
           </Button>
         )}
 
+        {isAi && conversation && (
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Avatar
+              user={{
+                id: conversation.id,
+                display_name: conversation.title || 'Chatly AI',
+                avatar_url: conversation.avatar_url,
+              }}
+              size="md"
+            />
+            <div>
+              <h2 className="font-semibold">{conversation.title || 'Chatly AI'}</h2>
+              <p className="text-xs text-[var(--text-muted)]">AI Assistant</p>
+            </div>
+          </div>
+        )}
         {isGroup && conversation && (
           <button
             type="button"
@@ -2080,11 +2155,11 @@ export function ChatView({
           </button>
         )}
 
-        {!participant && !isGroup && showBackButton && <div className="flex-1" />}
+        {!participant && !isGroup && !isAi && showBackButton && <div className="flex-1" />}
 
         {/* Actions */}
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
-          {!isGroup && (
+          {!isGroup && !isAi && (
             <>
               <Button
                 variant="ghost"
@@ -2153,6 +2228,7 @@ export function ChatView({
             }}
             className="h-9 w-9 sm:h-10 sm:w-10"
             aria-label={t('chat.options')}
+            disabled={isAi}
           >
             {isGroup ? <UsersRound className="h-5 w-5" /> : <MoreVertical className="h-5 w-5" />}
           </Button>
@@ -2189,8 +2265,8 @@ export function ChatView({
               : null) ||
               participant || {
                 id: message.sender_id || 'unknown',
-                display_name: t('common.user'),
-                avatar_url: null,
+                display_name: isAi ? conversation?.title || 'Chatly AI' : t('common.user'),
+                avatar_url: isAi ? conversation?.avatar_url || null : null,
               }
             // Get realtime status for this message
             const realtimeStatus = messageStatuses.get(message.id)
@@ -2254,6 +2330,11 @@ export function ChatView({
             )
           })}
           <div ref={messagesEndRef} />
+          {isAi && sending && (
+            <p role="status" className="px-4 py-2 text-sm text-[var(--text-muted)]">
+              {conversation?.title || 'Chatly AI'} đang trả lời...
+            </p>
+          )}
         </div>
       </ScrollArea>
 
@@ -2309,7 +2390,7 @@ export function ChatView({
 
             <MediaAttachmentButton
               onFilesSelected={addPendingAttachments}
-              disabled={sending || uploading || !!editingMessage}
+              disabled={isAi || sending || uploading || !!editingMessage}
             />
 
             <div className="relative min-w-0 flex-1">
@@ -2338,7 +2419,7 @@ export function ChatView({
               <textarea
                 ref={inputRef}
                 rows={1}
-                maxLength={10000}
+                maxLength={isAi ? 8000 : 10000}
                 placeholder={
                   editingMessage
                     ? t('chat.editMessage')
@@ -2352,7 +2433,7 @@ export function ChatView({
                   if (conversationId) setDraft(conversationId, e.target.value)
                 }}
                 onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
+                onPaste={isAi ? undefined : handlePaste}
                 enterKeyHint="enter"
                 className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={sending || uploading}
@@ -2361,7 +2442,7 @@ export function ChatView({
             </div>
 
             {/* Schedule button */}
-            {inputValue.trim() && !editingMessage && pendingAttachments.length === 0 && (
+            {!isAi && inputValue.trim() && !editingMessage && pendingAttachments.length === 0 && (
               <Button
                 variant="ghost"
                 size="icon"

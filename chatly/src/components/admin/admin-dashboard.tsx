@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Ban,
+  Bot,
   CheckCircle2,
   KeyRound,
   LifeBuoy,
@@ -336,10 +337,18 @@ export function AdminDashboard({ currentUserId }: AdminDashboardProps) {
       <header className="border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
         <div className="flex items-center gap-3">
           <ShieldCheck className="text-primary-500 h-6 w-6" />
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">{t('admin.title')}</h1>
             <p className="text-xs text-[var(--text-muted)]">{t('admin.subtitle')}</p>
           </div>
+          <Link
+            href="/admin/ai"
+            className="text-primary-500 flex items-center gap-2 rounded-lg border border-[var(--border-default)] px-3 py-2 text-sm font-medium hover:bg-[var(--bg-hover)]"
+          >
+            <Bot className="h-4 w-4" />
+            <span className="hidden sm:inline">AI Assistant qua n8n</span>
+            <span className="sm:hidden">AI</span>
+          </Link>
         </div>
       </header>
 
