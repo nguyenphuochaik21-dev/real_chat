@@ -51,7 +51,6 @@
     "@axe-core/playwright": "^4.13.0",
     "@next/env": "16.3.4",
     "@playwright/test": "^1.62.1",
-    "@tailwindcss/oxide-wasm32-wasi": "4.2.3",
     "@tailwindcss/postcss": "4.2.3",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
