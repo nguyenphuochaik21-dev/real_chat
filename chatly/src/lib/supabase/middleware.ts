@@ -49,6 +49,9 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/register')
   const isProtectedRoute =
+    request.nextUrl.pathname === '/ai' ||
+    request.nextUrl.pathname.startsWith('/ai/') ||
+    request.nextUrl.pathname.startsWith('/join/') ||
     request.nextUrl.pathname.startsWith('/chats') ||
     request.nextUrl.pathname.startsWith('/contacts') ||
     request.nextUrl.pathname.startsWith('/calls') ||

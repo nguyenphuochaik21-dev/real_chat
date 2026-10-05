@@ -18,8 +18,14 @@
 
 # next.js
 /.next/
+/.next-dev/
+/.next-dev-*/
+/.next-playwright/
+/.next-dev.lock
+/.next-playwright.lock
 /.next-build/
 /out/
+/src/app/tailwind-sources.generated.css
 
 # production
 /build
@@ -27,6 +33,7 @@
 # misc
 .DS_Store
 *.pem
+/.local/
 
 # debug
 npm-debug.log*

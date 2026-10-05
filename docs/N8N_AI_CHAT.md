@@ -1,5 +1,9 @@
 # Chatly: cấu hình AI Assistant qua n8n
 
+> Tài liệu này mô tả luồng legacy trước migration `20261001020000_canonical_ai_agents.sql`.
+> Cấu hình hiện tại nằm tại `/admin/ai-agents`; xem [N8N_AI_AGENTS.md](N8N_AI_AGENTS.md).
+> Bảng `chat_assistant_config` được giữ để các bản triển khai cũ tiếp tục chạy trong lúc chuyển đổi.
+
 ## Kiến trúc
 
 ```text
@@ -45,7 +49,7 @@ công khai và origin của URL đó được thêm vào allowlist phía server 
 
    ```dotenv
    AI_CONFIG_ENCRYPTION_KEY=<32 random bytes encoded as base64>
-   N8N_ASSISTANT_ALLOWED_ORIGINS=https://n8n.example.com
+   N8N_ALLOWED_ORIGINS=https://n8n.example.com
    SUPABASE_SERVICE_ROLE_KEY=<existing server-only service role key>
    ```
 
@@ -225,6 +229,114 @@ hiện có; không chạy HTML hay render Markdown HTML. Sources tối đa 20 m�
 URL source chỉ HTTP/HTTPS; title được React escape. `url`, `documentId`, `score` là optional.
 Tin nhắn gửi tối đa 8.000 ký tự; trả lời tối đa 32.000 ký tự, body response tối đa 256 KiB.
 
+## Hợp đồng đa phương tiện mở rộng
+
+Hợp đồng giữ tương thích với workflow chỉ xử lý text: `message.text` và `assistant.text` vẫn tồn tại,
+còn `attachments` là mảng optional. Workflow cũ có thể bỏ qua field mới; Chatly coi response không có
+`attachments` là phản hồi text bình thường. Không đổi ý nghĩa `requestId`, `conversationId` hay
+`session.id` khi bổ sung tệp.
+
+Khi user gửi hình ảnh, âm thanh hoặc file, Chatly lưu object trong bucket private `chat-media` trước,
+sau đó server tạo URL đọc có thời hạn để gửi tới n8n. Không đưa Supabase service-role key, cookie hay
+access token của user vào payload. n8n phải tải object trong thời hạn `expiresAt`; không lưu signed URL
+làm URL lâu dài.
+
+Ví dụ request có media:
+
+```json
+{
+  "version": "1.1",
+  "event": "chat.message.created",
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "conversation": { "id": "22222222-2222-4222-8222-222222222222" },
+  "message": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "text": "Hãy mô tả ảnh và tóm tắt file này",
+    "createdAt": "2026-09-29T00:00:00.000Z",
+    "attachments": [
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "type": "image",
+        "name": "hoa-don.webp",
+        "mimeType": "image/webp",
+        "size": 182340,
+        "url": "https://project.supabase.co/storage/v1/object/sign/chat-media/...",
+        "expiresAt": "2026-09-29T00:10:00.000Z"
+      },
+      {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "type": "file",
+        "name": "bao-cao.pdf",
+        "mimeType": "application/pdf",
+        "size": 902144,
+        "url": "https://project.supabase.co/storage/v1/object/sign/chat-media/...",
+        "expiresAt": "2026-09-29T00:10:00.000Z"
+      }
+    ]
+  },
+  "user": { "id": "33333333-3333-4333-8333-333333333333", "role": "USER" },
+  "session": { "id": "22222222-2222-4222-8222-222222222222" }
+}
+```
+
+`type` đầu vào nhận `image`, `audio` hoặc `file`. MIME type và giới hạn upload vẫn do Chatly kiểm tra;
+n8n không được tin tên file hay MIME type để thực thi nội dung. Với AI Agent, thêm Binary/File node để
+tải từng `attachments[].url`, rồi chuyển binary vào model/tool hỗ trợ vision, audio hoặc document.
+
+AI có thể trả text cùng hình ảnh, âm thanh, file hoặc đường dẫn bằng `assistant.attachments`:
+
+```json
+{
+  "ok": true,
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "conversationId": "22222222-2222-4222-8222-222222222222",
+  "assistant": {
+    "text": "Tôi đã tạo báo cáo và biểu đồ.",
+    "format": "markdown",
+    "sources": [],
+    "attachments": [
+      {
+        "type": "image",
+        "url": "https://files.example.com/chart.webp",
+        "name": "chart.webp",
+        "mimeType": "image/webp",
+        "size": 245120,
+        "altText": "Biểu đồ doanh thu theo tháng"
+      },
+      {
+        "type": "file",
+        "url": "https://files.example.com/report.pdf",
+        "name": "report.pdf",
+        "mimeType": "application/pdf",
+        "size": 1048576
+      },
+      {
+        "type": "link",
+        "url": "https://example.com/dashboard",
+        "title": "Mở dashboard"
+      }
+    ]
+  }
+}
+```
+
+URL do n8n trả về phải là HTTPS, không chứa credential và phải còn truy cập được sau khi workflow kết
+thúc. Nếu output nằm trong storage private, n8n nên upload object qua một API server-to-server có phạm vi
+hẹp rồi trả storage path/URL được Chatly quản lý; không trả service-role key cho trình duyệt. Chatly phải
+kiểm tra schema, số lượng, MIME type, kích thước khai báo và protocol URL trước khi lưu/hiển thị.
+
+Trong `Normalize Input`, thêm field `attachments` với expression:
+
+```text
+{{ $json.body.message.attachments ?? [] }}
+```
+
+Workflow nên rẽ nhánh bằng `attachments.length`: nhánh `0` giữ nguyên luồng text hiện tại, nhánh có media
+tải file rồi mới gọi model/tool phù hợp. Node `Format Output` luôn trả một object; nếu không có media thì
+trả `attachments: []` hoặc bỏ field này. Nếu một attachment không tạo được, n8n nên bỏ attachment đó và
+vẫn trả text giải thích; nếu toàn bộ workflow lỗi thì trả HTTP lỗi để Chatly hiển thị trạng thái thất bại
+ngay cạnh tin nhắn user.
+
 ## Lỗi, retry và vận hành
 
 - `AI_DISABLED`: giữ lịch sử, không gọi n8n cho request mới.
@@ -267,11 +379,10 @@ docker rm --force --volumes chatly-assistant-test-db
 Fixture SQL dùng các bảng/RLS cơ sở từ migration hiện có, cộng các cột cần thiết;
 không phải bản sao toàn bộ Supabase production. Script tự tạo/xóa database test riêng.
 
-Nếu Windows Application Control chặn native binding SWC/Tailwind, dùng môi trường Linux
-Docker để chạy `npm ci`, `npm run build` và `npm run start`. Việc build thành công với SWC
-WASM chưa đủ để xác nhận CSS: Tailwind WASM trên máy Windows này không quét đầy đủ nguồn.
-Không dùng bản CSS đó để đánh giá giao diện. Dependency lockfile thông thường hoạt động
-trong môi trường Linux đã dùng để xác minh bản production.
+Chatly chạy trực tiếp bằng `npm run dev`; không cần Docker Desktop. Lệnh chuẩn bị tự dùng
+Tailwind WASM và tạo danh sách class trên Windows nếu Application Control chặn native binding.
+Docker chỉ cần thiết nếu bạn chọn tự host n8n hoặc chạy database kiểm thử cách ly. n8n Cloud
+hoạt động bằng Production Webhook HTTPS mà không cần Docker.
 
 Trước khi rollout, trên staging đã áp migration: kiểm tra Admin save/masked fields/test;
 normal User gọi `/api/admin/ai` nhận 403; AI A/B không đọc chéo; disabled giữ lịch sử;

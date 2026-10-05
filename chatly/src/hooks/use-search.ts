@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { searchMessages, searchConversations, type SearchFilters } from '@/lib/actions/search'
 import type { PublicProfile, SearchResult } from '@/lib/actions/search'
+import { searchDateBoundary } from '@/lib/search-text'
 
 export type { SearchResult }
 export type Profile = PublicProfile
@@ -86,6 +87,8 @@ export function useSearch(conversationId?: string): UseSearchReturn {
       try {
         const filters = {
           ...stateRef.current.filters,
+          dateFrom: searchDateBoundary(stateRef.current.filters.dateFrom),
+          dateTo: searchDateBoundary(stateRef.current.filters.dateTo, true),
           ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
         }
         const results = await searchMessages(query, filters, PAGE_SIZE, 0)
@@ -99,7 +102,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
           total: results.total,
           loading: contactLoadingRef.current,
         }))
-        hasMoreRef.current = results.results.length < results.total
+        hasMoreRef.current = results.hasMore
       } catch (error) {
         if (requestId !== messageRequestRef.current) return
         messageLoadingRef.current = false
@@ -192,6 +195,8 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     try {
       const filters = {
         ...stateRef.current.filters,
+        dateFrom: searchDateBoundary(stateRef.current.filters.dateFrom),
+        dateTo: searchDateBoundary(stateRef.current.filters.dateTo, true),
         ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
       }
       const previousCount = stateRef.current.results.length
@@ -210,7 +215,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
         total: results.total,
         loading: contactLoadingRef.current,
       }))
-      hasMoreRef.current = previousCount + results.results.length < results.total
+      hasMoreRef.current = results.hasMore
     } catch (error) {
       if (requestId !== messageRequestRef.current) return
       messageLoadingRef.current = false
@@ -230,7 +235,7 @@ export function useSearch(conversationId?: string): UseSearchReturn {
     clearSearch,
     loadMore,
     get hasMore() {
-      return hasMoreRef.current && state.results.length < state.total
+      return hasMoreRef.current && state.results.length > 0
     },
   }
 }

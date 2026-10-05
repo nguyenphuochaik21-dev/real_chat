@@ -1,9 +1,21 @@
 # CHATLY N8N AI INTEGRATION REPORT
 
-Implementation started: 2026-09-29. Final validation: 2026-09-30.
-Code and additive migrations are prepared locally.
-Production has not been migrated or redeployed. Owner setup is in
-[N8N_AI_CHAT.md](N8N_AI_CHAT.md), including 24 ordered steps and exact n8n expressions.
+Implementation started: 2026-09-29. Latest validation: 2026-10-02.
+The canonical-agent migration `20261001020000_canonical_ai_agents.sql` and the
+three `20261002*` follow-up migrations were applied and
+recorded on the Supabase project configured by local `DIRECT_URL`. The legacy
+`chat_assistant_config` remains for deployed versions; the new application resolves
+the default agent from `ai_agents` and `ai_connections`. Application code is still local.
+Code and additive migrations are prepared locally. The 2026-10-01 rich-output migration was applied
+to the Supabase database configured by local `DIRECT_URL`; application deployment remains an owner
+step. Current owner setup is in [N8N_AI_AGENTS.md](N8N_AI_AGENTS.md), and the agent editor
+contains the copyable n8n guide. [N8N_AI_CHAT.md](N8N_AI_CHAT.md) documents the older protocol.
+
+The existing multi-agent area is now visible from the main navigation and Admin. Each agent keeps
+its own n8n workflow, conversation history and memory session, so conversations with different agents
+can process concurrently. Rich n8n outputs support validated HTTPS image, audio, file and link
+descriptors. Migration `20261001010000_ai_agent_rich_outputs.sql` was applied successfully to the
+database configured by local `DIRECT_URL` and recorded in `supabase_migrations.schema_migrations`.
 
 ## Existing Architecture
 
@@ -45,12 +57,11 @@ and the complete Format Output code. It also explains that n8n Cloud works direc
 that a local n8n Docker container is optional. Admin users have a direct AI Assistant
 entry in Settings and a visible link in the existing Admin header.
 
-The broken local interface was traced to two servers sharing port 3000: an orphaned
-Windows Next development server listened on IPv6 localhost and served an incomplete
-Tailwind bundle, while the correct Linux server listened on IPv4. The orphan was stopped.
-A reproducible Linux production image and launcher now run the local site as
-`chatly-local`, avoiding the native Tailwind/SWC binaries blocked by Windows Application
-Control on this machine.
+The local interface now runs directly with `npm run dev`, without a Chatly Docker
+container. A preparation script uses Tailwind WASM and generates explicit source
+candidates on Windows, avoiding the native binding blocked by Application Control while
+still producing the complete utility stylesheet. Docker remains available for a self-hosted
+n8n service only.
 
 Two small pre-existing test compatibility gaps were also completed: configurable
 temporary-user fixture count and session-cookie-preserving redirects. Existing untracked
@@ -68,8 +79,10 @@ plus `metadata.sender_type = ai`; no fake Auth user/password exists.
 
 `/admin/ai` reuses the shared layout, theme, Input, Button and Lucide icon system.
 The existing Admin header links to it. Supported settings: name, description, avatar URL,
-welcome message, enabled state, encrypted URL/secret and timeout. UI exposes connection
-status, last successful n8n request, last error, latency and whether credentials exist.
+welcome message, enabled state, encrypted URL/secret and timeout. UI exposes enabled state,
+webhook presence, endpoint hostname, connection status, timeout, last connection test,
+latency, last error and update time. Configuration changes and connection tests are shown
+from `admin_audit_logs`; secrets and full webhook URLs are never written to audit details.
 
 Saving never returns plaintext credentials; blank replacement inputs preserve existing
 values. Test Connection calls the saved workflow from the server. It can run while AI is
@@ -99,9 +112,8 @@ All paths below are relative to `chatly/` unless prefixed `docs/`:
 - `scripts/test-chat-assistant-db.mjs`
 - `docs/N8N_AI_CHAT.md` (repository root)
 - `docs/N8N_AI_INTEGRATION_REPORT.md` (repository root)
-- `.dockerignore`
-- `Dockerfile.local`
-- `scripts/start-local-docker.ps1`
+- `scripts/prepare-tailwind.mjs`
+- `scripts/vendor/tailwindcss-oxide-wasm32-wasi-4.2.3.tgz`
 
 ## Files Modified
 
@@ -236,7 +248,7 @@ No new WebSocket server or polling loop is introduced.
 
 ## Environment Variables
 
-New: `AI_CONFIG_ENCRYPTION_KEY`, `N8N_ASSISTANT_ALLOWED_ORIGINS` (server-only).
+New: `AI_CONFIG_ENCRYPTION_KEY`, `N8N_ALLOWED_ORIGINS` (server-only).
 Existing: `SUPABASE_SERVICE_ROLE_KEY`, public Supabase URL/anon key.
 Timeout defaults to 120000 in DB and is changed through Admin; no duplicate timeout ENV.
 No `.env.local` or production credential was changed.
@@ -250,9 +262,7 @@ workers. The suites were `chat-assistant`, `assistant-rbac`, `session-redirect` 
 Existing public UI, accessibility, PWA icons, security headers and anonymous redirects also passed.
 
 An authenticated Admin smoke check also opened `/chats`, `/settings`, `/admin` and
-`/admin/ai` against the Linux production container. All four pages remained within the
-1440×900 viewport, loaded the 64 KB hashed Tailwind stylesheet, and rendered the sidebar
-logo at 40×40 pixels. The AI page displayed the full n8n setup section.
+`/admin/ai`. The AI page displayed the full n8n setup and status sections.
 
 The focused suites exercise gateway success/auth/body/session, timeout, 500, redirect,
 invalid JSON/schema, mismatched IDs, response size, SSRF, encryption/tamper detection,
@@ -270,17 +280,9 @@ staging step. There is no claim that production or real model output has been ex
 
 ## Production Build Result
 
-`npm ci` followed by `npm run build` succeeds in a clean Linux Docker container using
-Node 22 and the repository lockfile. Production `next start` also starts successfully.
-All new AI routes appear in the build output. No platform workaround is required on Linux.
-
-Windows Application Control blocks native SWC/Tailwind bindings on this machine. An
-initial SWC WASM build compiled, but later browser checks found incomplete CSS with
-Tailwind's Windows WASM scanner. That result is not used to validate the UI; browser
-verification uses the Linux production server instead. No Windows policy was modified.
-The stable local container is `chatly-local` at `http://localhost:3000`; the earlier
-bind-mounted `chatly-dev-linux` container was removed because Docker Desktop file-watch
-I/O errors made it unsuitable for reliable UI validation.
+`npm run dev` and `npm run build` run directly on Windows. The preparation step supplies
+the WASM binding and explicit Tailwind candidates when Windows Application Control blocks
+native SWC/Tailwind bindings. Local Chatly no longer creates or requires a Docker container.
 
 ## Vercel Setup
 
@@ -297,8 +299,9 @@ Supabase Realtime publication and hosting settings. See the setup document for e
 - Process termination after n8n side effects but before reply persistence can leave an
   uncertain request. There is no blind retry; downstream side-effect tools should dedupe
   using requestId. Stale processing locks are released on a later send after 3 minutes.
-- V1 is text-only. Markdown format is retained but shown through the existing safe text/link
-  renderer; sources are rendered separately. Rich Markdown/streaming are not implemented.
+- User attachment upload to AI remains disabled until the private Storage/RLS flow is enabled. The
+  version 1.1 request contract already includes `attachments: []`, and rich output from n8n is
+  validated, persisted and rendered as safe links. Rich Markdown/streaming are not implemented.
 - Config changes update existing AI conversation title/avatar. Welcome text applies to
   new conversations; memory remains owned by n8n.
 - The pre-existing untracked multi-agent feature is preserved and not migrated into this

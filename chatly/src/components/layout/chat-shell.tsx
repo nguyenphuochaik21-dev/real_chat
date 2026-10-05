@@ -40,7 +40,7 @@ export function ChatShell({ children, userId, profile }: ChatShellProps) {
   const isInChat = /^\/chats\/[^/]+/.test(pathname)
 
   return (
-    <CurrentUserProvider userId={userId}>
+    <CurrentUserProvider userId={userId} isAdmin={profile?.role === 'admin'}>
       <div className="flex h-[100dvh] w-full min-w-0 overflow-hidden bg-[var(--bg-app)]">
         <div className="hidden md:block">
           <Sidebar userId={userId} profile={profile} />

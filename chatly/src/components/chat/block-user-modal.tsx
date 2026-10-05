@@ -38,10 +38,10 @@ export function BlockUserModal({ isOpen, onClose, userToBlock, onBlocked }: Bloc
   }
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || userToBlock) return
     const timeoutId = window.setTimeout(() => void fetchBlockedUsers(), 0)
     return () => window.clearTimeout(timeoutId)
-  }, [isOpen])
+  }, [isOpen, userToBlock])
 
   const handleBlock = async () => {
     if (!userToBlock) return
@@ -105,14 +105,19 @@ export function BlockUserModal({ isOpen, onClose, userToBlock, onBlocked }: Bloc
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-[calc(100%-1rem)] max-w-md rounded-lg bg-[var(--bg-panel)] shadow-lg">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('block.title')}
+        className="w-[calc(100%-1rem)] max-w-md rounded-lg bg-[var(--bg-panel)] shadow-lg"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--border-default)] p-4">
           <div className="flex items-center gap-3">
             <Ban className="h-5 w-5 text-[var(--text-muted)]" />
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('block.title')}</h2>
           </div>
-          <Button variant="ghost" size="icon-sm" onClick={onClose}>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t('common.close')}>
             <X className="h-5 w-5" />
           </Button>
         </div>
@@ -140,46 +145,50 @@ export function BlockUserModal({ isOpen, onClose, userToBlock, onBlocked }: Bloc
           </div>
         )}
 
-        <Separator />
+        {!userToBlock && <Separator />}
 
         {/* Blocked users list */}
-        <div className="max-h-80">
-          {blockedUsers.length > 0 ? (
-            <ScrollArea className="p-2">
-              {blockedUsers.map((user) => (
-                <div
-                  key={user.id}
-                  className="flex items-center justify-between p-3 hover:bg-[var(--bg-hover)]"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar user={user} size="sm" showStatus={false} />
-                    <div>
-                      <p className="font-medium text-[var(--text-primary)]">{user.display_name}</p>
-                      <p className="text-xs text-[var(--text-muted)]">
-                        {user.blocked_at &&
-                          t('block.blockedOn', {
-                            date: new Date(user.blocked_at).toLocaleDateString(dateLocale),
-                          })}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleUnblock(user.id, user.display_name)}
+        {!userToBlock && (
+          <div className="max-h-80">
+            {blockedUsers.length > 0 ? (
+              <ScrollArea className="p-2">
+                {blockedUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center justify-between p-3 hover:bg-[var(--bg-hover)]"
                   >
-                    {t('block.unblock')}
-                  </Button>
-                </div>
-              ))}
-            </ScrollArea>
-          ) : (
-            <div className="p-8 text-center">
-              <Ban className="mx-auto mb-3 h-12 w-12 text-[var(--text-muted)] opacity-50" />
-              <p className="text-sm text-[var(--text-muted)]">{t('block.none')}</p>
-            </div>
-          )}
-        </div>
+                    <div className="flex items-center gap-3">
+                      <Avatar user={user} size="sm" showStatus={false} />
+                      <div>
+                        <p className="font-medium text-[var(--text-primary)]">
+                          {user.display_name}
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {user.blocked_at &&
+                            t('block.blockedOn', {
+                              date: new Date(user.blocked_at).toLocaleDateString(dateLocale),
+                            })}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleUnblock(user.id, user.display_name)}
+                    >
+                      {t('block.unblock')}
+                    </Button>
+                  </div>
+                ))}
+              </ScrollArea>
+            ) : (
+              <div className="p-8 text-center">
+                <Ban className="mx-auto mb-3 h-12 w-12 text-[var(--text-muted)] opacity-50" />
+                <p className="text-sm text-[var(--text-muted)]">{t('block.none')}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

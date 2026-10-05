@@ -6,11 +6,12 @@ import { ChatsList } from '@/components/chat/chats-list'
 import { ChatView } from '@/components/chat/chat-view'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n'
-import { useCurrentUserId } from '@/hooks/use-current-user-id'
+import { useCurrentUserId, useCurrentUserIsAdmin } from '@/hooks/use-current-user-id'
 
 export default function ChatsLayout() {
   const { t } = useI18n()
   const currentUserId = useCurrentUserId()
+  const isAdmin = useCurrentUserIsAdmin()
   const pathname = usePathname()
   const params = useParams<{ id?: string }>()
   const searchParams = useSearchParams()
@@ -50,6 +51,7 @@ export default function ChatsLayout() {
             key={conversationId}
             conversationId={conversationId}
             currentUserId={currentUserId}
+            isAdmin={isAdmin}
             showBackButton
             onBack={() => router.push('/chats')}
             scrollToMessageId={scrollToMessageId}

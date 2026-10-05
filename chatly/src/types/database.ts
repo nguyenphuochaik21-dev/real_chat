@@ -91,6 +91,7 @@ type BaseDatabase = {
       }
       conversations: {
         Row: {
+          ai_agent_id: string | null
           avatar_url: string | null
           created_at: string | null
           created_by: string | null
@@ -103,6 +104,7 @@ type BaseDatabase = {
           updated_at: string | null
         }
         Insert: {
+          ai_agent_id?: string | null
           avatar_url?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -115,6 +117,7 @@ type BaseDatabase = {
           updated_at?: string | null
         }
         Update: {
+          ai_agent_id?: string | null
           avatar_url?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -946,6 +949,10 @@ type BaseDatabase = {
       }
       get_friendship_overview: {
         Args: { p_discover_limit?: number }
+        Returns: Json
+      }
+      get_friend_suggestions: {
+        Args: { p_limit?: number }
         Returns: Json
       }
       search_friend_candidates: {

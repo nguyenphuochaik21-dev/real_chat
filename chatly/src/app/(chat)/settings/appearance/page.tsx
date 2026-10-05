@@ -3,7 +3,7 @@
 import { useTheme } from 'next-themes'
 import { ArrowLeft, Moon, Sun, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 import Link from 'next/link'
 import { useI18n } from '@/lib/i18n'
 
@@ -21,10 +21,12 @@ export default function AppearancePage() {
     <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="flex items-center gap-4 border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
-        <Link href="/settings">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+        <Link
+          href="/settings"
+          aria-label={t('common.back')}
+          className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+        >
+          <ArrowLeft className="h-5 w-5" />
         </Link>
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">
           {t('appearance.title')}
@@ -42,6 +44,7 @@ export default function AppearancePage() {
             {themes.map((themeOption) => (
               <button
                 key={themeOption.id}
+                aria-pressed={theme === themeOption.id}
                 onClick={() => setTheme(themeOption.id)}
                 className={cn(
                   'flex flex-col items-center gap-2 rounded-xl p-4 transition-all',

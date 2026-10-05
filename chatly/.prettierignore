@@ -1,5 +1,12 @@
 node_modules
 .next
+.next-dev*
+.next-playwright
+.next-build
+test-results
+playwright-report
+blob-report
+src/app/tailwind-sources.generated.css
 dist
 build
 coverage

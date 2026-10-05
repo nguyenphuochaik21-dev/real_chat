@@ -2,10 +2,8 @@ import 'server-only'
 
 import { createClient } from '@supabase/supabase-js'
 import { getServerAuth } from '@/lib/supabase/auth'
-import type { Database } from '@/types'
-import { decryptConnection } from './crypto'
-import { N8nChatGateway } from './gateway'
-import type { AssistantConfig, AiChatRequest } from './schema'
+import type { Database, Json } from '@/types'
+import type { AssistantAuditAction } from './schema'
 
 export class AssistantError extends Error {
   constructor(
@@ -39,77 +37,34 @@ export function assistantDb() {
   })
 }
 
-export async function loadConfig() {
-  const { data, error } = await assistantDb()
-    .from('chat_assistant_config')
-    .select('*')
-    .eq('id', true)
-    .single()
-  if (error || !data) throw new AssistantError('AI_NOT_CONFIGURED', 503)
-  return data
-}
-
-export function publicConfig(config: AssistantConfig) {
-  return {
-    name: config.name,
-    description: config.description,
-    avatar_url: config.avatar_url,
-    welcome_message: config.welcome_message,
-    enabled: config.enabled,
+function sanitizeAuditDetails(value: Json | undefined): Json {
+  if (value === undefined) return null
+  if (Array.isArray(value)) return value.map(sanitizeAuditDetails)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !/(secret|cipher|encrypted|webhook_url)/i.test(key))
+        .map(([key, entry]) => [key, sanitizeAuditDetails(entry)])
+    )
   }
+  if (typeof value === 'string' && /^https?:\/\//i.test(value)) return '[redacted]'
+  return value
 }
 
-export function adminConfig(config: AssistantConfig) {
-  const { connection_encrypted, ...safe } = config
-  return { ...safe, configured: Boolean(connection_encrypted) }
-}
-
-export async function invokeAssistant(config: AssistantConfig, input: AiChatRequest) {
-  if (!config.connection_encrypted) throw new AssistantError('AI_NOT_CONFIGURED', 503)
-  const started = Date.now()
-  let status = 'CONNECTED'
-  let errorCode: string | null = null
-  try {
-    const connection = decryptConnection(config.connection_encrypted)
-    return await new N8nChatGateway(
-      connection.url,
-      connection.secret,
-      config.timeout_ms
-    ).sendMessage(input)
-  } catch (error) {
-    errorCode =
-      error instanceof Error &&
-      ['N8N_TIMEOUT', 'N8N_UNAVAILABLE', 'N8N_INVALID_RESPONSE', 'INVALID_WEBHOOK'].includes(
-        error.message
-      )
-        ? error.message
-        : 'INTERNAL_ERROR'
-    status =
-      errorCode === 'N8N_TIMEOUT'
-        ? 'TIMEOUT'
-        : errorCode === 'N8N_INVALID_RESPONSE'
-          ? 'INVALID_RESPONSE'
-          : 'FAILED'
-    throw new AssistantError(errorCode, errorCode === 'N8N_TIMEOUT' ? 504 : 502)
-  } finally {
-    const latency = Date.now() - started
-    await assistantDb()
-      .from('chat_assistant_config')
-      .update({
-        last_connection_status: status,
-        last_error: errorCode,
-        latency_ms: latency,
-        ...(status === 'CONNECTED' ? { last_success_at: new Date().toISOString() } : {}),
-      })
-      .eq('id', true)
-    console.info('chat_assistant_request', {
-      requestId: input.requestId,
-      conversationId: input.conversation.id,
-      latencyMs: latency,
-      status,
-      errorCode,
+export async function recordAssistantAudit(
+  adminId: string,
+  action: AssistantAuditAction,
+  details: Record<string, Json> = {}
+) {
+  const { error } = await assistantDb()
+    .from('admin_audit_logs')
+    .insert({
+      admin_id: adminId,
+      target_user_id: null,
+      action,
+      details: sanitizeAuditDetails(details),
     })
-  }
+  if (error) throw new AssistantError('INTERNAL_ERROR', 500)
 }
 
 export function checkOrigin(request: Request) {

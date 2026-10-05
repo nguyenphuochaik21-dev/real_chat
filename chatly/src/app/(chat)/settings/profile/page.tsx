@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Camera, CalendarDays, Info, LinkIcon, Phone, User } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -159,10 +159,12 @@ export default function ProfilePage() {
     <div className="flex h-full flex-1 flex-col bg-[var(--bg-app)]">
       {/* Header */}
       <div className="flex items-center gap-4 border-b border-[var(--border-default)] bg-[var(--bg-panel)] p-4">
-        <Link href="/settings">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+        <Link
+          href="/settings"
+          aria-label={t('common.back')}
+          className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+        >
+          <ArrowLeft className="h-5 w-5" />
         </Link>
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t('profile.title')}</h1>
       </div>
@@ -210,6 +212,7 @@ export default function ProfilePage() {
               <span className="text-sm">{t('profile.name')}</span>
             </div>
             <Input
+              aria-label={t('profile.name')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={FULL_NAME_MAX}
@@ -225,12 +228,18 @@ export default function ProfilePage() {
             </div>
             <Input
               type="tel"
+              aria-label={t('profile.phone')}
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
               maxLength={30}
               placeholder={t('profile.phonePlaceholder')}
             />
-            <VisibilitySelect value={phoneVisibility} onChange={setPhoneVisibility} t={t} />
+            <VisibilitySelect
+              label={`${t('settings.privacy')}: ${t('profile.phone')}`}
+              value={phoneVisibility}
+              onChange={setPhoneVisibility}
+              t={t}
+            />
           </div>
 
           <div className="rounded-xl bg-[var(--bg-panel)] p-4">
@@ -240,11 +249,17 @@ export default function ProfilePage() {
             </div>
             <Input
               type="date"
+              aria-label={t('profile.birthDate')}
               value={birthDate}
               max={new Date().toISOString().slice(0, 10)}
               onChange={(event) => setBirthDate(event.target.value)}
             />
-            <VisibilitySelect value={birthDateVisibility} onChange={setBirthDateVisibility} t={t} />
+            <VisibilitySelect
+              label={`${t('settings.privacy')}: ${t('profile.birthDate')}`}
+              value={birthDateVisibility}
+              onChange={setBirthDateVisibility}
+              t={t}
+            />
           </div>
 
           <div className="rounded-xl bg-[var(--bg-panel)] p-4">
@@ -253,6 +268,7 @@ export default function ProfilePage() {
               <span className="text-sm">{t('profile.socialLinks')}</span>
             </div>
             <textarea
+              aria-label={t('profile.socialLinks')}
               value={socialLinks}
               onChange={(event) => setSocialLinks(event.target.value)}
               rows={4}
@@ -268,6 +284,7 @@ export default function ProfilePage() {
               <span className="text-sm">{t('profile.about')}</span>
             </div>
             <textarea
+              aria-label={t('profile.about')}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               maxLength={500}
@@ -290,16 +307,19 @@ export default function ProfilePage() {
 }
 
 function VisibilitySelect({
+  label,
   value,
   onChange,
   t,
 }: {
+  label: string
   value: 'public' | 'private'
   onChange: (value: 'public' | 'private') => void
   t: (key: string) => string
 }) {
   return (
     <select
+      aria-label={label}
       value={value}
       onChange={(event) => onChange(event.target.value as 'public' | 'private')}
       className="mt-3 w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)]"

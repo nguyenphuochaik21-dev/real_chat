@@ -1,22 +1,7 @@
+import { createDatabaseClient } from './lib/database.mjs'
 import assert from 'node:assert/strict'
-import nextEnv from '@next/env'
-import pg from 'pg'
-import { readFile } from 'node:fs/promises'
 
-nextEnv.loadEnvConfig(process.cwd())
-const ca = process.env.DATABASE_CA_CERT_PATH
-  ? await readFile(process.env.DATABASE_CA_CERT_PATH, 'utf8')
-  : await fetch(
-      'https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt',
-      { signal: AbortSignal.timeout(10_000) }
-    ).then((response) => {
-      if (!response.ok) throw new Error('Could not load Supabase CA')
-      return response.text()
-    })
-const db = new pg.Client({
-  connectionString: process.env.DIRECT_URL,
-  ssl: { rejectUnauthorized: true, ca },
-})
+const db = await createDatabaseClient()
 let checks = 0
 async function asUser(id) {
   await db.query('reset role')

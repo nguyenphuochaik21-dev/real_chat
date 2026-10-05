@@ -197,6 +197,12 @@ export default function SettingsPage() {
             title={t('settings.account')}
             items={[
               {
+                icon: Bot,
+                title: 'AI Agents',
+                description: 'Chọn trợ lý AI và bắt đầu cuộc trò chuyện riêng',
+                href: '/ai',
+              },
+              {
                 icon: User,
                 title: t('settings.profile'),
                 description: t('settings.profileHint'),
@@ -212,9 +218,9 @@ export default function SettingsPage() {
                     },
                     {
                       icon: Bot,
-                      title: 'AI Assistant qua n8n',
-                      description: 'Cấu hình webhook và xem thông số các node n8n',
-                      href: '/admin/ai',
+                      title: 'Quản lý AI Agents',
+                      description: 'Tạo nhiều agent và kết nối từng agent với workflow n8n',
+                      href: '/admin/ai-agents',
                     },
                   ]
                 : []),

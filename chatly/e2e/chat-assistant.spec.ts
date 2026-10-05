@@ -21,7 +21,7 @@ input.session.id = input.conversation.id
 const secret = 'test-secret-123456789'
 
 test.beforeAll(async () => {
-  process.env.N8N_ASSISTANT_ALLOWED_ORIGINS = 'https://n8n.example.test'
+  process.env.N8N_ALLOWED_ORIGINS = 'https://n8n.example.test'
   process.env.AI_CONFIG_ENCRYPTION_KEY = randomBytes(32).toString('base64')
   server = createServer(async (request, response) => {
     const chunks: Buffer[] = []

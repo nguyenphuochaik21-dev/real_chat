@@ -1,8 +1,76 @@
 import { expect, test } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import { provisionCallUsers } from './support/call-users'
+import AxeBuilder from '@axe-core/playwright'
 
 test.use({ trace: 'off' })
+
+test('search loads all pages, fits date filters and blocks suspended AI navigation', async ({
+  page,
+}, testInfo) => {
+  test.skip(process.env.E2E_DATABASE_CALLS !== 'true', 'Requires temporary database accounts')
+  test.setTimeout(120_000)
+  page.setDefaultTimeout(15_000)
+  const fixture = await provisionCallUsers()
+  const [owner, peer] = fixture.users
+  try {
+    await fixture.db.query(
+      "insert into public.messages(conversation_id,sender_id,content) select $1,$2,'paginationprobe ' || n from generate_series(1,45) n",
+      [fixture.conversationId, peer.id]
+    )
+    await page.goto('/login')
+    await page.getByLabel('Email').fill(owner.email)
+    await page.locator('#password').fill(owner.password)
+    await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
+    await expect(page).toHaveURL(/\/chats/, { timeout: 30_000 })
+    await page.goto(`/chats/${fixture.conversationId}`)
+    await page.getByRole('heading', { name: 'Call Receiver', exact: true }).click()
+    await page
+      .locator('section[aria-label]')
+      .getByRole('button', { name: 'Tìm kiếm', exact: true })
+      .click()
+    const dialog = page.getByRole('dialog', { name: 'Tin nhắn', exact: true })
+    await dialog.getByRole('textbox').fill('paginationprobe')
+    await expect(dialog.getByText('Tìm thấy 20+ kết quả')).toBeVisible({ timeout: 15_000 })
+    await dialog.getByRole('button', { name: 'Tải thêm kết quả' }).click()
+    await expect(dialog.getByText('Tìm thấy 40+ kết quả')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Tải thêm kết quả' }).click()
+    await expect(dialog.getByText('Tìm thấy 45 kết quả')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /paginationprobe/ })).toHaveCount(45)
+    await expect(dialog.getByRole('button', { name: 'Tải thêm kết quả' })).toHaveCount(0)
+    await dialog.getByRole('button', { name: 'Ngày', exact: true }).click()
+    const today = await page.evaluate(() => {
+      const now = new Date()
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    })
+    await dialog.getByLabel('Từ', { exact: true }).fill(today)
+    await dialog.getByLabel('Đến', { exact: true }).fill(today)
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true
+    )
+    await page.screenshot({ path: testInfo.outputPath('search-filters.png'), fullPage: true })
+    await dialog.getByRole('button', { name: 'Áp dụng', exact: true }).click()
+    await expect(dialog.getByText('Tìm thấy 20+ kết quả')).toBeVisible()
+    const accessibility = await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
+    expect(
+      accessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact ?? ''))
+    ).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await fixture.db.query('update public.profiles set is_suspended=true where id=$1', [owner.id])
+    for (const path of ['/ai', '/ai/11111111-1111-4111-8111-111111111111', '/join/test-token']) {
+      const response = await page.request.get(path, { maxRedirects: 0 })
+      expect(response.status()).toBe(307)
+      expect(response.headers().location).toContain('/suspended')
+    }
+  } finally {
+    try {
+      await page.context().close()
+    } finally {
+      await fixture.cleanup()
+    }
+  }
+})
 
 test('mobile layout, empty media, group options and independent sign-out', async ({ page }) => {
   test.skip(process.env.E2E_DATABASE_CALLS !== 'true', 'Requires temporary database accounts')
@@ -105,7 +173,67 @@ test('mobile layout, empty media, group options and independent sign-out', async
     expect(refreshed.data.session?.user.id).toBe(owner.id)
   } finally {
     await otherDevice.auth.signOut({ scope: 'local' })
-    await page.context().close()
-    await fixture.cleanup()
+    try {
+      await page.context().close()
+    } finally {
+      await fixture.cleanup()
+    }
+  }
+})
+
+test('authenticated pages fit the viewport and have accessible controls', async ({
+  page,
+}, testInfo) => {
+  test.skip(process.env.E2E_DATABASE_CALLS !== 'true', 'Requires temporary database accounts')
+  test.setTimeout(180_000)
+  const fixture = await provisionCallUsers()
+  const owner = fixture.users[0]
+  try {
+    await fixture.db.query("update public.profiles set role='admin' where id=$1", [owner.id])
+    await page.goto('/login')
+    await page.getByLabel('Email').fill(owner.email)
+    await page.locator('#password').fill(owner.password)
+    await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
+    await expect(page).toHaveURL(/\/chats/, { timeout: 30_000 })
+    for (const path of [
+      '/chats',
+      '/contacts',
+      '/calls',
+      '/settings',
+      '/settings/profile',
+      '/settings/appearance',
+      '/settings/support',
+      '/ai',
+      '/admin',
+      '/admin/ai-agents',
+    ]) {
+      await page.goto(path)
+      await expect(page.locator('h1,h2').first()).toBeVisible({ timeout: 15_000 })
+      await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.getByText('Tạm thời không thể mở trang', { exact: true })).toHaveCount(0)
+      expect
+        .soft(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${path} horizontal overflow`
+        )
+        .toBe(true)
+      const result = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze()
+      const violations = result.violations
+        .filter((item) => ['serious', 'critical'].includes(item.impact ?? ''))
+        .map((item) => ({ id: item.id, nodes: item.nodes.map((node) => node.target) }))
+      expect.soft(violations, path).toEqual([])
+      await page.screenshot({
+        path: testInfo.outputPath(`${path.slice(1).replaceAll('/', '-')}.png`),
+        fullPage: true,
+      })
+    }
+  } finally {
+    try {
+      await page.context().close()
+    } finally {
+      await fixture.cleanup()
+    }
   }
 })

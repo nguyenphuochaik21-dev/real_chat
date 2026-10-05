@@ -1,19 +1,9 @@
+import { createDatabaseClient } from './lib/database.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import nextEnv from '@next/env'
-import pg from 'pg'
 
-nextEnv.loadEnvConfig(process.cwd())
-if (!process.env.DIRECT_URL) throw new Error('DIRECT_URL is required')
-const certificate = await fetch(
-  'https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt'
-)
-if (!certificate.ok) throw new Error('Cannot load database CA')
-const db = new pg.Client({
-  connectionString: process.env.DIRECT_URL,
-  ssl: { rejectUnauthorized: true, ca: await certificate.text() },
-})
+const db = await createDatabaseClient()
 async function denied(sql, args = []) {
   await db.query('savepoint denied')
   let rejected = false

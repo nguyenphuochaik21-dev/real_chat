@@ -21,18 +21,31 @@ test('live AI chat persists replies and isolates history between accounts', asyn
   const fixture = await provisionCallUsers(2)
   const otherContext = await browser.newContext()
   try {
+    const configured = await fixture.db.query(
+      `select a.name,c.auth_type from public.ai_agents a
+       join public.ai_connections c on c.agent_id=a.id
+       where a.enabled and a.available_to_users and a.archived_at is null
+       order by a.is_default desc, a.created_at limit 1`
+    )
+    const agent = configured.rows[0] as
+      { name: string; auth_type: 'none' | 'basic' | 'header_secret' } | undefined
+    expect(agent, 'A published AI agent is required for live testing').toBeDefined()
+    if (!agent) return
     await fixture.db.query("update public.profiles set role='admin' where id=$1", [
       fixture.users[0].id,
     ])
     await login(page, fixture.users[0])
     await page.goto('/admin/ai-agents')
-    await page.getByRole('button', { name: /Abbott AI/ }).click()
-    await expect(page.getByText('Đã lưu xác thực.', { exact: false })).toBeVisible()
-    await expect(page.getByLabel('Mật khẩu Basic Auth')).toHaveValue('')
+    await page.getByRole('button').filter({ hasText: agent.name }).first().click()
+    if (agent.auth_type === 'basic') {
+      await expect(page.getByLabel('Mật khẩu Basic Auth')).toHaveValue('')
+    } else if (agent.auth_type === 'header_secret') {
+      await expect(page.getByLabel('Secret', { exact: true })).toHaveValue('')
+    }
     await page.goto('/ai')
     await page
       .locator('article')
-      .filter({ hasText: 'Abbott AI' })
+      .filter({ hasText: agent.name })
       .getByRole('button', { name: 'Bắt đầu trò chuyện' })
       .click()
     await expect(page).toHaveURL(/\/ai\/[\da-f-]+$/)

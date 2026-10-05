@@ -1,11 +1,12 @@
 import { messageInput } from '@/lib/assistant/schema'
+import { N8nError } from '@/lib/ai/protocol'
+import { callN8n } from '@/lib/ai/server'
+import { watchAiCancellation } from '@/lib/ai/cancellation'
 import {
   AssistantError,
   assistantDb,
   checkOrigin,
   errorResponse,
-  invokeAssistant,
-  loadConfig,
   readBody,
   requireAssistantUser,
 } from '@/lib/assistant/server'
@@ -28,13 +29,14 @@ export async function POST(request: Request) {
       .single()
     const { data: conversation } = await supabase
       .from('conversations')
-      .select('type, created_by')
+      .select('type, created_by, ai_agent_id')
       .eq('id', conversationId)
       .single()
     if (!member || conversation?.type !== 'ai' || conversation.created_by !== user.id)
       throw new AssistantError('FORBIDDEN', 403)
     const db = assistantDb()
-    const { data: claimed, error } = await db.rpc('begin_chat_assistant_request', {
+    if (!conversation.ai_agent_id) throw new AssistantError('AI_DISABLED', 503)
+    const { data: claimed, error } = await db.rpc('begin_default_ai_assistant_request', {
       p_user_id: user.id,
       p_conversation_id: conversationId,
       p_id: requestId,
@@ -60,48 +62,66 @@ export async function POST(request: Request) {
         { status: previous?.status === 'processing' ? 202 : 200 }
       )
     }
+    let watcher: Awaited<ReturnType<typeof watchAiCancellation>> | undefined
     try {
-      const config = await loadConfig()
-      if (!config.enabled) throw new AssistantError('AI_DISABLED', 503)
-      const { data: saved } = await db
-        .from('messages')
-        .select('created_at')
-        .eq('id', requestId)
-        .single()
-      const response = await invokeAssistant(config, {
-        version: '1.0',
-        event: 'chat.message.created',
+      watcher = await watchAiCancellation(async () => {
+        const { data, error } = await db
+          .from('chat_assistant_requests')
+          .select('status')
+          .eq('id', requestId)
+          .single()
+        if (error) throw error
+        return data?.status ?? null
+      })
+      const response = await callN8n(conversation.ai_agent_id, conversationId, message, {
         requestId,
-        conversation: { id: conversationId },
-        session: { id: conversationId },
-        message: {
-          id: requestId,
-          text: message,
-          createdAt: saved?.created_at ?? new Date().toISOString(),
-        },
-        user: { id: user.id, role },
+        conversationId,
+        userId: user.id,
+        role,
+        channel: 'assistant',
+        signal: watcher.signal,
       })
       const { error: saveError } = await db.rpc('finish_chat_assistant_request', {
         p_id: requestId,
-        p_text: response.assistant.text,
+        p_text: response.text,
         p_metadata: {
-          format: response.assistant.format,
-          sources: response.assistant.sources ?? [],
+          format: response.format,
+          sources: response.sources,
+          attachments: response.attachments,
         },
       })
       if (saveError) throw new AssistantError('INTERNAL_ERROR', 500)
-      return Response.json({ status: 'completed', saved: true })
-    } catch (error) {
-      const code = error instanceof AssistantError ? error.code : 'INTERNAL_ERROR'
-      await db
+      const { data: finished, error: statusError } = await db
         .from('chat_assistant_requests')
-        .update({ status: 'failed', error_code: code })
+        .select('status')
         .eq('id', requestId)
-        .eq('status', 'processing')
+        .single()
+      if (statusError) throw new AssistantError('INTERNAL_ERROR', 500)
+      return Response.json({ status: finished.status, saved: true })
+    } catch (error) {
+      const code =
+        error instanceof AssistantError
+          ? error.code
+          : error instanceof N8nError
+            ? error.code
+            : 'INTERNAL_ERROR'
+      const { data: status, error: failError } = await db.rpc('fail_chat_assistant_request', {
+        p_id: requestId,
+        p_error: code,
+      })
+      if (failError) throw new AssistantError('INTERNAL_ERROR', 500)
+      if (status === 'cancelled' || status === 'completed') {
+        return Response.json({ status, saved: true })
+      }
       return Response.json(
         { error: code, saved: true },
-        { status: error instanceof AssistantError ? error.status : 500 }
+        {
+          status:
+            error instanceof AssistantError ? error.status : code === 'N8N_TIMEOUT' ? 504 : 502,
+        }
       )
+    } finally {
+      watcher?.dispose()
     }
   } catch (error) {
     return errorResponse(error)

@@ -2,19 +2,28 @@ import {
   assistantDb,
   checkOrigin,
   errorResponse,
-  loadConfig,
-  publicConfig,
   requireAssistantUser,
 } from '@/lib/assistant/server'
+import { getDefaultAiAgent } from '@/lib/ai/server'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
   try {
     await requireAssistantUser()
-    return Response.json(publicConfig(await loadConfig()), {
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    const agent = await getDefaultAiAgent()
+    return Response.json(
+      {
+        name: agent?.name ?? 'Chatly AI',
+        description: agent?.description ?? '',
+        avatar_url: agent?.avatar_url ?? '',
+        welcome_message: agent?.welcome_message ?? '',
+        enabled: Boolean(agent),
+      },
+      {
+        headers: { 'Cache-Control': 'no-store' },
+      }
+    )
   } catch (error) {
     return errorResponse(error)
   }
@@ -24,7 +33,12 @@ export async function POST(request: Request) {
   try {
     checkOrigin(request)
     const { user } = await requireAssistantUser()
-    const { data, error } = await assistantDb().rpc('open_chat_assistant', { p_user_id: user.id })
+    if (!(await getDefaultAiAgent())) {
+      return Response.json({ error: 'AI_DISABLED' }, { status: 503 })
+    }
+    const { data, error } = await assistantDb().rpc('open_default_ai_assistant', {
+      p_user_id: user.id,
+    })
     if (error)
       return Response.json(
         { error: error.message.includes('AI_DISABLED') ? 'AI_DISABLED' : 'INTERNAL_ERROR' },

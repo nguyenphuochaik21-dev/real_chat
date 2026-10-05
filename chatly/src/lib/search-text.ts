@@ -1,6 +1,15 @@
 const MAX_SEARCH_SNIPPET_LENGTH = 180
 const SEARCH_CONTEXT_BEFORE_MATCH = 64
 
+export function escapeSearchPattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&')
+}
+
+export function searchDateBoundary(value: string | undefined, endOfDay = false) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  return new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`).toISOString()
+}
+
 export function getSearchSnippet(text: string, query: string): string {
   if (text.length <= MAX_SEARCH_SNIPPET_LENGTH) return text
 

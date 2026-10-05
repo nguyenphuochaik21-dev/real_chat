@@ -9,6 +9,7 @@ import {
   MoreVertical,
   ArrowLeft,
   Send,
+  Square,
   Smile,
   Check,
   CheckCheck,
@@ -56,6 +57,34 @@ type Profile = PublicProfile
 type Conversation = Tables<'conversations'>
 type MessageAuthor = Pick<Profile, 'id' | 'display_name' | 'avatar_url' | 'is_verified'>
 type MessageContentType = 'text' | 'image' | 'video' | 'audio' | 'file' | 'call'
+
+type AssistantMessageStatus = {
+  status: 'processing' | 'completed' | 'failed' | 'cancelled'
+  errorCode?: string
+}
+
+function getAssistantMessageStatus(metadata: Message['metadata']): AssistantMessageStatus | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const status = metadata.ai_status
+  if (!['processing', 'completed', 'failed', 'cancelled'].includes(String(status))) return null
+  return {
+    status: status as AssistantMessageStatus['status'],
+    errorCode: typeof metadata.ai_error_code === 'string' ? metadata.ai_error_code : undefined,
+  }
+}
+
+function assistantFailureText(code?: string) {
+  if (code === 'N8N_TIMEOUT') return 'n8n phản hồi quá thời gian. Tin nhắn chưa được AI trả lời.'
+  if (code === 'N8N_INVALID_RESPONSE') return 'n8n trả về dữ liệu không hợp lệ.'
+  if (code === 'N8N_AUTH_FAILED') return 'n8n từ chối xác thực của trợ lý AI.'
+  if (code === 'N8N_WORKFLOW_ERROR') return 'Workflow n8n hoặc mô hình AI gặp lỗi khi xử lý.'
+  if (code === 'N8N_CONFIGURATION') return 'Kết nối n8n của trợ lý AI chưa được cấu hình đúng.'
+  if (code === 'AI_DISABLED') return 'Trợ lý AI đang tạm ngừng hoạt động.'
+  if (code === 'AI_NOT_CONFIGURED' || code === 'INVALID_WEBHOOK') {
+    return 'Trợ lý AI chưa được cấu hình đúng.'
+  }
+  return 'n8n hiện không phản hồi. Tin nhắn chưa được AI trả lời.'
+}
 
 const MESSAGE_PAGE_SIZE = 50
 const MAX_PENDING_ATTACHMENTS = 12
@@ -173,6 +202,7 @@ interface MessageBubbleProps {
   participant: MessageAuthor
   isFromMe: boolean
   currentUserId: string
+  isAdmin: boolean
   realtimeStatus?: string
   reactions?: { emoji: string; count: number; userReacted: boolean }[]
   onToggleReaction?: (emoji: string) => void
@@ -190,6 +220,7 @@ function MessageBubble({
   participant,
   isFromMe,
   currentUserId,
+  isAdmin,
   realtimeStatus,
   reactions = [],
   onToggleReaction,
@@ -206,6 +237,7 @@ function MessageBubble({
   const messageStatus = realtimeStatus || message.status || 'sent'
   const contentType = message.content_type as MessageContentType
   const isDeleted = !!message.deleted_at
+  const assistantStatus = getAssistantMessageStatus(message.metadata)
   const mediaCaption = (mediaGroup ?? [message]).find(
     (item) => item.content?.trim() && item.content !== item.media_name
   )?.content
@@ -300,6 +332,23 @@ function MessageBubble({
       )}
     </div>
   )
+
+  const renderAssistantStatus = () => {
+    if (assistantStatus?.status === 'cancelled') {
+      return <p className="mt-1 text-xs text-[var(--text-muted)]">Đã dừng phản hồi.</p>
+    }
+    if (assistantStatus?.status === 'processing') {
+      return <p className="mt-1 text-xs text-[var(--text-muted)]">AI đang xử lý…</p>
+    }
+    if (assistantStatus?.status === 'failed' && isAdmin) {
+      return (
+        <p role="alert" className="mt-1 max-w-sm text-xs text-amber-600 dark:text-amber-400">
+          {assistantFailureText(assistantStatus.errorCode)}
+        </p>
+      )
+    }
+    return null
+  }
 
   // Render deleted message placeholder
   if (isDeleted) {
@@ -467,8 +516,9 @@ function MessageBubble({
             <div className="relative pb-2">
               <div
                 className={cn(
-                  'max-w-full rounded-2xl px-4 py-2',
+                  'w-fit max-w-full rounded-2xl px-4 py-2',
                   isSticker && 'bg-transparent p-1',
+                  isFromMe && 'ml-auto',
                   isFromMe
                     ? !isSticker && 'bg-primary-500 rounded-br-md text-white'
                     : !isSticker && 'rounded-bl-md bg-[var(--bg-message-in)]'
@@ -499,6 +549,7 @@ function MessageBubble({
               />
             </div>
             {renderTimeAndStatus()}
+            {renderAssistantStatus()}
           </div>
         </div>
       </div>
@@ -509,6 +560,7 @@ function MessageBubble({
 interface ChatViewProps {
   conversationId: string | null
   currentUserId: string
+  isAdmin: boolean
   onBack?: () => void
   showBackButton?: boolean
   scrollToMessageId?: string
@@ -517,6 +569,7 @@ interface ChatViewProps {
 export function ChatView({
   conversationId,
   currentUserId,
+  isAdmin,
   onBack,
   showBackButton = false,
   scrollToMessageId,
@@ -530,12 +583,18 @@ export function ChatView({
   const getInput = useChatCacheStore((s) => s.getInput)
   const setInput = useChatCacheStore((s) => s.setInput)
   const cached = conversationId ? getCached(conversationId) : undefined
+  const summaryConversation = useChatsListStore(
+    (state) =>
+      state.conversations.find((item) => item.id === conversationId) ??
+      state.archivedConversations.find((item) => item.id === conversationId)
+  )
 
   const [messages, setMessages] = useState<Message[]>(cached?.messages || [])
   const [hasOlderMessages, setHasOlderMessages] = useState(cached?.hasOlderMessages ?? true)
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [participant, setParticipant] = useState<Profile | null>(cached?.participant || null)
   const [conversation, setConversation] = useState<Conversation | null>(null)
+  const [aiAgentName, setAiAgentName] = useState<string | null>(null)
   const [memberProfiles, setMemberProfiles] = useState<Map<string, Profile>>(new Map())
   const [memberCount, setMemberCount] = useState(0)
   const [showGroupDetails, setShowGroupDetails] = useState(false)
@@ -547,6 +606,14 @@ export function ChatView({
   // Show loading only if we don't have cached data
   const [loading, setLoading] = useState(!cached)
   const [sending, setSending] = useState(false)
+  const [stoppingAi, setStoppingAi] = useState(false)
+  const aiRequestRef = useRef<{
+    id: string
+    conversationId: string
+    content: string
+    controller: AbortController
+    discard: boolean
+  } | null>(null)
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   // Track the raw status + last_seen from realtime so we can recompute the
   // *effective* status (a stale "online" should show as offline).
@@ -560,6 +627,14 @@ export function ChatView({
   const participantStatus = resolvePresence(participantStatusRaw)
   const isGroup = conversation?.type === 'group'
   const isAi = conversation?.type === 'ai'
+  const displayedAiName =
+    summaryConversation?.ai_agent_name ?? aiAgentName ?? conversation?.title ?? 'Chatly AI'
+  const pendingAiMessage = isAi
+    ? messages.find(
+        (message) => getAssistantMessageStatus(message.metadata)?.status === 'processing'
+      )
+    : undefined
+  const aiWorking = isAi && (sending || Boolean(pendingAiMessage))
   const [showMediaGallery, setShowMediaGallery] = useState(false)
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
@@ -814,6 +889,21 @@ export function ChatView({
 
         const nextConversation = conversationResult.data
         setConversation(nextConversation)
+        if (nextConversation?.type === 'ai' && nextConversation.ai_agent_id) {
+          const { data: agent } = await supabase
+            .from('ai_agents')
+            .select('name, avatar_url')
+            .eq('id', nextConversation.ai_agent_id)
+            .maybeSingle()
+          if (agent) {
+            setAiAgentName(agent.name)
+            setConversation((current) =>
+              current?.id === nextConversation.id
+                ? { ...current, title: agent.name, avatar_url: agent.avatar_url }
+                : current
+            )
+          }
+        }
 
         const profiles = (membersResult.data ?? []).flatMap((member) => {
           const profile = (
@@ -1320,9 +1410,12 @@ export function ChatView({
   useEffect(() => {
     if (prevConversationIdRef.current === conversationId) return
     prevConversationIdRef.current = conversationId
+    if (aiRequestRef.current) aiRequestRef.current.discard = true
+    aiRequestRef.current = null
 
     const frameId = window.requestAnimationFrame(() => {
       setSending(false)
+      setStoppingAi(false)
       if (!conversationId) {
         setMessages([])
         setHasOlderMessages(false)
@@ -1539,6 +1632,11 @@ export function ChatView({
       const pendingContent = contentOverride ?? inputValue
       const attachments = contentOverride === undefined ? pendingAttachments : []
       if ((!pendingContent.trim() && attachments.length === 0) || !conversationId || sending) return
+      if (
+        isAi &&
+        (pendingAiMessage || stoppingAi || aiRequestRef.current?.conversationId === conversationId)
+      )
+        return
       if (isAi && (attachments.length > 0 || pendingContent.trim().length > 8000)) {
         addToast({
           type: 'system',
@@ -1550,25 +1648,26 @@ export function ChatView({
 
       stopTyping()
       setSending(true)
-      try {
-        const { data: canSend, error } = await supabase.rpc('can_send_message', {
-          p_conversation_id: conversationId,
-        })
-        if (error) throw error
-        if (!canSend) {
-          addToast({
-            type: 'system',
-            title: t('chat.sendFailed'),
-            body: t('chat.unavailable'),
+      if (!isAi)
+        try {
+          const { data: canSend, error } = await supabase.rpc('can_send_message', {
+            p_conversation_id: conversationId,
           })
+          if (error) throw error
+          if (!canSend) {
+            addToast({
+              type: 'system',
+              title: t('chat.sendFailed'),
+              body: t('chat.unavailable'),
+            })
+            setSending(false)
+            return
+          }
+        } catch {
+          addToast({ type: 'system', title: t('chat.sendFailed'), body: t('common.unknownError') })
           setSending(false)
           return
         }
-      } catch {
-        addToast({ type: 'system', title: t('chat.sendFailed'), body: t('common.unknownError') })
-        setSending(false)
-        return
-      }
       const content = pendingContent.trim()
       if (contentOverride === undefined) setInputValue('')
 
@@ -1645,6 +1744,29 @@ export function ChatView({
       setMessages((prev) => [...prev, optimisticMessage])
 
       if (isAi) {
+        clearReply()
+        clearDraft(conversationId)
+        const active = {
+          id: optimisticMessage.id,
+          conversationId,
+          content,
+          controller: new AbortController(),
+          discard: false,
+        }
+        aiRequestRef.current = active
+        setMessages((previous) =>
+          previous.map((message) =>
+            message.id === optimisticMessage.id
+              ? {
+                  ...message,
+                  metadata: {
+                    ai_request_id: optimisticMessage.id,
+                    ai_status: 'processing',
+                  },
+                }
+              : message
+          )
+        )
         try {
           const response = await fetch('/api/assistant/messages', {
             method: 'POST',
@@ -1654,38 +1776,88 @@ export function ChatView({
               requestId: optimisticMessage.id,
               message: content,
             }),
-            signal: AbortSignal.timeout(145000),
+            signal: AbortSignal.any([active.controller.signal, AbortSignal.timeout(145000)]),
           })
           const result = await response.json()
-          if (prevConversationIdRef.current !== conversationId) return
-          if (result.saved) {
-            clearReply()
-            clearDraft(conversationId)
-          }
+          if (active.discard || prevConversationIdRef.current !== conversationId) return
           if (!response.ok || result.error) {
             if (!result.saved) {
               setMessages((previous) =>
                 previous.filter((message) => message.id !== optimisticMessage.id)
               )
-              setInputValue(content)
+              setInputValue((draft) => draft || content)
+            } else {
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === optimisticMessage.id
+                    ? {
+                        ...message,
+                        metadata: {
+                          ai_request_id: optimisticMessage.id,
+                          ai_status: 'failed',
+                          ai_error_code: result.error ?? 'N8N_UNAVAILABLE',
+                        },
+                      }
+                    : message
+                )
+              )
             }
+            if (isAdmin) {
+              addToast({
+                type: 'system',
+                title: 'AI Assistant',
+                body: assistantFailureText(result.error),
+              })
+            }
+          }
+          if (response.ok && !result.error) {
+            setMessages((previous) =>
+              previous.map((message) =>
+                message.id === optimisticMessage.id
+                  ? {
+                      ...message,
+                      metadata: {
+                        ai_request_id: optimisticMessage.id,
+                        ai_status:
+                          result.status === 'cancelled'
+                            ? 'cancelled'
+                            : result.status === 'processing'
+                              ? 'processing'
+                              : 'completed',
+                      },
+                    }
+                  : message
+              )
+            )
+          }
+        } catch {
+          if (active.discard || prevConversationIdRef.current !== conversationId) return
+          setMessages((previous) =>
+            previous.map((message) =>
+              message.id === optimisticMessage.id
+                ? {
+                    ...message,
+                    metadata: {
+                      ai_request_id: optimisticMessage.id,
+                      ai_status: 'failed',
+                      ai_error_code: 'N8N_UNAVAILABLE',
+                    },
+                  }
+                : message
+            )
+          )
+          if (isAdmin) {
             addToast({
               type: 'system',
               title: 'AI Assistant',
-              body:
-                result.error === 'AI_DISABLED'
-                  ? 'Trợ lý AI hiện đang tạm ngừng hoạt động.'
-                  : 'Trợ lý hiện chưa thể phản hồi. Vui lòng thử lại.',
+              body: 'Chưa xác định được kết quả gửi. Kiểm tra lịch sử trước khi gửi lại.',
             })
           }
-        } catch {
-          addToast({
-            type: 'system',
-            title: 'AI Assistant',
-            body: 'Chưa xác định được kết quả gửi. Mở lại cuộc trò chuyện để kiểm tra lịch sử trước khi gửi lại.',
-          })
         } finally {
-          if (prevConversationIdRef.current === conversationId) setSending(false)
+          if (aiRequestRef.current === active) {
+            aiRequestRef.current = null
+            if (prevConversationIdRef.current === conversationId) setSending(false)
+          }
         }
         return
       }
@@ -1757,8 +1929,88 @@ export function ChatView({
       t,
       uploadBatch,
       isAi,
+      isAdmin,
+      pendingAiMessage,
+      stoppingAi,
     ]
   )
+
+  async function stopAiResponse() {
+    if (!conversationId || stoppingAi) return
+    const active = aiRequestRef.current
+    const target = active?.conversationId === conversationId ? active : pendingAiMessage
+    if (!target?.content) return
+    setStoppingAi(true)
+    try {
+      const response = await fetch('/api/ai/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({
+          id: target.id,
+          conversationId,
+          content: target.content,
+          channel: 'assistant',
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error('Chưa dừng được phản hồi. Hãy thử lại.')
+      if (active?.id === target.id && aiRequestRef.current === active) {
+        active.discard = true
+        active.controller.abort()
+        aiRequestRef.current = null
+      }
+      if (prevConversationIdRef.current !== conversationId) return
+      setSending(false)
+      if (result.n8n === 'failed') {
+        addToast({
+          type: 'system',
+          title: 'Đã dừng phản hồi trong Chatly',
+          body: 'Chưa xác nhận được n8n đã dừng. Hãy kiểm tra execution trong n8n.',
+        })
+      }
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === target.id
+            ? {
+                ...message,
+                metadata: {
+                  ai_request_id: target.id,
+                  ai_status: result.status,
+                },
+              }
+            : message
+        )
+      )
+      if (result.status === 'completed') {
+        const { data } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: false })
+          .limit(MESSAGE_PAGE_SIZE)
+        if (data && prevConversationIdRef.current === conversationId) {
+          setMessages((current) => {
+            const updated = new Map(current.map((message) => [message.id, message]))
+            data.forEach((message) => updated.set(message.id, message))
+            return [...updated.values()].sort((a, b) =>
+              (a.created_at ?? '').localeCompare(b.created_at ?? '')
+            )
+          })
+        }
+      }
+    } catch (error) {
+      if (prevConversationIdRef.current === conversationId) {
+        addToast({
+          type: 'system',
+          title: 'AI Assistant',
+          body: error instanceof Error ? error.message : 'Chưa dừng được phản hồi.',
+        })
+      }
+    } finally {
+      if (prevConversationIdRef.current === conversationId) setStoppingAi(false)
+    }
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
@@ -2228,7 +2480,6 @@ export function ChatView({
             }}
             className="h-9 w-9 sm:h-10 sm:w-10"
             aria-label={t('chat.options')}
-            disabled={isAi}
           >
             {isGroup ? <UsersRound className="h-5 w-5" /> : <MoreVertical className="h-5 w-5" />}
           </Button>
@@ -2265,7 +2516,7 @@ export function ChatView({
               : null) ||
               participant || {
                 id: message.sender_id || 'unknown',
-                display_name: isAi ? conversation?.title || 'Chatly AI' : t('common.user'),
+                display_name: isAi ? displayedAiName : t('common.user'),
                 avatar_url: isAi ? conversation?.avatar_url || null : null,
               }
             // Get realtime status for this message
@@ -2304,6 +2555,7 @@ export function ChatView({
                   participant={messageAuthor}
                   isFromMe={isFromMe}
                   currentUserId={currentUserId}
+                  isAdmin={isAdmin}
                   realtimeStatus={realtimeStatus}
                   reactions={messageReactions.get(message.id) || []}
                   onToggleReaction={(emoji) => handleToggleReaction(message.id, emoji)}
@@ -2326,13 +2578,24 @@ export function ChatView({
                   }}
                   showSenderName={isGroup && showAvatar}
                 />
+                {isAi &&
+                  !isAdmin &&
+                  getAssistantMessageStatus(message.metadata)?.status === 'failed' && (
+                    <div className="mt-1 ml-10 w-fit max-w-[80%] rounded-2xl rounded-bl-md bg-[var(--bg-message-in)] px-4 py-3 text-sm [overflow-wrap:anywhere]">
+                      <p className="mb-1 text-xs font-semibold text-[var(--text-secondary)]">
+                        {displayedAiName}
+                      </p>
+                      Hệ thống đang gián đoạn kỹ thuật nhỏ nên bạn vui lòng nhắn lại sau ít phút
+                      nhé! Cảm ơn bạn đã thông cảm và chờ đợi.
+                    </div>
+                  )}
               </div>
             )
           })}
           <div ref={messagesEndRef} />
-          {isAi && sending && (
+          {aiWorking && (
             <p role="status" className="px-4 py-2 text-sm text-[var(--text-muted)]">
-              {conversation?.title || 'Chatly AI'} đang trả lời...
+              {displayedAiName} đang trả lời...
             </p>
           )}
         </div>
@@ -2436,7 +2699,7 @@ export function ChatView({
                 onPaste={isAi ? undefined : handlePaste}
                 enterKeyHint="enter"
                 className="focus:ring-primary-500 block min-h-10 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:ring-2 focus:ring-offset-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={sending || uploading}
+                disabled={(!isAi && sending) || uploading}
                 aria-label={editingMessage ? t('chat.editMessage') : t('chat.typeMessage')}
               />
             </div>
@@ -2455,24 +2718,41 @@ export function ChatView({
               </Button>
             )}
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handleSend()}
-              disabled={
-                (!inputValue.trim() && pendingAttachments.length === 0) || sending || uploading
-              }
-              className={cn(
-                'h-9 w-9 shrink-0 transition-all sm:h-10 sm:w-10',
-                (inputValue.trim() || pendingAttachments.length > 0) &&
-                  !sending &&
-                  !uploading &&
-                  'bg-primary-500 hover:bg-primary-600 text-white'
-              )}
-              aria-label={t('chat.send')}
-            >
-              {editingMessage ? <Pencil className="h-5 w-5" /> : <Send className="h-5 w-5" />}
-            </Button>
+            {aiWorking ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void stopAiResponse()}
+                disabled={stoppingAi}
+                className="bg-primary-500 hover:bg-primary-600 h-9 w-9 shrink-0 text-white sm:h-10 sm:w-10"
+                aria-label="Dừng phản hồi"
+                title="Dừng phản hồi"
+              >
+                <Square className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleSend()}
+                disabled={
+                  (!inputValue.trim() && pendingAttachments.length === 0) ||
+                  sending ||
+                  uploading ||
+                  stoppingAi
+                }
+                className={cn(
+                  'h-9 w-9 shrink-0 transition-all sm:h-10 sm:w-10',
+                  (inputValue.trim() || pendingAttachments.length > 0) &&
+                    !sending &&
+                    !uploading &&
+                    'bg-primary-500 hover:bg-primary-600 text-white'
+                )}
+                aria-label={t('chat.send')}
+              >
+                {editingMessage ? <Pencil className="h-5 w-5" /> : <Send className="h-5 w-5" />}
+              </Button>
+            )}
           </div>
           {uploading && (
             <p className="mt-1 text-center text-xs text-[var(--text-muted)]">
@@ -2559,7 +2839,7 @@ export function ChatView({
       )}
 
       {/* Conversation Actions Menu */}
-      {showConversationActions && (participant || (isGroup && conversation)) && (
+      {showConversationActions && (participant || ((isGroup || isAi) && conversation)) && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowConversationActions(false)} />
           <div
@@ -2571,7 +2851,9 @@ export function ChatView({
               conversationTitle={
                 isGroup
                   ? conversation?.title || t('group.tab')
-                  : participant?.display_name || t('common.user')
+                  : isAi
+                    ? displayedAiName
+                    : participant?.display_name || t('common.user')
               }
               isPinned={conversationFlags.is_pinned}
               isMuted={conversationFlags.is_muted}
@@ -2581,7 +2863,7 @@ export function ChatView({
               onOpenMedia={() => {
                 setShowMediaGallery(true)
               }}
-              onCreateGroup={isGroup ? undefined : () => setShowCreateGroup(true)}
+              onCreateGroup={isGroup || isAi ? undefined : () => setShowCreateGroup(true)}
               onDeleted={() => {
                 useChatsListStore.getState().removeConversation(conversationId)
                 useChatCacheStore.getState().clearCache(conversationId)
@@ -2589,7 +2871,7 @@ export function ChatView({
                 router.refresh()
               }}
               onBlock={
-                isGroup || !participant || isParticipantBlocked
+                isGroup || isAi || !participant || isParticipantBlocked
                   ? undefined
                   : () => {
                       setUserToBlock(participant)

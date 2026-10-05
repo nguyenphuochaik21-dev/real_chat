@@ -29,6 +29,20 @@ export const assistantResponse = z.object({
       )
       .max(20)
       .optional(),
+    attachments: z
+      .array(
+        z.object({
+          type: z.enum(['image', 'audio', 'file', 'link']),
+          url: z.url().refine((value) => value.startsWith('https://')),
+          name: z.string().trim().min(1).max(300).optional(),
+          title: z.string().trim().min(1).max(300).optional(),
+          mimeType: z.string().trim().max(150).optional(),
+          size: z.number().int().nonnegative().max(52_428_800).optional(),
+          altText: z.string().trim().max(500).optional(),
+        })
+      )
+      .max(12)
+      .optional(),
   }),
 })
 
@@ -68,14 +82,41 @@ export interface AssistantConfig {
 
 export type AdminAssistantConfig = Omit<AssistantConfig, 'connection_encrypted'> & {
   configured: boolean
+  secret_configured: boolean
+  endpoint_hostname: string | null
+  last_connection_test_at: string | null
+  history: AssistantAuditEntry[]
+}
+
+export const assistantAuditActions = [
+  'ai_config_updated',
+  'ai_enabled',
+  'ai_disabled',
+  'ai_webhook_updated',
+  'ai_connection_test_succeeded',
+  'ai_connection_test_failed',
+  'ai_agent_created',
+  'ai_agent_updated',
+  'ai_agent_test_succeeded',
+  'ai_agent_test_failed',
+] as const
+
+export type AssistantAuditAction = (typeof assistantAuditActions)[number]
+
+export interface AssistantAuditEntry {
+  id: string
+  admin_id: string | null
+  action: AssistantAuditAction
+  details: Record<string, unknown>
+  created_at: string
 }
 
 export interface AiChatRequest {
-  version: '1.0'
+  version: '1.0' | '1.1'
   event: 'chat.message.created' | 'connection.test'
   requestId: string
   conversation: { id: string }
-  message: { id: string; text: string; createdAt: string }
+  message: { id: string; text: string; createdAt: string; attachments?: [] }
   user: { id: string; role: 'USER' | 'ADMIN' }
   session: { id: string }
 }

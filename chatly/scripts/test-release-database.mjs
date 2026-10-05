@@ -1,18 +1,7 @@
+import { createDatabaseClient } from './lib/database.mjs'
 import assert from 'node:assert/strict'
-import nextEnv from '@next/env'
-import pg from 'pg'
 
-nextEnv.loadEnvConfig(process.cwd())
-if (!process.env.DIRECT_URL) throw new Error('DIRECT_URL is required')
-const caResponse = await fetch(
-  'https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt',
-  { signal: AbortSignal.timeout(10_000) }
-)
-if (!caResponse.ok) throw new Error('Could not load database CA')
-const db = new pg.Client({
-  connectionString: process.env.DIRECT_URL,
-  ssl: { rejectUnauthorized: true, ca: await caResponse.text() },
-})
+const db = await createDatabaseClient()
 let checks = 0
 let phase = 'setup'
 async function asUser(id) {
@@ -161,6 +150,34 @@ try {
     0
   )
   checks++
+  phase = 'search pagination with identical timestamps'
+  await db.query(
+    "insert into public.messages(conversation_id,sender_id,content) select $1,$2,'paginationprobe ' || n from generate_series(1,45) n",
+    [group, owner]
+  )
+  const searchPage = (offset) =>
+    db.query('select * from public.search_messages($1,$2,$3,null,null,null,20,$4)', [
+      owner,
+      'paginationprobe',
+      group,
+      offset,
+    ])
+  const pages = [await searchPage(0), await searchPage(20), await searchPage(40)]
+  assert.deepEqual(
+    pages.map((page) => page.rowCount),
+    [20, 20, 5]
+  )
+  assert.equal(new Set(pages.flatMap((page) => page.rows.map((row) => row.id))).size, 45)
+  checks++
+  await denied('select * from public.search_messages($1,$2)', [member, 'paginationprobe'])
+  await asUser(outsider)
+  assert.equal(
+    (await db.query('select * from public.search_messages($1,$2)', [outsider, 'paginationprobe']))
+      .rowCount,
+    0
+  )
+  checks++
+  await asUser(owner)
   phase = 'suspended account cannot send messages'
   await db.query('reset role')
   await db.query('update public.profiles set is_suspended=true where id=$1', [member])

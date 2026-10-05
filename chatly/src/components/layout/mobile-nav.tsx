@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Users, Phone, Settings } from 'lucide-react'
+import { Bot, MessageSquare, Users, Phone, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/lib/i18n'
 import { useFriendshipStore } from '@/stores/friendship-store'
@@ -10,6 +10,7 @@ import { useNavigationBadgesStore } from '@/stores/navigation-badges-store'
 
 const items = [
   { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
+  { href: '/ai', icon: Bot, labelKey: 'nav.ai' },
   { href: '/contacts', icon: Users, labelKey: 'nav.contacts' },
   { href: '/calls', icon: Phone, labelKey: 'nav.calls' },
   { href: '/settings', icon: Settings, labelKey: 'nav.settings' },

@@ -6,7 +6,7 @@ import { requireAiUser } from '@/lib/ai/server'
 export default async function AiConversationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   if (!z.uuid().safeParse(id).success) notFound()
-  const { supabase } = await requireAiUser()
+  const { supabase, isAdmin } = await requireAiUser()
   const { data: conversation } = await supabase
     .from('ai_conversations')
     .select('*')
@@ -14,7 +14,9 @@ export default async function AiConversationPage({ params }: { params: Promise<{
     .single()
   if (!conversation) notFound()
   const [{ data: agent }, { data: turns, error }] = await Promise.all([
-    supabase.from('ai_agents').select('*').eq('id', conversation.agent_id).single(),
+    conversation.agent_id
+      ? supabase.from('ai_agents').select('*').eq('id', conversation.agent_id).single()
+      : Promise.resolve({ data: null }),
     supabase
       .from('ai_turns')
       .select('*')
@@ -25,6 +27,15 @@ export default async function AiConversationPage({ params }: { params: Promise<{
   ])
   if (error) throw new Error('Không tải được lịch sử AI.')
   return (
-    <AiChat key={id} conversationId={id} agent={agent} initialTurns={(turns ?? []).reverse()} />
+    <AiChat
+      key={id}
+      conversationId={id}
+      isAdmin={isAdmin}
+      agent={agent}
+      agentName={
+        conversation.agent_id ? (conversation.agent_name ?? 'Trợ lý AI') : 'Trợ lý AI trước đây'
+      }
+      initialTurns={(turns ?? []).reverse()}
+    />
   )
 }

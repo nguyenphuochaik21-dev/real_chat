@@ -121,11 +121,12 @@ function SearchFiltersBar({
       </div>
 
       {showDatePicker && (
-        <div className="mt-2 flex items-center gap-2 rounded-lg bg-[var(--bg-panel)] p-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--bg-panel)] p-2">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-[var(--text-muted)]">{t('search.from')}:</span>
             <input
               type="date"
+              aria-label={t('search.from')}
               value={tempDateFrom}
               onChange={(e) => setTempDateFrom(e.target.value)}
               className="rounded border border-[var(--border-default)] bg-[var(--bg-input)] px-2 py-1 text-xs"
@@ -135,6 +136,7 @@ function SearchFiltersBar({
             <span className="text-xs text-[var(--text-muted)]">{t('search.to')}:</span>
             <input
               type="date"
+              aria-label={t('search.to')}
               value={tempDateTo}
               onChange={(e) => setTempDateTo(e.target.value)}
               className="rounded border border-[var(--border-default)] bg-[var(--bg-input)] px-2 py-1 text-xs"
@@ -191,7 +193,7 @@ function SearchResultItem({
             <span className="text-xs font-medium text-[var(--text-secondary)]">
               {result.conversation_title || t('chat.selectConversation')}
             </span>
-            <span className="text-xs text-[var(--text-muted)]">
+            <span className="text-xs text-[var(--text-secondary)]">
               {formatSearchDate(result.created_at, dateLocale, t('search.yesterday'))}
             </span>
           </div>
@@ -201,7 +203,7 @@ function SearchResultItem({
           </p>
 
           {isFromMe && (
-            <span className="mt-1 text-xs text-[var(--text-muted)]">{t('common.you')}</span>
+            <span className="mt-1 text-xs text-[var(--text-secondary)]">{t('common.you')}</span>
           )}
         </div>
       </div>
@@ -220,19 +222,52 @@ export function SearchModal({
   const { t } = useI18n()
   const [inputValue, setInputValue] = useState('')
   const [activeTab, setActiveTab] = useState<'messages' | 'contacts'>('messages')
-  const [filters, setSearchFilters] = useState<{
-    dateFrom?: string
-    dateTo?: string
-    senderId?: string
-  }>({})
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  }, [onClose])
   const {
     state,
     search,
     searchContacts,
     setFilters: updateFilters,
     clearSearch,
+    loadMore,
+    hasMore,
   } = useSearch(conversationId)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const previousFocus = document.activeElement
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeRef.current()
+      }
+      if (event.key !== 'Tab') return
+      const elements = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), a[href], [tabindex="0"]'
+        ) ?? []
+      ).filter((element) => element.getClientRects().length > 0)
+      const first = elements[0]
+      const last = elements.at(-1)
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus()
+    }
+  }, [isOpen])
 
   // Focus input when modal opens
   useEffect(() => {
@@ -262,7 +297,6 @@ export function SearchModal({
     dateTo?: string
     senderId?: string
   }) => {
-    setSearchFilters(newFilters)
     updateFilters(newFilters)
   }
 
@@ -286,12 +320,16 @@ export function SearchModal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 sm:pt-20">
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('search.messages')}
         className="flex h-full w-full flex-col overflow-hidden bg-[var(--bg-panel)] shadow-2xl sm:mx-4 sm:h-auto sm:max-h-[calc(100dvh-10rem)] sm:max-w-2xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-[var(--border-default)] p-4">
-          <Button variant="ghost" size="icon-sm" onClick={onClose}>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t('common.close')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
 
@@ -300,6 +338,8 @@ export function SearchModal({
             <Input
               ref={inputRef}
               type="text"
+              aria-label={conversationId ? t('search.placeholder') : t('search.globalPlaceholder')}
+              maxLength={200}
               placeholder={conversationId ? t('search.placeholder') : t('search.globalPlaceholder')}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
@@ -307,6 +347,7 @@ export function SearchModal({
             />
             {inputValue && (
               <button
+                aria-label={t('common.clear')}
                 onClick={() => setInputValue('')}
                 className="absolute top-1/2 right-3 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
@@ -348,7 +389,13 @@ export function SearchModal({
 
         {/* Filters (messages tab only) */}
         {activeTab === 'messages' && (
-          <SearchFiltersBar filters={filters} onFiltersChange={handleFiltersChange} />
+          <SearchFiltersBar filters={state.filters} onFiltersChange={handleFiltersChange} />
+        )}
+
+        {state.error && (
+          <p role="alert" className="px-4 py-2 text-sm text-[var(--text-primary)]">
+            {state.error}
+          </p>
         )}
 
         {/* Results */}
@@ -362,7 +409,7 @@ export function SearchModal({
             state.results.length > 0 ? (
               <div className="py-2">
                 <p className="px-4 py-2 text-xs text-[var(--text-muted)]">
-                  {t('search.results', { count: state.total })}
+                  {t('search.results', { count: hasMore ? `${state.total}+` : state.total })}
                 </p>
                 {state.results.map((result) => (
                   <SearchResultItem
@@ -373,6 +420,17 @@ export function SearchModal({
                     onClick={() => handleSelectMessage(result)}
                   />
                 ))}
+                {hasMore && (
+                  <div className="flex justify-center p-3">
+                    <Button
+                      variant="ghost"
+                      onClick={() => void loadMore()}
+                      disabled={state.loading}
+                    >
+                      {t('search.loadMore')}
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : inputValue.trim() ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">

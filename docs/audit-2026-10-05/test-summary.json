@@ -1,0 +1,861 @@
+{
+  "note": "Latest result per test across the full run and targeted reruns; not a single all-green full-suite run.",
+  "totals": {
+    "expected": 104,
+    "skipped": 11
+  },
+  "runs": [
+    {
+      "report": "system-audit-final.json",
+      "startTime": "2026-10-04T22:27:39.481Z",
+      "duration": 397971.864,
+      "expected": 98,
+      "skipped": 11,
+      "unexpected": 6,
+      "flaky": 0
+    },
+    {
+      "report": "audit-regressions.json",
+      "startTime": "2026-10-04T22:30:38.626Z",
+      "duration": 307055.056,
+      "expected": 1,
+      "skipped": 1,
+      "unexpected": 4,
+      "flaky": 0
+    },
+    {
+      "report": "audit-confirmation.json",
+      "startTime": "2026-10-05T11:34:56.224Z",
+      "duration": 118147.67700000001,
+      "expected": 3,
+      "skipped": 0,
+      "unexpected": 3,
+      "flaky": 0
+    },
+    {
+      "report": "audit-final-regressions.json",
+      "startTime": "2026-10-05T11:37:47.722Z",
+      "duration": 58613.83,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 2,
+      "flaky": 0
+    },
+    {
+      "report": "audit-ai-confirmed.json",
+      "startTime": "2026-10-05T11:38:50.821Z",
+      "duration": 26518.862,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    }
+  ],
+  "tests": [
+    {
+      "file": "admin-pagination.spec.ts",
+      "test": "admin accounts paginate without duplicates and search treats symbols literally",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "admin-pagination.spec.ts",
+      "test": "admin accounts paginate without duplicates and search treats symbols literally",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "n8n receives chat protocol and server authentication",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "n8n rejects redirects, oversized and malformed replies without leaking upstream body",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "legacy assistant response and request remain compatible",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "pinned transport sends header authentication and blocks private network targets",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "AI pages require login and API rejects unauthenticated/cross-origin requests",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "n8n receives chat protocol and server authentication",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "n8n rejects redirects, oversized and malformed replies without leaking upstream body",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "legacy assistant response and request remain compatible",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "pinned transport sends header authentication and blocks private network targets",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-agents.spec.ts",
+      "test": "AI pages require login and API rejects unauthenticated/cross-origin requests",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-cancellation.spec.ts",
+      "test": "AI composers retain drafts while responding and Stop persists cancellation",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-cancellation.spec.ts",
+      "test": "Stop closes the webhook request and late output cannot complete either chat",
+      "project": "chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-cancellation.spec.ts",
+      "test": "AI composers retain drafts while responding and Stop persists cancellation",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-cancellation.spec.ts",
+      "test": "Stop closes the webhook request and late output cannot complete either chat",
+      "project": "mobile-chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-canonical.spec.ts",
+      "test": "canonical AI pages preserve selected and default agents independently",
+      "project": "chromium",
+      "status": "expected",
+      "report": "audit-ai-confirmed.json"
+    },
+    {
+      "file": "ai-canonical.spec.ts",
+      "test": "canonical AI pages preserve selected and default agents independently",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "audit-ai-confirmed.json"
+    },
+    {
+      "file": "ai-live.spec.ts",
+      "test": "live AI chat persists replies and isolates history between accounts",
+      "project": "chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "ai-live.spec.ts",
+      "test": "live AI chat persists replies and isolates history between accounts",
+      "project": "mobile-chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login is responsive and has no serious accessibility violations",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login loads auth on demand and reports rejected credentials",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login reports a completed sign-out",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "PWA manifest and generated icons are available",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "responses include browser security headers",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "protected settings redirect anonymous visitors to login",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "offline fallback is readable on a narrow screen",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login is responsive and has no serious accessibility violations",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login loads auth on demand and reports rejected credentials",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login reports a completed sign-out",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "PWA manifest and generated icons are available",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "responses include browser security headers",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "protected settings redirect anonymous visitors to login",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "offline fallback is readable on a narrow screen",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login does not report a PWA registration error",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "app-shell.spec.ts",
+      "test": "login does not report a PWA registration error",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "legacy admin API rejects ordinary and suspended users",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "legacy admin API cannot mutate a second AI configuration",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "message route rejects human before calling the gateway",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "message route rejects other-owner before calling the gateway",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "message route rejects unauthenticated before calling the gateway",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "legacy admin API rejects ordinary and suspended users",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "legacy admin API cannot mutate a second AI configuration",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "message route rejects human before calling the gateway",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "message route rejects other-owner before calling the gateway",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "assistant-rbac.spec.ts",
+      "test": "message route rejects unauthenticated before calling the gateway",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "blocked-chat.spec.ts",
+      "test": "blocking preserves active and archived conversations through refresh and realtime updates",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "blocked-chat.spec.ts",
+      "test": "blocked chat stays visible after reload, keeps history and can be unblocked",
+      "project": "chromium",
+      "status": "expected",
+      "report": "audit-regressions.json"
+    },
+    {
+      "file": "blocked-chat.spec.ts",
+      "test": "blocking preserves active and archived conversations through refresh and realtime updates",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "blocked-chat.spec.ts",
+      "test": "blocked chat stays visible after reload, keeps history and can be unblocked",
+      "project": "mobile-chromium",
+      "status": "skipped",
+      "report": "audit-regressions.json"
+    },
+    {
+      "file": "call-flow.spec.ts",
+      "test": "contacts, voice, video, decline and 45-second missed call",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-flow.spec.ts",
+      "test": "contacts, voice, video, decline and 45-second missed call",
+      "project": "mobile-chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "call metadata is safe for missing, legacy and invalid durations",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "call timer counts elapsed time and excludes the ringing period",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "unsupported preview hosts and alternate ports never trigger preview fetches",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "push configuration exposes only public readiness information",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "call notification click focuses the current window without reloading a live call",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "call metadata is safe for missing, legacy and invalid durations",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "call timer counts elapsed time and excludes the ringing period",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "unsupported preview hosts and alternate ports never trigger preview fetches",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "push configuration exposes only public readiness information",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "call-reliability.spec.ts",
+      "test": "call notification click focuses the current window without reloading a live call",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "authenticated n8n request preserves IDs and stable conversation session",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /timeout returns sanitized N8N_TIMEOUT",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /500 returns sanitized N8N_UNAVAILABLE",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /redirect returns sanitized N8N_UNAVAILABLE",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /invalid-json returns sanitized N8N_INVALID_RESPONSE",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /invalid-schema returns sanitized N8N_INVALID_RESPONSE",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /mismatch returns sanitized N8N_INVALID_RESPONSE",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /large returns sanitized N8N_INVALID_RESPONSE",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "URL allowlist and resolved addresses reject SSRF",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "credentials are authenticated encrypted and tampering fails",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "input rejects empty, oversized and spoofed fields",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "unauthenticated APIs reject access and cross-origin writes fail",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "authenticated n8n request preserves IDs and stable conversation session",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /timeout returns sanitized N8N_TIMEOUT",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /500 returns sanitized N8N_UNAVAILABLE",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /redirect returns sanitized N8N_UNAVAILABLE",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /invalid-json returns sanitized N8N_INVALID_RESPONSE",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /invalid-schema returns sanitized N8N_INVALID_RESPONSE",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /mismatch returns sanitized N8N_INVALID_RESPONSE",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "n8n /large returns sanitized N8N_INVALID_RESPONSE",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "URL allowlist and resolved addresses reject SSRF",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "credentials are authenticated encrypted and tampering fails",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "input rejects empty, oversized and spoofed fields",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-assistant.spec.ts",
+      "test": "unauthenticated APIs reject access and cross-origin writes fail",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-ux.spec.ts",
+      "test": "search loads all pages, fits date filters and blocks suspended AI navigation",
+      "project": "chromium",
+      "status": "expected",
+      "report": "audit-final-regressions.json"
+    },
+    {
+      "file": "chat-ux.spec.ts",
+      "test": "mobile layout, empty media, group options and independent sign-out",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-ux.spec.ts",
+      "test": "authenticated pages fit the viewport and have accessible controls",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-ux.spec.ts",
+      "test": "search loads all pages, fits date filters and blocks suspended AI navigation",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "audit-final-regressions.json"
+    },
+    {
+      "file": "chat-ux.spec.ts",
+      "test": "mobile layout, empty media, group options and independent sign-out",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "chat-ux.spec.ts",
+      "test": "authenticated pages fit the viewport and have accessible controls",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "deletion-storage.spec.ts",
+      "test": "avatar replacement and owner-only group deletion reclaim storage",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "deletion-storage.spec.ts",
+      "test": "personal chat deletion, shared attachments, physical cleanup and downloads",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "deletion-storage.spec.ts",
+      "test": "avatar replacement and owner-only group deletion reclaim storage",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "deletion-storage.spec.ts",
+      "test": "personal chat deletion, shared attachments, physical cleanup and downloads",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "display-name.spec.ts",
+      "test": "chat header keeps the first and last parts of a long name",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "display-name.spec.ts",
+      "test": "chat header keeps the first and last parts of a long name",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "friend-actions.spec.ts",
+      "test": "friend search, fast actions, and realtime notifications",
+      "project": "chromium",
+      "status": "expected",
+      "report": "audit-confirmation.json"
+    },
+    {
+      "file": "friend-actions.spec.ts",
+      "test": "friend search, fast actions, and realtime notifications",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "audit-confirmation.json"
+    },
+    {
+      "file": "group-chat.spec.ts",
+      "test": "creates, opens, manages, and deletes a group",
+      "project": "chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "image-proxy-security.spec.ts",
+      "test": "image proxy rejects untrusted or unusual upstream URLs",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "image-proxy-security.spec.ts",
+      "test": "image proxy rejects untrusted or unusual upstream URLs",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "media-preview.spec.ts",
+      "test": "private document opens in chat and gallery while download still works",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "media-preview.spec.ts",
+      "test": "private document opens in chat and gallery while download still works",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "n8n-live-cancellation.spec.ts",
+      "test": "live n8n cancels both chat channels and uses only completed history",
+      "project": "chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "n8n-live-cancellation.spec.ts",
+      "test": "live n8n cancels both chat channels and uses only completed history",
+      "project": "mobile-chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "n8n-stop.spec.ts",
+      "test": "n8n stop uses the registered execution and catches registration after cancellation",
+      "project": "chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "n8n-stop.spec.ts",
+      "test": "n8n stop uses the registered execution and catches registration after cancellation",
+      "project": "mobile-chromium",
+      "status": "skipped",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "registration.spec.ts",
+      "test": "registration validates name limits and matching passwords",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "registration.spec.ts",
+      "test": "registration caps input and rejects mismatched passwords before signup",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "registration.spec.ts",
+      "test": "registration validates name limits and matching passwords",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "registration.spec.ts",
+      "test": "registration caps input and rejects mismatched passwords before signup",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "session-redirect.spec.ts",
+      "test": "auth redirects preserve refreshed cookies and prevent shared caching",
+      "project": "chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    },
+    {
+      "file": "session-redirect.spec.ts",
+      "test": "auth redirects preserve refreshed cookies and prevent shared caching",
+      "project": "mobile-chromium",
+      "status": "expected",
+      "report": "system-audit-final.json"
+    }
+  ]
+}

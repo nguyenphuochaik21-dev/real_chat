@@ -4,6 +4,7 @@ import type { PublicProfile, Tables } from '@/types'
 type Message = Tables<'messages'>
 
 export interface ConversationSummary extends Tables<'conversations'> {
+  ai_agent_name: string | null
   participant: PublicProfile | null
   group_members: PublicProfile[]
   last_message: Message | null
@@ -35,6 +36,8 @@ export function parseConversationSummaries(value: Json | null): ConversationSumm
         title: nullableString(item.title),
         avatar_url: nullableString(item.avatar_url),
         created_by: nullableString(item.created_by),
+        ai_agent_id: nullableString(item.ai_agent_id),
+        ai_agent_name: nullableString(item.ai_agent_name),
         join_requires_approval: item.join_requires_approval === true,
         last_message_at: nullableString(item.last_message_at),
         share_token: nullableString(item.share_token),

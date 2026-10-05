@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname, useRouter } from 'next/navigation'
-import { MessageSquare, Users, Phone, Settings, Search, ShieldCheck } from 'lucide-react'
+import { Bot, MessageSquare, Users, Phone, Settings, Search, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/avatar'
 import { usePresence } from '@/hooks/use-presence'
@@ -20,6 +20,7 @@ const SearchModal = dynamic(() =>
 
 const navItems = [
   { href: '/chats', icon: MessageSquare, labelKey: 'nav.chats' },
+  { href: '/ai', icon: Bot, labelKey: 'nav.ai' },
   { href: '/contacts', icon: Users, labelKey: 'nav.contacts' },
   { href: '/calls', icon: Phone, labelKey: 'nav.calls' },
   { href: '/settings', icon: Settings, labelKey: 'nav.settings' },

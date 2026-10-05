@@ -5,6 +5,7 @@ import type { Tables } from '@/types'
 import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
 import { z } from 'zod'
+import { escapeSearchPattern } from '@/lib/search-text'
 
 export type Message = Tables<'messages'>
 export type PublicProfile = Pick<
@@ -35,6 +36,7 @@ export interface SearchFilters {
 export interface SearchResults {
   results: SearchResult[]
   total: number
+  hasMore: boolean
   query: string
 }
 
@@ -53,13 +55,13 @@ export async function searchMessages(
   offset = 0
 ): Promise<SearchResults> {
   if (!query.trim()) {
-    return { results: [], total: 0, query: '' }
+    return { results: [], total: 0, hasMore: false, query: '' }
   }
 
   const searchQuery = parseInput(searchQuerySchema, query)
   const safeFilters = parseInput(searchFiltersSchema, filters)
-  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100)
-  const safeOffset = Math.max(Math.trunc(offset), 0)
+  const safeLimit = parseInput(z.number().int().min(1).max(100), limit)
+  const safeOffset = parseInput(z.number().int().min(0).max(1_000_000), offset)
 
   const supabase = await createClient()
 
@@ -80,20 +82,26 @@ export async function searchMessages(
       p_sender_id: safeFilters.senderId || null,
       p_date_from: safeFilters.dateFrom || null,
       p_date_to: safeFilters.dateTo || null,
-      p_limit: safeLimit,
+      p_limit: safeLimit + 1,
       p_offset: safeOffset,
     })
 
     if (error) {
       console.error('Search error:', error)
-      const functionMissing = error.code === 'PGRST202' || error.message.includes('search_messages')
+      const functionMissing = error.code === 'PGRST202'
       if (functionMissing) {
         return fallbackSearch(supabase, user.id, searchQuery, safeFilters, safeLimit, safeOffset)
       }
       throw error
     }
 
-    return { results: data ?? [], total: data?.length ?? 0, query: searchQuery }
+    const results = (data ?? []).slice(0, safeLimit)
+    return {
+      results,
+      total: safeOffset + results.length,
+      hasMore: (data?.length ?? 0) > safeLimit,
+      query: searchQuery,
+    }
   } catch (err) {
     console.error('Search error:', err)
     throw err
@@ -119,7 +127,7 @@ async function fallbackSearch(
   const conversationIds = participations?.map((p) => p.conversation_id) || []
 
   if (conversationIds.length === 0) {
-    return { results: [], total: 0, query }
+    return { results: [], total: 0, hasMore: false, query }
   }
 
   const { data: summaries } = await supabase.rpc('get_conversation_summaries')
@@ -137,7 +145,7 @@ async function fallbackSearch(
     .from('messages')
     .select('*', { count: 'exact' })
     .in('conversation_id', conversationIds)
-    .ilike('content', `%${query}%`)
+    .ilike('content', `%${escapeSearchPattern(query)}%`)
     .is('deleted_at', null)
 
   if (filters.conversationId) {
@@ -158,6 +166,7 @@ async function fallbackSearch(
 
   const { data, error, count } = await dbQuery
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (error) throw error
@@ -180,7 +189,8 @@ async function fallbackSearch(
 
   return {
     results,
-    total: count || 0,
+    total: offset + results.length,
+    hasMore: offset + results.length < (count ?? 0),
     query,
   }
 }
@@ -188,6 +198,7 @@ async function fallbackSearch(
 export async function searchConversations(query: string): Promise<PublicProfile[]> {
   if (!query.trim()) return []
   const searchQuery = parseInput(searchQuerySchema, query)
+  const pattern = `%${escapeSearchPattern(searchQuery)}%`
 
   const supabase = await createClient()
 
@@ -201,13 +212,13 @@ export async function searchConversations(query: string): Promise<PublicProfile[
     supabase
       .from('profiles')
       .select(selectFields)
-      .ilike('display_name', `%${searchQuery}%`)
+      .ilike('display_name', pattern)
       .neq('id', user.id)
       .limit(10),
     supabase
       .from('profiles')
       .select(selectFields)
-      .ilike('username', `%${searchQuery}%`)
+      .ilike('username', pattern)
       .neq('id', user.id)
       .limit(10),
     supabase.from('user_blocks').select('blocked_id').eq('blocker_id', user.id).limit(500),

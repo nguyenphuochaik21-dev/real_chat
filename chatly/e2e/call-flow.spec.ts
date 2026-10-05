@@ -51,7 +51,7 @@ test.describe('two-account WebRTC calls', () => {
         })
       )
       await caller.goto('/contacts')
-      await expect(caller.getByText(fixture.users[1].name, { exact: true })).toBeVisible()
+      await expect(caller.locator(`a[href="/profile/${fixture.users[1].id}"]`)).toBeVisible()
       await expect(caller.locator('header [role="alert"]')).toHaveCount(0)
       await Promise.all(
         [caller, receiver].map((page) => page.goto(`/chats/${fixture.conversationId}`))

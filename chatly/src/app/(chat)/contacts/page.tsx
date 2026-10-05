@@ -29,7 +29,7 @@ const FRIEND_CACHE_STALE_MS = 60_000
 const FRIEND_PAGE_SIZE = 20
 
 function matchesSearch(profile: FriendProfile, search: string) {
-  const query = search.trim().toLocaleLowerCase()
+  const query = search.trim().replace(/^@/, '').toLocaleLowerCase()
   if (!query) return true
   return `${profile.display_name} ${profile.username}`.toLocaleLowerCase().includes(query)
 }
@@ -49,7 +49,13 @@ function ProfileIdentity({ profile }: { profile: FriendProfile }) {
         </p>
         <p className="truncate text-xs text-[var(--text-muted)]">
           @{profile.username}
-          {profile.bio ? ` · ${profile.bio}` : ''}
+          {profile.mutual_friends_count
+            ? ` · ${t('friends.mutualCount', { count: profile.mutual_friends_count })}`
+            : profile.shared_groups_count
+              ? ` · ${t('friends.groupCount', { count: profile.shared_groups_count })}`
+              : profile.bio
+                ? ` · ${profile.bio}`
+                : ''}
         </p>
       </div>
     </Link>
@@ -230,6 +236,7 @@ export default function ContactsPage() {
           <Input
             type="search"
             placeholder={t('friends.search')}
+            aria-label={t('friends.search')}
             value={search}
             onChange={(event) => {
               setSearch(event.target.value)
@@ -442,7 +449,7 @@ export default function ContactsPage() {
                       disabled={busyId !== null}
                     >
                       <UserPlus className="h-4 w-4" />
-                      <span className="hidden sm:inline">{t('friends.add')}</span>
+                      <span className="sr-only sm:not-sr-only">{t('friends.add')}</span>
                     </Button>
                   </ContactRow>
                 ))}

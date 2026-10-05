@@ -43,7 +43,7 @@ function isLocalDevelopmentWebhook(url: URL) {
 export function validateWebhook(value: string) {
   const url = new URL(value)
 
-  const allowed = (process.env.N8N_ASSISTANT_ALLOWED_ORIGINS ?? '')
+  const allowed = (process.env.N8N_ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean)

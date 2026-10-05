@@ -28,7 +28,9 @@ test('friend search, fast actions, and realtime notifications', async ({ page, b
     await expect(page).toHaveURL(/\/chats/, { timeout: 20_000 })
     await page.goto('/contacts')
 
-    await page.getByPlaceholder('Tìm theo tên hoặc tên người dùng').fill(receiver.name)
+    await page
+      .getByPlaceholder('Tìm theo tên hoặc tên người dùng')
+      .fill(`call_${receiver.id.replaceAll('-', '').slice(0, 20)}`)
     const receiverRow = page.locator(`a[href="/profile/${receiver.id}"]`).locator('..')
     await expect(receiverRow.getByRole('button', { name: 'Kết bạn' })).toBeVisible()
     await receiverRow.getByRole('button', { name: 'Kết bạn' }).click()

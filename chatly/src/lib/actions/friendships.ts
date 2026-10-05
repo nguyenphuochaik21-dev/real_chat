@@ -4,7 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { uuidSchema } from '@/lib/actions/validation'
 import type { PublicProfile } from '@/types'
 
-export type FriendProfile = PublicProfile
+export type FriendProfile = PublicProfile & {
+  mutual_friends_count?: number
+  shared_groups_count?: number
+}
 export interface FriendshipItem {
   id: string
   requesterId: string
@@ -29,21 +32,27 @@ export async function getFriendshipOverview(): Promise<
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return { error: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }
-    const { data, error } = await supabase.rpc('get_friendship_overview', {
-      p_discover_limit: 8,
-    })
-    if (error || !data) {
-      console.error('[contacts:overview]', error?.code)
+    const [overviewResult, suggestionsResult] = await Promise.all([
+      supabase.rpc('get_friendship_overview', { p_discover_limit: 8 }),
+      supabase.rpc('get_friend_suggestions', { p_limit: 8 }),
+    ])
+    if (overviewResult.error || !overviewResult.data || suggestionsResult.error) {
+      console.error(
+        '[contacts:overview]',
+        overviewResult.error?.code ?? suggestionsResult.error?.code
+      )
       return { error: 'Không tải được danh bạ. Vui lòng thử lại.' }
     }
-    return { data: data as unknown as FriendshipOverview }
+    const data = overviewResult.data as unknown as FriendshipOverview
+    data.discover = (suggestionsResult.data ?? []) as unknown as FriendProfile[]
+    return { data }
   } catch {
     return { error: 'Không thể kết nối. Vui lòng thử lại.' }
   }
 }
 
 export async function searchFriendCandidates(query: string): Promise<FriendProfile[]> {
-  const normalized = query.trim().slice(0, 50)
+  const normalized = query.trim().replace(/^@/, '').slice(0, 50)
   if (normalized.length < 2) return []
   const supabase = await createClient()
   const {

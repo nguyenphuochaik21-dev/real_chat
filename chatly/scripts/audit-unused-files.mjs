@@ -80,6 +80,10 @@ const entryNames = new Set([
   'route.tsx',
   'loading.tsx',
   'error.tsx',
+  'global-error.tsx',
+  'default.tsx',
+  'forbidden.tsx',
+  'unauthorized.tsx',
   'not-found.tsx',
   'template.tsx',
   'manifest.ts',
@@ -90,7 +94,9 @@ const entryNames = new Set([
 for (const file of sourceFiles) {
   const parts = relative(sourceRoot, file).split(sep)
   if (
-    file === join(sourceRoot, 'proxy.ts') ||
+    ['proxy.ts', 'instrumentation.ts', 'instrumentation-client.ts'].some(
+      (name) => file === join(sourceRoot, name)
+    ) ||
     (parts[0] === 'app' && entryNames.has(parts.at(-1)))
   ) {
     visit(file)

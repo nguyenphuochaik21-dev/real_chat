@@ -1,9 +1,5 @@
-import nextEnv from '@next/env'
-import pg from 'pg'
+import { createDatabaseClient } from './lib/database.mjs'
 import { readFile } from 'node:fs/promises'
-
-nextEnv.loadEnvConfig(process.cwd())
-if (!process.env.DIRECT_URL) throw new Error('DIRECT_URL is required')
 
 const filename = process.argv[2]
 if (!/^\d{14}_[a-z0-9_]+\.sql$/.test(filename ?? '')) {
@@ -12,14 +8,7 @@ if (!/^\d{14}_[a-z0-9_]+\.sql$/.test(filename ?? '')) {
 const version = filename.slice(0, 14)
 const name = filename.slice(15, -4)
 const sql = await readFile(new URL(`../supabase/migrations/${filename}`, import.meta.url), 'utf8')
-const caResponse = await fetch(
-  'https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt'
-)
-if (!caResponse.ok) throw new Error('Could not load database CA')
-const db = new pg.Client({
-  connectionString: process.env.DIRECT_URL,
-  ssl: { rejectUnauthorized: true, ca: await caResponse.text() },
-})
+const db = await createDatabaseClient()
 
 try {
   await db.connect()

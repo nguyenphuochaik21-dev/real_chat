@@ -67,7 +67,9 @@ function ConversationItem({
   const isGroup = conversation.type === 'group'
   const displayName =
     isGroup || conversation.type === 'ai'
-      ? conversation.title || t('group.tab')
+      ? (conversation.type === 'ai' ? conversation.ai_agent_name : conversation.title) ||
+        conversation.title ||
+        t('group.tab')
       : conversation.participant?.display_name || t('common.user')
   const avatarUser =
     isGroup || conversation.type === 'ai'
@@ -226,7 +228,14 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const { drafts } = useDraftStore()
 
   // Global search — messages + contacts
-  const { state: searchState, search: runMessageSearch, searchContacts, clearSearch } = useSearch()
+  const {
+    state: searchState,
+    search: runMessageSearch,
+    searchContacts,
+    clearSearch,
+    loadMore: loadMoreSearch,
+    hasMore: hasMoreSearch,
+  } = useSearch()
 
   const hasCurrentUserScope = ownerUserId === currentUserId
   const conversations = hasCurrentUserScope ? storedConversations : EMPTY_CONVERSATIONS
@@ -656,7 +665,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         </div>
       </div>
 
-      <div className="flex shrink-0 scrollbar-thin gap-1 overflow-x-auto px-4 pb-1">
+      <div className="scrollbar-thin flex shrink-0 gap-1 overflow-x-auto px-4 pb-1">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -724,7 +733,8 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                   {hasMessageResults && (
                     <>
                       <p className="px-3 py-2 text-xs font-medium text-[var(--text-muted)]">
-                        {t('chatList.messages')} ({searchState.total})
+                        {t('chatList.messages')} ({searchState.total}
+                        {hasMoreSearch ? '+' : ''})
                       </p>
                       {searchState.results.map((result) => {
                         if (!result.conversation_id) return null
@@ -753,7 +763,22 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                     </>
                   )}
 
-                  {!hasContactResults && !hasMessageResults && (
+                  {hasMoreSearch && (
+                    <Button
+                      variant="ghost"
+                      className="w-full"
+                      disabled={searchState.loading}
+                      onClick={() => void loadMoreSearch()}
+                    >
+                      {t('search.loadMore')}
+                    </Button>
+                  )}
+                  {searchState.error && (
+                    <p role="alert" className="p-3 text-sm">
+                      {searchState.error}
+                    </p>
+                  )}
+                  {!hasContactResults && !hasMessageResults && !searchState.error && (
                     <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
                       <Search className="mb-3 h-12 w-12 opacity-50" />
                       <p className="text-sm">{t('chatList.noResults', { query: search })}</p>

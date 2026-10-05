@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 loadEnvConfig(process.cwd(), true)
 
-const port = Number(process.env.PLAYWRIGHT_PORT ?? 3000)
+const port = Number(process.env.PLAYWRIGHT_PORT ?? 3100)
 const host = process.env.PLAYWRIGHT_HOST ?? '127.0.0.1'
 
 export default defineConfig({
@@ -15,6 +15,7 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: `http://${host}:${port}`,
+    channel: process.env.PLAYWRIGHT_CHROME === '1' ? 'chrome' : undefined,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -30,9 +31,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run ${process.env.PLAYWRIGHT_PRODUCTION ? 'start' : 'dev'} -- --hostname localhost --port ${port}`,
+    command: `npm run ${process.env.PLAYWRIGHT_PRODUCTION ? 'start' : 'dev'} -- --hostname ${host} --port ${port}`,
     url: `http://${host}:${port}/login`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: process.env.PLAYWRIGHT_PRODUCTION ? {} : { CHATLY_NEXT_DIST_DIR: '.next-playwright' },
   },
 })

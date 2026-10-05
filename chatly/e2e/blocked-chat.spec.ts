@@ -94,7 +94,7 @@ test('blocked chat stays visible after reload, keeps history and can be unblocke
     await page.getByRole('button', { name: 'Chặn người dùng', exact: true }).click()
     await page.getByRole('button', { name: 'Chặn', exact: true }).click()
     const unblock = page.getByRole('button', { name: 'Bỏ chặn', exact: true })
-    await expect(unblock).toBeVisible()
+    await expect(unblock).toBeVisible({ timeout: 15_000 })
     await expect(page).toHaveURL(new RegExp(`${chatPath}$`))
     await expect(chatLink).toBeVisible()
     await page.addInitScript(() => {

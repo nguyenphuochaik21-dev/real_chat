@@ -242,15 +242,21 @@ export function AdminDashboard({ currentUserId }: AdminDashboardProps) {
     setLoadingUsers(true)
     setError(null)
     try {
-      const result = await getAdminUsersPage(
+      let result = await getAdminUsersPage(
         search.trim(),
         nextPage * ADMIN_USER_PAGE_SIZE,
         ADMIN_USER_PAGE_SIZE
       )
       if (requestId !== searchRequestRef.current) return
+      let resolvedPage = nextPage
+      if (nextPage > 0 && result.users.length === 0) {
+        result = await getAdminUsersPage(search.trim(), 0, ADMIN_USER_PAGE_SIZE)
+        if (requestId !== searchRequestRef.current) return
+        resolvedPage = 0
+      }
       setUsers(result.users)
       setTotalUsers(result.totalUsers)
-      setUserPage(nextPage)
+      setUserPage(resolvedPage)
     } catch (loadError) {
       if (requestId === searchRequestRef.current) {
         setError(loadError instanceof Error ? loadError.message : t('common.unknownError'))
@@ -342,11 +348,11 @@ export function AdminDashboard({ currentUserId }: AdminDashboardProps) {
             <p className="text-xs text-[var(--text-muted)]">{t('admin.subtitle')}</p>
           </div>
           <Link
-            href="/admin/ai"
+            href="/admin/ai-agents"
             className="text-primary-500 flex items-center gap-2 rounded-lg border border-[var(--border-default)] px-3 py-2 text-sm font-medium hover:bg-[var(--bg-hover)]"
           >
             <Bot className="h-4 w-4" />
-            <span className="hidden sm:inline">AI Assistant qua n8n</span>
+            <span className="hidden sm:inline">Quản lý AI Agents</span>
             <span className="sm:hidden">AI</span>
           </Link>
         </div>
