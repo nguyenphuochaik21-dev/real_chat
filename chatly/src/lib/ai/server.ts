@@ -14,15 +14,12 @@ import { decryptConnection } from '@/lib/assistant/crypto'
 export async function requireAiUser(admin = false) {
   const { supabase, user } = await getServerAuth()
   if (!user) throw new Error('Vui lòng đăng nhập.')
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('role, is_suspended')
-    .eq('id', user.id)
-    .single()
-  if (error || !data || data.is_suspended || (admin && data.role !== 'admin')) {
+  const { data, error } = await supabase.rpc('get_my_profile')
+  const profile = data && typeof data === 'object' && !Array.isArray(data) ? data : null
+  if (error || !profile || profile.is_suspended === true || (admin && profile.role !== 'admin')) {
     throw new Error('Bạn không có quyền thực hiện thao tác này.')
   }
-  return { supabase, user, isAdmin: data.role === 'admin' }
+  return { supabase, user, isAdmin: profile.role === 'admin' }
 }
 
 export function aiService() {

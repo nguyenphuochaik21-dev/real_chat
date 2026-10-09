@@ -5,7 +5,6 @@ import { cleanupUnusedStorage } from '@/lib/supabase/cleanup'
 import { createClient } from '@/lib/supabase/server'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
 import type { Tables } from '@/types'
-import { parseConversationSummaries } from '@/lib/conversation-summary'
 
 export type Conversation = Tables<'conversations'>
 
@@ -66,12 +65,38 @@ async function createConversationLegacy(
   currentUserId: string,
   targetUserId: string
 ): Promise<string> {
-  const { data: summaries } = await supabase.rpc('get_conversation_summaries')
-  const existing = parseConversationSummaries(summaries).find(
-    (conversation) =>
-      conversation.type === 'direct' && conversation.participant?.id === targetUserId
-  )
-  if (existing) return existing.id
+  const { data: ownParticipations, error: participationsError } = await supabase
+    .from('conversation_participants')
+    .select('conversation_id')
+    .eq('user_id', currentUserId)
+    .limit(501)
+  if (participationsError) throw new Error(participationsError.message)
+
+  const ownConversationIds = (ownParticipations ?? []).map((row) => row.conversation_id)
+  if (ownConversationIds.length >= 501) {
+    throw new Error('Database migration is required before creating a conversation safely')
+  }
+
+  if (ownConversationIds.length > 0) {
+    const { data: directConversations, error: directConversationsError } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('type', 'direct')
+      .in('id', ownConversationIds)
+    if (directConversationsError) throw new Error(directConversationsError.message)
+
+    const directConversationIds = (directConversations ?? []).map((row) => row.id)
+    if (directConversationIds.length > 0) {
+      const { data: targetParticipations, error: targetParticipationsError } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', targetUserId)
+        .in('conversation_id', directConversationIds)
+        .limit(1)
+      if (targetParticipationsError) throw new Error(targetParticipationsError.message)
+      if (targetParticipations?.[0]) return targetParticipations[0].conversation_id
+    }
+  }
 
   const { data: block } = await supabase
     .from('user_blocks')

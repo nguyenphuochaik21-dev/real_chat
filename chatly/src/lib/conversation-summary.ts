@@ -15,6 +15,21 @@ export interface ConversationSummary extends Tables<'conversations'> {
   is_archived: boolean
 }
 
+export interface ConversationSummaryPage {
+  items: ConversationSummary[]
+  totalCount: number
+  hasMore: boolean
+}
+
+export type ConversationSummaryTab = 'all' | 'unread' | 'groups' | 'archived'
+
+interface ConversationSummaryPageOptions {
+  offset: number
+  limit: number
+  tab: ConversationSummaryTab
+  query?: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -54,4 +69,73 @@ export function parseConversationSummaries(value: Json | null): ConversationSumm
       },
     ]
   })
+}
+
+export function parseConversationSummaryPage(value: Json | null): ConversationSummaryPage {
+  if (!isRecord(value)) return { items: [], totalCount: 0, hasMore: false }
+
+  return {
+    items: parseConversationSummaries(Array.isArray(value.items) ? (value.items as Json) : null),
+    totalCount:
+      typeof value.total_count === 'number' && Number.isFinite(value.total_count)
+        ? Math.max(0, value.total_count)
+        : 0,
+    hasMore: value.has_more === true,
+  }
+}
+
+export function isMissingConversationPageRpc(error: { code?: string; message?: string }): boolean {
+  if (error.code === 'PGRST202' || error.code === '42883') return true
+
+  const message = error.message?.toLowerCase() ?? ''
+  return (
+    message.includes('get_conversation_summaries_page') &&
+    (message.includes('schema cache') ||
+      message.includes('does not exist') ||
+      message.includes('not found'))
+  )
+}
+
+export function paginateConversationSummaries(
+  conversations: ConversationSummary[],
+  { offset, limit, tab, query = '' }: ConversationSummaryPageOptions
+): ConversationSummaryPage {
+  const normalizedQuery = query.trim().toLowerCase()
+  const usernameQuery = normalizedQuery.replace(/^@+/, '')
+  const filtered = conversations
+    .filter((conversation) => {
+      if (tab === 'archived') return conversation.is_archived
+      if (conversation.is_archived) return false
+      if (tab === 'groups' && conversation.type !== 'group') return false
+      if (tab === 'unread' && conversation.unread_count === 0) return false
+      if (!normalizedQuery) return true
+
+      return (
+        conversation.title?.toLowerCase().includes(normalizedQuery) === true ||
+        conversation.ai_agent_name?.toLowerCase().includes(normalizedQuery) === true ||
+        conversation.participant?.display_name.toLowerCase().includes(normalizedQuery) === true ||
+        (usernameQuery.length > 0 &&
+          conversation.participant?.username?.toLowerCase().includes(usernameQuery) === true)
+      )
+    })
+    .sort((left, right) => {
+      if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1
+      const leftActivity = [left.last_message?.created_at, left.last_message_at]
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1)
+      const rightActivity = [right.last_message?.created_at, right.last_message_at]
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1)
+      return (
+        (rightActivity ?? '').localeCompare(leftActivity ?? '') || right.id.localeCompare(left.id)
+      )
+    })
+
+  return {
+    items: filtered.slice(offset, offset + limit),
+    totalCount: tab === 'archived' ? filtered.length : 0,
+    hasMore: offset + limit < filtered.length,
+  }
 }

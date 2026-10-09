@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
-import { parseConversationSummaries } from '@/lib/conversation-summary'
+import { parseConversationSummaryPage } from '@/lib/conversation-summary'
 import { useNavigationBadgesStore } from '@/stores/navigation-badges-store'
 
 const RECONCILE_INTERVAL_MS = 120_000
 const REFRESH_DEBOUNCE_MS = 120
+const MAX_FALLBACK_PAGES = 100
 
 export function useNavigationBadges(userId: string | null) {
   const [supabase] = useState(() => createClient())
@@ -29,12 +30,24 @@ export function useNavigationBadges(userId: string | null) {
       error.message.includes('get_unread_message_count')
     if (!isMissingMigration) return
 
-    const fallback = await supabase.rpc('get_conversation_summaries')
-    if (fallback.error) return
-    const total = parseConversationSummaries(fallback.data)
-      .filter((conversation) => !conversation.is_archived)
-      .reduce((sum, conversation) => sum + conversation.unread_count, 0)
-    setUnreadMessages(total)
+    let total = 0
+    let offset = 0
+    for (let pageIndex = 0; pageIndex < MAX_FALLBACK_PAGES; pageIndex += 1) {
+      const fallback = await supabase.rpc('get_conversation_summaries_page', {
+        p_limit: 100,
+        p_offset: offset,
+        p_tab: 'all',
+        p_query: '',
+      })
+      if (fallback.error) return
+      const page = parseConversationSummaryPage(fallback.data)
+      total += page.items.reduce((sum, conversation) => sum + conversation.unread_count, 0)
+      offset += page.items.length
+      if (!page.hasMore || page.items.length === 0) {
+        setUnreadMessages(total)
+        return
+      }
+    }
   }, [setUnreadMessages, supabase, userId])
 
   const scheduleRefresh = useCallback(() => {

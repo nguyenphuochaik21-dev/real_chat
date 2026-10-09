@@ -1120,6 +1120,10 @@ type BaseDatabase = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      get_conversation_summaries_page: {
+        Args: { p_limit?: number; p_offset?: number; p_tab?: string; p_query?: string }
+        Returns: Json
+      }
       get_unread_message_count: {
         Args: Record<PropertyKey, never>
         Returns: number

@@ -3,6 +3,7 @@ import webPush from 'web-push'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { isAllowedPushEndpoint } from '@/lib/push-endpoint'
+import { isSameOriginRequest, readBoundedJson } from '@/lib/api-request'
 import type { Database } from '@/types'
 
 export const runtime = 'nodejs'
@@ -13,6 +14,10 @@ const requestSchema = z.object({
 })
 
 export async function POST(request: Request) {
+  if (!isSameOriginRequest(request)) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
@@ -23,14 +28,16 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Push notifications are not configured' }, { status: 503 })
   }
 
-  const values = requestSchema.safeParse(await request.json().catch(() => null))
-  if (!values.success) return Response.json({ error: 'Invalid request' }, { status: 400 })
-
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await readBoundedJson(request, 1_024)
+  if (!body.ok) return Response.json({ error: 'Invalid request' }, { status: body.status })
+  const values = requestSchema.safeParse(body.value)
+  if (!values.success) return Response.json({ error: 'Invalid request' }, { status: 400 })
 
   const admin = createAdminClient<Database>(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },

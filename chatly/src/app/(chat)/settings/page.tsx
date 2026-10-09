@@ -25,10 +25,10 @@ import { createClient } from '@/lib/supabase/client'
 import type { Tables } from '@/types'
 import { useI18n, type Locale } from '@/lib/i18n'
 import { removeCurrentPushSubscription } from '@/lib/push'
-import { useCurrentUserId } from '@/hooks/use-current-user-id'
 import { saveAuthNotice } from '@/lib/auth-notice'
 import { resetUserSessionState } from '@/lib/reset-user-session'
 import { useNotificationStore } from '@/stores/notification-store'
+import { getMyProfile } from '@/lib/actions/profile'
 
 type Profile = Pick<
   Tables<'profiles'>,
@@ -106,22 +106,37 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [signingOut, setSigningOut] = useState(false)
   const [supabase] = useState(() => createClient())
-  const currentUserId = useCurrentUserId()
   const addToast = useNotificationStore((state) => state.addToast)
   const isDark = (resolvedTheme ?? 'dark') === 'dark'
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, bio, role')
-        .eq('id', currentUserId)
-        .single()
-      setProfile(data)
-      setLoading(false)
+    let active = true
+    getMyProfile()
+      .then((data) => {
+        if (!active) return
+        setProfile(
+          data
+            ? {
+                id: data.id,
+                username: data.username,
+                display_name: data.display_name,
+                avatar_url: data.avatar_url,
+                bio: data.bio,
+                role: data.role,
+              }
+            : null
+        )
+      })
+      .catch(() => {
+        if (active) setProfile(null)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
     }
-    fetchProfile()
-  }, [currentUserId, supabase])
+  }, [])
 
   const handleSignOut = async () => {
     if (signingOut) return

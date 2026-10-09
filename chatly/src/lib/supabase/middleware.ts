@@ -64,12 +64,13 @@ export async function updateSession(request: NextRequest) {
     isProtectedRoute || isAuthRoute || request.nextUrl.pathname === '/suspended'
 
   if (user && shouldCheckSuspension) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_suspended')
-      .eq('id', user.id)
-      .maybeSingle()
-    isSuspended = profile?.is_suspended ?? false
+    const { data: profile, error } = await supabase.rpc('get_my_profile')
+    isSuspended =
+      Boolean(error) ||
+      (profile !== null &&
+        typeof profile === 'object' &&
+        !Array.isArray(profile) &&
+        profile.is_suspended === true)
   }
 
   if (user && isSuspended && request.nextUrl.pathname !== '/suspended') {

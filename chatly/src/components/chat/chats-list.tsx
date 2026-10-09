@@ -22,7 +22,14 @@ import { useSearch } from '@/hooks/use-search'
 import { useChatsListStore, type ConversationWithDetails } from '@/stores/chats-list-store'
 import type { PublicProfile } from '@/types'
 import { useI18n } from '@/lib/i18n'
-import { parseConversationSummaries } from '@/lib/conversation-summary'
+import {
+  isMissingConversationPageRpc,
+  paginateConversationSummaries,
+  parseConversationSummaries,
+  parseConversationSummaryPage,
+  type ConversationSummary,
+  type ConversationSummaryPage,
+} from '@/lib/conversation-summary'
 import { createConversation } from '@/lib/actions/conversations'
 import { getSearchSnippet } from '@/lib/search-text'
 import { useChatCacheStore } from '@/stores/chat-cache-store'
@@ -187,8 +194,27 @@ type TabType = 'all' | 'unread' | 'groups' | 'archived'
 
 // Refresh conversations list if cache is older than 30 seconds
 const CACHE_STALE_MS = 30_000
-const CONVERSATION_RENDER_PAGE_SIZE = 80
+const CONVERSATION_PAGE_SIZE = 80
+const REALTIME_FILTER_MAX_IDS = 100
+const MAX_LIVE_PRESENCE_CONVERSATIONS = 200
 const EMPTY_CONVERSATIONS: ConversationWithDetails[] = []
+
+function sortConversationPage(conversations: ConversationWithDetails[]) {
+  return [...conversations].sort((left, right) => {
+    if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1
+    const leftDate =
+      [left.last_message?.created_at, left.last_message_at]
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1) ?? ''
+    const rightDate =
+      [right.last_message?.created_at, right.last_message_at]
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1) ?? ''
+    return rightDate.localeCompare(leftDate) || right.id.localeCompare(left.id)
+  })
+}
 
 export function ChatsList({ currentUserId }: ChatsListProps) {
   const { t } = useI18n()
@@ -200,9 +226,10 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<TabType>('all')
-  const [visibleConversationCount, setVisibleConversationCount] = useState(
-    CONVERSATION_RENDER_PAGE_SIZE
-  )
+  const [hasMoreConversations, setHasMoreConversations] = useState(false)
+  const [conversationTotalCount, setConversationTotalCount] = useState(0)
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false)
+  const [conversationLoadFailed, setConversationLoadFailed] = useState(false)
   // Use store-backed state — persists across navigation, no remount flash
   const ownerUserId = useChatsListStore((s) => s.ownerUserId)
   const storedConversations = useChatsListStore((s) => s.conversations)
@@ -218,6 +245,15 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const incrementUnread = useChatsListStore((s) => s.incrementUnread)
   const setParticipantStatus = useChatsListStore((s) => s.setParticipantStatus)
   const storeConversationIdsRef = useRef<Set<string>>(new Set())
+  const legacySummaryCacheRef = useRef<{
+    userId: string
+    fetchedAt: number
+    conversations: ConversationSummary[]
+  } | null>(null)
+  const conversationOffsetRef = useRef(0)
+  const listRequestVersionRef = useRef(0)
+  const fetchedTabRef = useRef<TabType | null>(null)
+  const activeTabRef = useRef(activeTab)
   const [supabase] = useState(() => createClient())
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
   const statusChannelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(
@@ -248,6 +284,10 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     beginUserSession(currentUserId)
     storeConversationIdsRef.current = new Set()
   }, [beginUserSession, currentUserId])
+
+  useLayoutEffect(() => {
+    activeTabRef.current = activeTab
+  }, [activeTab])
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -285,12 +325,84 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
   const hasContactResults = searchState.contacts.length > 0
 
   const handleTabChange = (tab: TabType) => {
+    activeTabRef.current = tab
     setActiveTab(tab)
-    setVisibleConversationCount(CONVERSATION_RENDER_PAGE_SIZE)
+    conversationOffsetRef.current = 0
+    fetchedTabRef.current = null
+    setHasMoreConversations(false)
+    setConversationTotalCount(0)
     try {
       localStorage.setItem('chats-list-tab', tab)
     } catch {}
   }
+
+  const loadConversationPage = useCallback(
+    async (tab: TabType, offset: number) => {
+      const { data, error } = await supabase.rpc('get_conversation_summaries_page', {
+        p_limit: CONVERSATION_PAGE_SIZE,
+        p_offset: offset,
+        p_tab: tab,
+        p_query: '',
+      })
+
+      let page: ConversationSummaryPage
+      if (error) {
+        if (!isMissingConversationPageRpc(error)) {
+          console.warn('Paginated conversation RPC failed; trying the compatibility RPC:', error)
+        }
+        let legacyConversations = legacySummaryCacheRef.current?.conversations
+        const cacheIsCurrent =
+          legacySummaryCacheRef.current?.userId === currentUserId &&
+          Date.now() - legacySummaryCacheRef.current.fetchedAt < CACHE_STALE_MS
+
+        if (!cacheIsCurrent || !legacyConversations) {
+          const legacyResult = await supabase.rpc('get_conversation_summaries')
+          if (legacyResult.error) throw legacyResult.error
+          legacyConversations = parseConversationSummaries(legacyResult.data)
+          legacySummaryCacheRef.current = {
+            userId: currentUserId,
+            fetchedAt: Date.now(),
+            conversations: legacyConversations,
+          }
+        }
+
+        page = paginateConversationSummaries(legacyConversations, {
+          offset,
+          limit: CONVERSATION_PAGE_SIZE,
+          tab,
+        })
+      } else {
+        page = parseConversationSummaryPage(data)
+      }
+
+      const groupIds = page.items
+        .filter((conversation) => conversation.type === 'group')
+        .map((conversation) => conversation.id)
+
+      if (groupIds.length === 0) return page
+
+      const { data: groupMemberRows } = await supabase.rpc('get_group_avatar_members', {
+        p_conversation_ids: groupIds,
+      })
+      if (!groupMemberRows) return page
+
+      const membersByConversation = new Map<string, PublicProfile[]>()
+      groupMemberRows.forEach(({ conversation_id, ...profile }) => {
+        const members = membersByConversation.get(conversation_id) ?? []
+        members.push(profile)
+        membersByConversation.set(conversation_id, members)
+      })
+
+      return {
+        ...page,
+        items: page.items.map((conversation) => ({
+          ...conversation,
+          group_members: membersByConversation.get(conversation.id) ?? [],
+        })),
+      }
+    },
+    [currentUserId, supabase]
+  )
 
   const fetchConversations = useCallback(async () => {
     if (!currentUserId) {
@@ -298,55 +410,18 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       return
     }
 
+    const requestVersion = ++listRequestVersionRef.current
+    const tab = activeTabRef.current
+    setConversationLoadFailed(false)
     setLoading(currentUserId, true)
 
     try {
-      const [blocked, { data, error }] = await Promise.all([
-        getBlockedUsers(),
-        supabase.rpc('get_conversation_summaries'),
-      ])
-      if (error) throw error
+      const [blocked, page] = await Promise.all([getBlockedUsers(), loadConversationPage(tab, 0)])
+      if (requestVersion !== listRequestVersionRef.current || tab !== activeTabRef.current) return
       setBlockedUserIds(currentUserId, new Set(blocked))
 
-      let conversationsWithParticipants = parseConversationSummaries(data)
-      const groupIds = conversationsWithParticipants
-        .filter((conversation) => conversation.type === 'group')
-        .map((conversation) => conversation.id)
-
-      if (groupIds.length > 0) {
-        const { data: groupMemberRows } = await supabase.rpc('get_group_avatar_members', {
-          p_conversation_ids: groupIds,
-        })
-        if (groupMemberRows) {
-          const membersByConversation = new Map<string, PublicProfile[]>()
-          groupMemberRows.forEach(({ conversation_id, ...profile }) => {
-            const members = membersByConversation.get(conversation_id) ?? []
-            members.push(profile)
-            membersByConversation.set(conversation_id, members)
-          })
-          conversationsWithParticipants = conversationsWithParticipants.map((conversation) => ({
-            ...conversation,
-            group_members: membersByConversation.get(conversation.id) ?? [],
-          }))
-        }
-      }
-      const active: ConversationWithDetails[] = []
-      const archived: ConversationWithDetails[] = []
-      for (const conv of conversationsWithParticipants) {
-        if (conv.is_archived) archived.push(conv)
-        else active.push(conv)
-      }
-
-      const sortFn = (a: ConversationWithDetails, b: ConversationWithDetails) => {
-        if (a.is_pinned && !b.is_pinned) return -1
-        if (!a.is_pinned && b.is_pinned) return 1
-        const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
-        const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
-        return dateB - dateA
-      }
-
-      active.sort(sortFn)
-      archived.sort(sortFn)
+      const active = tab === 'archived' ? [] : page.items
+      const archived = tab === 'archived' ? page.items : []
 
       storeConversationIdsRef.current = new Set([
         ...active.map((conversation) => conversation.id),
@@ -357,7 +432,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         string,
         { status: 'online' | 'offline' | 'away' | 'busy'; lastSeen: string | null }
       >()
-      for (const conversation of conversationsWithParticipants) {
+      for (const conversation of page.items) {
         const participant = conversation.participant
         if (conversation.type !== 'direct' || !participant) continue
         newStatuses.set(participant.id, {
@@ -371,12 +446,71 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
         archivedConversations: archived,
         participantStatuses: newStatuses,
       })
+      conversationOffsetRef.current = page.items.length
+      fetchedTabRef.current = tab
+      setHasMoreConversations(page.hasMore)
+      setConversationTotalCount(page.totalCount)
     } catch (err) {
-      console.error('Failed to fetch conversations:', err)
+      if (requestVersion === listRequestVersionRef.current) {
+        console.warn('Failed to fetch conversations:', err)
+        setConversationLoadFailed(true)
+      }
     } finally {
-      setLoading(currentUserId, false)
+      if (requestVersion === listRequestVersionRef.current) setLoading(currentUserId, false)
     }
-  }, [currentUserId, setAll, setBlockedUserIds, setLoading, supabase])
+  }, [currentUserId, loadConversationPage, setAll, setBlockedUserIds, setLoading])
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!currentUserId || !hasMoreConversations || loadingMoreConversations) return
+
+    const requestVersion = listRequestVersionRef.current
+    const tab = activeTabRef.current
+    setLoadingMoreConversations(true)
+
+    try {
+      const page = await loadConversationPage(tab, conversationOffsetRef.current)
+      if (requestVersion !== listRequestVersionRef.current || tab !== activeTabRef.current) return
+
+      const store = useChatsListStore.getState()
+      const currentItems = tab === 'archived' ? store.archivedConversations : store.conversations
+      const mergedItems = [...currentItems]
+      const itemIndex = new Map(mergedItems.map((conversation, index) => [conversation.id, index]))
+      for (const conversation of page.items) {
+        const index = itemIndex.get(conversation.id)
+        if (index === undefined) {
+          itemIndex.set(conversation.id, mergedItems.length)
+          mergedItems.push(conversation)
+        } else {
+          mergedItems[index] = conversation
+        }
+      }
+
+      const participantStatuses = new Map(store.participantStatuses)
+      for (const conversation of page.items) {
+        if (conversation.type !== 'direct' || !conversation.participant) continue
+        participantStatuses.set(conversation.participant.id, {
+          status: conversation.participant.status ?? 'offline',
+          lastSeen: conversation.participant.last_seen ?? null,
+        })
+      }
+
+      const active = tab === 'archived' ? [] : mergedItems
+      const archived = tab === 'archived' ? mergedItems : []
+      setAll(currentUserId, {
+        conversations: active,
+        archivedConversations: archived,
+        participantStatuses,
+      })
+      storeConversationIdsRef.current = new Set(mergedItems.map((conversation) => conversation.id))
+      conversationOffsetRef.current += page.items.length
+      setHasMoreConversations(page.hasMore)
+      setConversationTotalCount(page.totalCount)
+    } catch (err) {
+      console.error('Failed to load more conversations:', err)
+    } finally {
+      setLoadingMoreConversations(false)
+    }
+  }, [currentUserId, hasMoreConversations, loadConversationPage, loadingMoreConversations, setAll])
 
   // Fetch conversations — but only if cache is stale or empty
   useEffect(() => {
@@ -387,10 +521,10 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     if (!currentUserId) return
 
     const isStale = Date.now() - lastFetchedAt > CACHE_STALE_MS
-    if (!hasCurrentUserScope || isStale) {
+    if (!hasCurrentUserScope || isStale || fetchedTabRef.current !== activeTab) {
       void fetchConversations()
     }
-  }, [currentUserId, fetchConversations, hasCurrentUserScope, lastFetchedAt])
+  }, [activeTab, currentUserId, fetchConversations, hasCurrentUserScope, lastFetchedAt])
 
   useEffect(() => {
     if (!currentUserId) return
@@ -516,44 +650,59 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
     selectedConversationId,
   ])
 
-  const participantKey = [
-    ...new Set(
-      conversations.flatMap((conversation) =>
-        conversation.type === 'direct' && conversation.participant
-          ? [conversation.participant.id]
-          : []
-      )
-    ),
-  ]
-    .sort()
-    .join(',')
+  const filteredArchived = useMemo(
+    () => sortConversationPage(archivedConversations),
+    [archivedConversations]
+  )
+  const sortedConversations = useMemo(() => sortConversationPage(conversations), [conversations])
 
-  // Message updates do not change the set of profile subscriptions.
+  const participantKey = useMemo(() => {
+    if (showSearchResults) return ''
+
+    const visibleConversations = (
+      activeTab === 'archived' ? filteredArchived : sortedConversations
+    ).slice(0, MAX_LIVE_PRESENCE_CONVERSATIONS)
+
+    return [
+      ...new Set(
+        visibleConversations.flatMap((conversation) =>
+          conversation.type === 'direct' && conversation.participant
+            ? [conversation.participant.id]
+            : []
+        )
+      ),
+    ]
+      .sort()
+      .join(',')
+  }, [activeTab, filteredArchived, showSearchResults, sortedConversations])
+
+  // Subscribe only to direct-chat profiles currently shown in the active list.
   useEffect(() => {
     const participantIds = participantKey ? participantKey.split(',') : []
     if (participantIds.length === 0) return
 
-    const channel = supabase
-      .channel(`participant-statuses-${currentUserId}`)
-      .on(
+    let channel = supabase.channel(`participant-statuses-${currentUserId}`)
+    for (let offset = 0; offset < participantIds.length; offset += REALTIME_FILTER_MAX_IDS) {
+      const ids = participantIds.slice(offset, offset + REALTIME_FILTER_MAX_IDS)
+      channel = channel.on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'profiles',
+          filter: `id=in.(${ids.join(',')})`,
         },
         (payload) => {
           const updated = payload.new as Profile
-          if (participantIds.includes(updated.id)) {
-            setParticipantStatus(
-              updated.id,
-              updated.status as 'online' | 'offline' | 'away' | 'busy',
-              updated.last_seen ?? null
-            )
-          }
+          setParticipantStatus(
+            updated.id,
+            updated.status as 'online' | 'offline' | 'away' | 'busy',
+            updated.last_seen ?? null
+          )
         }
       )
-      .subscribe()
+    }
+    channel.subscribe()
 
     statusChannelRef.current = channel
 
@@ -562,54 +711,6 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
       statusChannelRef.current = null
     }
   }, [currentUserId, supabase, participantKey, setParticipantStatus])
-
-  const normalizedSearch = search.toLocaleLowerCase()
-  const filteredConversations = useMemo(
-    () =>
-      conversations.filter((conv) => {
-        const displayName =
-          conv.type === 'group' || conv.type === 'ai'
-            ? conv.title || t('group.tab')
-            : conv.participant?.display_name || ''
-        const matchesSearch = displayName.toLocaleLowerCase().includes(normalizedSearch)
-        let matchesTab = true
-        if (activeTab === 'unread') {
-          matchesTab = conv.unread_count > 0
-        } else if (activeTab === 'groups') {
-          matchesTab = conv.type === 'group'
-        } else if (activeTab === 'all') {
-          matchesTab = !conv.is_archived
-        }
-        return matchesSearch && matchesTab
-      }),
-    [activeTab, conversations, normalizedSearch, t]
-  )
-
-  const filteredArchived = useMemo(
-    () =>
-      archivedConversations.filter((conv) => {
-        return (
-          conv.type === 'group' || conv.type === 'ai'
-            ? conv.title || t('group.tab')
-            : conv.participant?.display_name || ''
-        )
-          .toLocaleLowerCase()
-          .includes(normalizedSearch)
-      }),
-    [archivedConversations, normalizedSearch, t]
-  )
-
-  const sortedConversations = useMemo(
-    () =>
-      [...filteredConversations].sort((a, b) => {
-        if (a.is_pinned && !b.is_pinned) return -1
-        if (!a.is_pinned && b.is_pinned) return 1
-        const dateA = a.last_message?.created_at ? new Date(a.last_message.created_at).getTime() : 0
-        const dateB = b.last_message?.created_at ? new Date(b.last_message.created_at).getTime() : 0
-        return dateB - dateA
-      }),
-    [filteredConversations]
-  )
 
   const tabs: { key: TabType; label: string }[] = [
     { key: 'all', label: t('chatList.all') },
@@ -689,7 +790,8 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
 
       <ScrollArea className="flex-1">
         <div className="py-2">
-          {loading && conversations.length === 0 ? (
+          {loading &&
+          (activeTab === 'archived' ? archivedConversations : conversations).length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="border-primary-500 h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
             </div>
@@ -788,15 +890,23 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                 </>
               )}
             </div>
+          ) : conversationLoadFailed &&
+            (activeTab === 'archived' ? archivedConversations : conversations).length === 0 ? (
+            <div role="alert" className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+              <p className="text-sm text-[var(--text-secondary)]">{t('chatList.loadFailed')}</p>
+              <Button variant="outline" size="sm" onClick={() => void fetchConversations()}>
+                {t('chatList.retry')}
+              </Button>
+            </div>
           ) : activeTab === 'archived' ? (
             filteredArchived.length > 0 ? (
               <>
                 <div className="px-3 py-2">
                   <p className="text-xs text-[var(--text-muted)]">
-                    {t('chatList.archivedCount', { count: filteredArchived.length })}
+                    {t('chatList.archivedCount', { count: conversationTotalCount })}
                   </p>
                 </div>
-                {filteredArchived.slice(0, visibleConversationCount).map((conversation, index) => {
+                {filteredArchived.map((conversation, index) => {
                   const ps = conversation.participant
                     ? participantStatuses.get(conversation.participant.id)
                     : undefined
@@ -813,15 +923,14 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                     </div>
                   )
                 })}
-                {filteredArchived.length > visibleConversationCount && (
+                {hasMoreConversations && (
                   <Button
                     variant="ghost"
                     className="mx-3 my-2 w-[calc(100%-1.5rem)]"
-                    onClick={() =>
-                      setVisibleConversationCount((count) => count + CONVERSATION_RENDER_PAGE_SIZE)
-                    }
+                    disabled={loadingMoreConversations}
+                    onClick={() => void loadMoreConversations()}
                   >
-                    {t('chatList.loadMore')}
+                    {loadingMoreConversations ? t('chat.loadingOlder') : t('chatList.loadMore')}
                   </Button>
                 )}
               </>
@@ -833,7 +942,7 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
             )
           ) : sortedConversations.length > 0 ? (
             <>
-              {sortedConversations.slice(0, visibleConversationCount).map((conversation, index) => {
+              {sortedConversations.map((conversation, index) => {
                 const ps = conversation.participant
                   ? participantStatuses.get(conversation.participant.id)
                   : undefined
@@ -846,21 +955,18 @@ export function ChatsList({ currentUserId }: ChatsListProps) {
                       participantStatus={resolvePresence(ps)}
                       draft={drafts.get(conversation.id)}
                     />
-                    {index < Math.min(sortedConversations.length, visibleConversationCount) - 1 && (
-                      <Separator />
-                    )}
+                    {index < sortedConversations.length - 1 && <Separator />}
                   </div>
                 )
               })}
-              {sortedConversations.length > visibleConversationCount && (
+              {hasMoreConversations && (
                 <Button
                   variant="ghost"
                   className="mx-3 my-2 w-[calc(100%-1.5rem)]"
-                  onClick={() =>
-                    setVisibleConversationCount((count) => count + CONVERSATION_RENDER_PAGE_SIZE)
-                  }
+                  disabled={loadingMoreConversations}
+                  onClick={() => void loadMoreConversations()}
                 >
-                  {t('chatList.loadMore')}
+                  {loadingMoreConversations ? t('chat.loadingOlder') : t('chatList.loadMore')}
                 </Button>
               )}
             </>

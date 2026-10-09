@@ -142,26 +142,7 @@ export async function getMyProfile(): Promise<MyProfileDetails | null> {
     }
   }
 
-  if (error.code !== 'PGRST202' && !error.message.includes('schema cache')) {
-    throw new Error(error.message)
-  }
-
-  const { data: fallback, error: fallbackError } = await supabase
-    .from('profiles')
-    .select(
-      'id, username, display_name, avatar_url, bio, phone, status, last_seen, created_at, updated_at, role, is_suspended, is_verified'
-    )
-    .eq('id', user.id)
-    .single()
-  if (fallbackError || !fallback) return null
-
-  return {
-    ...fallback,
-    birth_date: null,
-    birth_date_visibility: 'private',
-    phone_visibility: 'private',
-    social_links: [],
-  }
+  throw new Error(error.message)
 }
 
 export async function updateMyProfile(input: z.input<typeof profileUpdateSchema>) {

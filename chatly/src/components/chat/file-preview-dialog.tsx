@@ -20,9 +20,42 @@ type Preview =
   | { kind: 'sheet'; rows: string[][] }
   | { kind: 'unsupported' }
 
-const MAX_PARSED_BYTES = 10 * 1024 * 1024
+const MAX_PREVIEW_BYTES = 10 * 1024 * 1024
 const MAX_SHEET_ROWS = 200
 const MAX_SHEET_COLUMNS = 30
+
+async function readBoundedBlob(response: Response): Promise<Blob | null> {
+  const contentLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > MAX_PREVIEW_BYTES) {
+    await response.body?.cancel().catch(() => undefined)
+    return null
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('Preview response has no body')
+
+  const chunks: ArrayBuffer[] = []
+  let totalBytes = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_PREVIEW_BYTES) {
+        await reader.cancel().catch(() => undefined)
+        return null
+      }
+      const chunk = new Uint8Array(value.byteLength)
+      chunk.set(value)
+      chunks.push(chunk.buffer)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return new Blob(chunks, { type: response.headers.get('content-type') ?? '' })
+}
 
 export function FilePreviewDialog({ path, name, mimeType, size, onClose }: FilePreviewDialogProps) {
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -54,12 +87,7 @@ export function FilePreviewDialog({ path, name, mimeType, size, onClose }: FileP
         setPreview({ kind: 'unsupported' })
         return
       }
-      if (
-        mimeType !== 'application/pdf' &&
-        extension !== 'pdf' &&
-        size &&
-        size > MAX_PARSED_BYTES
-      ) {
+      if (size !== null && size > MAX_PREVIEW_BYTES) {
         setPreview({ kind: 'unsupported' })
         return
       }
@@ -67,9 +95,9 @@ export function FilePreviewDialog({ path, name, mimeType, size, onClose }: FileP
         const signedUrl = await getMediaUrl(path)
         const response = await fetch(signedUrl, { signal: controller.signal })
         if (!response.ok) throw new Error('Preview download failed')
-        const blob = await response.blob()
+        const blob = await readBoundedBlob(response)
         if (!active) return
-        if (mimeType !== 'application/pdf' && extension !== 'pdf' && blob.size > MAX_PARSED_BYTES) {
+        if (!blob) {
           setPreview({ kind: 'unsupported' })
         } else if (mimeType === 'application/pdf' || extension === 'pdf') {
           objectUrl = URL.createObjectURL(blob)

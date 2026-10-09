@@ -22,12 +22,15 @@ interface ForwardModalProps {
 export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalProps) {
   const { t } = useI18n()
   const { forwardModalOpen, messagesToForward, closeForwardModal } = useMessageActionsStore()
-  const { conversations, loading } = useConversations(currentUserId)
-  const addToast = useNotificationStore((state) => state.addToast)
-
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedConversations, setSelectedConversations] = useState<Set<string>>(new Set())
   const [sending, setSending] = useState(false)
+  const { conversations, loading, loadingMore, hasMore, loadMore } = useConversations(
+    currentUserId,
+    forwardModalOpen,
+    searchQuery
+  )
+  const addToast = useNotificationStore((state) => state.addToast)
 
   // Reset state when modal opens
   useEffect(() => {
@@ -44,11 +47,9 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
   const getTitle = (conversation: (typeof conversations)[number]) =>
     conversation.type === 'group'
       ? conversation.title || t('group.tab')
-      : conversation.participant?.display_name || t('calls.unknownUser')
-
-  const filteredConversations = conversations.filter((conversation) =>
-    getTitle(conversation).toLowerCase().includes(searchQuery.toLowerCase())
-  )
+      : conversation.type === 'ai'
+        ? conversation.ai_agent_name || conversation.title || t('calls.unknownUser')
+        : conversation.participant?.display_name || t('calls.unknownUser')
 
   const toggleConversation = (conversationId: string) => {
     setSelectedConversations((prev) => {
@@ -76,7 +77,9 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
           addToast({
             type: 'system',
             title: t('forward.failed'),
-            body: result.error || t('common.unknownError'),
+            body: result.error?.includes('MESSAGE_RATE_LIMITED')
+              ? t('chat.rateLimited')
+              : result.error || t('common.unknownError'),
           })
         }
       }
@@ -93,7 +96,12 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
       addToast({
         type: 'system',
         title: t('forward.failed'),
-        body: err instanceof Error ? err.message : t('common.unknownError'),
+        body:
+          err instanceof Error && err.message.includes('MESSAGE_RATE_LIMITED')
+            ? t('chat.rateLimited')
+            : err instanceof Error
+              ? err.message
+              : t('common.unknownError'),
       })
     } finally {
       setSending(false)
@@ -161,13 +169,13 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-[var(--text-muted)]" />
             </div>
-          ) : filteredConversations.length === 0 ? (
+          ) : conversations.length === 0 && !hasMore ? (
             <div className="py-8 text-center text-sm text-[var(--text-muted)]">
               {t('forward.none')}
             </div>
           ) : (
             <div className="py-2">
-              {filteredConversations.map((conv) => {
+              {conversations.map((conv) => {
                 const displayName = getTitle(conv)
                 const avatarUser =
                   conv.type === 'group'
@@ -211,6 +219,17 @@ export function ForwardModal({ currentUserId, onForwardComplete }: ForwardModalP
                   </button>
                 )
               })}
+              {hasMore && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  disabled={loadingMore}
+                  onClick={() => void loadMore()}
+                >
+                  {loadingMore ? t('chat.loadingOlder') : t('chatList.loadMore')}
+                </Button>
+              )}
             </div>
           )}
         </ScrollArea>

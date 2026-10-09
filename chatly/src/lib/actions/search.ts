@@ -2,7 +2,6 @@
 
 import { createClient } from '@/lib/supabase/server'
 import type { Tables } from '@/types'
-import { parseConversationSummaries } from '@/lib/conversation-summary'
 import { parseInput, uuidSchema } from '@/lib/actions/validation'
 import { z } from 'zod'
 import { escapeSearchPattern } from '@/lib/search-text'
@@ -130,16 +129,6 @@ async function fallbackSearch(
     return { results: [], total: 0, hasMore: false, query }
   }
 
-  const { data: summaries } = await supabase.rpc('get_conversation_summaries')
-  const conversationsMap = new Map(
-    parseConversationSummaries(summaries).map((conversation) => [
-      conversation.id,
-      conversation.type === 'group'
-        ? conversation.title || 'Group'
-        : conversation.participant?.display_name || 'Unknown',
-    ])
-  )
-
   // Build query for messages
   let dbQuery = supabase
     .from('messages')
@@ -170,6 +159,43 @@ async function fallbackSearch(
     .range(offset, offset + limit - 1)
 
   if (error) throw error
+
+  const resultConversationIds = [
+    ...new Set(
+      (data ?? []).flatMap((message) => (message.conversation_id ? [message.conversation_id] : []))
+    ),
+  ]
+  const [{ data: resultConversations }, { data: resultParticipants }] = await Promise.all([
+    resultConversationIds.length > 0
+      ? supabase.from('conversations').select('id, type, title').in('id', resultConversationIds)
+      : Promise.resolve({ data: [] }),
+    resultConversationIds.length > 0
+      ? supabase
+          .from('conversation_participants')
+          .select('conversation_id, user_id')
+          .in('conversation_id', resultConversationIds)
+          .neq('user_id', userId)
+      : Promise.resolve({ data: [] }),
+  ])
+  const participantIds = [...new Set((resultParticipants ?? []).map((row) => row.user_id))]
+  const { data: resultProfiles } =
+    participantIds.length > 0
+      ? await supabase.from('profiles').select('id, display_name').in('id', participantIds)
+      : { data: [] }
+  const profileNames = new Map(
+    (resultProfiles ?? []).map((profile) => [profile.id, profile.display_name])
+  )
+  const participantByConversation = new Map(
+    (resultParticipants ?? []).map((row) => [row.conversation_id, profileNames.get(row.user_id)])
+  )
+  const conversationsMap = new Map(
+    (resultConversations ?? []).map((conversation) => [
+      conversation.id,
+      conversation.type === 'group' || conversation.type === 'ai'
+        ? conversation.title || 'Group'
+        : participantByConversation.get(conversation.id) || 'Unknown',
+    ])
+  )
 
   // Transform results with conversation titles
   const results: SearchResult[] = (data || []).map((msg) => ({

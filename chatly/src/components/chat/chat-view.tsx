@@ -73,6 +73,15 @@ function getAssistantMessageStatus(metadata: Message['metadata']): AssistantMess
   }
 }
 
+function isMessageRateLimited(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    String(error.message).includes('MESSAGE_RATE_LIMITED')
+  )
+}
+
 function assistantFailureText(code?: string) {
   if (code === 'N8N_TIMEOUT') return 'n8n phản hồi quá thời gian. Tin nhắn chưa được AI trả lời.'
   if (code === 'N8N_INVALID_RESPONSE') return 'n8n trả về dữ liệu không hợp lệ.'
@@ -87,6 +96,7 @@ function assistantFailureText(code?: string) {
 }
 
 const MESSAGE_PAGE_SIZE = 50
+const MAX_LOADED_MESSAGES = 300
 const MAX_PENDING_ATTACHMENTS = 12
 
 const GroupDetailsPanel = dynamic(
@@ -591,7 +601,9 @@ export function ChatView({
 
   const [messages, setMessages] = useState<Message[]>(cached?.messages || [])
   const [hasOlderMessages, setHasOlderMessages] = useState(cached?.hasOlderMessages ?? true)
+  const [hasNewerMessages, setHasNewerMessages] = useState(cached?.hasNewerMessages ?? false)
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
+  const [loadingNewerMessages, setLoadingNewerMessages] = useState(false)
   const [participant, setParticipant] = useState<Profile | null>(cached?.participant || null)
   const [conversation, setConversation] = useState<Conversation | null>(null)
   const [aiAgentName, setAiAgentName] = useState<string | null>(null)
@@ -764,6 +776,7 @@ export function ChatView({
     setCached(conversationId, {
       messages,
       hasOlderMessages,
+      hasNewerMessages,
       participant,
       participantStatus,
       messageStatuses,
@@ -773,6 +786,7 @@ export function ChatView({
     conversationId,
     messages,
     hasOlderMessages,
+    hasNewerMessages,
     participant,
     participantStatus,
     messageStatuses,
@@ -788,6 +802,7 @@ export function ChatView({
   }, [conversationId, inputValue, setInput])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const loadedMessageIdsRef = useRef<Set<string>>(new Set())
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -1031,6 +1046,7 @@ export function ChatView({
       if (!conversationId || !currentUserId) {
         setMessages([])
         setHasOlderMessages(false)
+        setHasNewerMessages(false)
         setLoading(false)
         return
       }
@@ -1044,6 +1060,7 @@ export function ChatView({
       try {
         let nextMessages: Message[] = []
         let hasOlder = false
+        let hasNewer = false
 
         const { data: targetMessage } = scrollToMessageId
           ? await supabase
@@ -1075,14 +1092,15 @@ export function ChatView({
               )
               .order('created_at', { ascending: true })
               .order('id', { ascending: true })
-              .limit(MESSAGE_PAGE_SIZE / 2),
+              .limit(MESSAGE_PAGE_SIZE / 2 + 1),
           ])
 
           if (olderResult.error) throw olderResult.error
           if (newerResult.error) throw newerResult.error
           hasOlder = (olderResult.data?.length ?? 0) > MESSAGE_PAGE_SIZE / 2
+          hasNewer = (newerResult.data?.length ?? 0) > MESSAGE_PAGE_SIZE / 2
           const older = (olderResult.data ?? []).slice(0, MESSAGE_PAGE_SIZE / 2).reverse()
-          nextMessages = [...older, ...(newerResult.data ?? [])]
+          nextMessages = [...older, ...(newerResult.data ?? []).slice(0, MESSAGE_PAGE_SIZE / 2)]
         } else {
           const { data, error } = await supabase
             .from('messages')
@@ -1099,6 +1117,7 @@ export function ChatView({
 
         setMessages(nextMessages)
         setHasOlderMessages(hasOlder)
+        setHasNewerMessages(hasNewer)
 
         // Mark messages as read
         await markAsRead()
@@ -1140,6 +1159,7 @@ export function ChatView({
       if (error) throw error
       const page = (data ?? []).slice(0, MESSAGE_PAGE_SIZE).reverse()
       setHasOlderMessages((data?.length ?? 0) > MESSAGE_PAGE_SIZE)
+      if (messages.length + page.length > MAX_LOADED_MESSAGES) setHasNewerMessages(true)
       setMessages((current) => {
         const existingIds = new Set(current.map((message) => message.id))
         return [...page.filter((message) => !existingIds.has(message.id)), ...current]
@@ -1150,6 +1170,78 @@ export function ChatView({
       setLoadingOlderMessages(false)
     }
   }, [conversationId, hasOlderMessages, loadingOlderMessages, messages, supabase])
+
+  const loadNewerMessages = useCallback(async () => {
+    const newestMessage = messages[messages.length - 1]
+    if (
+      !conversationId ||
+      !newestMessage?.created_at ||
+      !hasNewerMessages ||
+      loadingNewerMessages
+    ) {
+      return
+    }
+
+    setLoadingNewerMessages(true)
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .or(
+          `created_at.gt.${newestMessage.created_at},and(created_at.eq.${newestMessage.created_at},id.gt.${newestMessage.id})`
+        )
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(MESSAGE_PAGE_SIZE + 1)
+
+      if (error) throw error
+      const page = (data ?? []).slice(0, MESSAGE_PAGE_SIZE)
+      setHasNewerMessages((data?.length ?? 0) > MESSAGE_PAGE_SIZE)
+      if (messages.length + page.length > MAX_LOADED_MESSAGES) setHasOlderMessages(true)
+      setMessages((current) => {
+        const existingIds = new Set(current.map((message) => message.id))
+        return [...current, ...page.filter((message) => !existingIds.has(message.id))]
+      })
+    } catch (error) {
+      console.error('Failed to load newer messages:', error)
+    } finally {
+      setLoadingNewerMessages(false)
+    }
+  }, [conversationId, hasNewerMessages, loadingNewerMessages, messages, supabase])
+
+  useEffect(() => {
+    if (messages.length <= MAX_LOADED_MESSAGES) return
+
+    const isNearBottom = isNearBottomRef.current
+    const boundedMessages = isNearBottom
+      ? messages.slice(-MAX_LOADED_MESSAGES)
+      : messages.slice(0, MAX_LOADED_MESSAGES)
+    const retainedIds = new Set(boundedMessages.map((message) => message.id))
+
+    if (isNearBottom) {
+      setHasOlderMessages(true)
+      setHasNewerMessages(false)
+    } else {
+      setHasNewerMessages(true)
+    }
+    setMessages((current) =>
+      current.length > MAX_LOADED_MESSAGES
+        ? isNearBottom
+          ? current.slice(-MAX_LOADED_MESSAGES)
+          : current.slice(0, MAX_LOADED_MESSAGES)
+        : current
+    )
+    setMessageStatuses(
+      (current) => new Map([...current].filter(([messageId]) => retainedIds.has(messageId)))
+    )
+    setMessageReactions(
+      (current) => new Map([...current].filter(([messageId]) => retainedIds.has(messageId)))
+    )
+    reactionFetchedIdsRef.current = new Set(
+      [...reactionFetchedIdsRef.current].filter((messageId) => retainedIds.has(messageId))
+    )
+  }, [messages])
 
   useEffect(() => {
     if (!isGroup || messages.length === 0) return
@@ -1354,10 +1446,14 @@ export function ChatView({
     if (!content || !viewport) return
     let pinned = true
     const toBottom = () => {
-      if (pinned) viewport.scrollTop = viewport.scrollHeight
+      if (pinned) {
+        viewport.scrollTop = viewport.scrollHeight
+        isNearBottomRef.current = true
+      }
     }
     const onScroll = () => {
       pinned = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop < 48
+      isNearBottomRef.current = pinned
     }
     toBottom()
     const observer = new ResizeObserver(toBottom)
@@ -1419,6 +1515,7 @@ export function ChatView({
       if (!conversationId) {
         setMessages([])
         setHasOlderMessages(false)
+        setHasNewerMessages(false)
         setParticipant(null)
         setParticipantStatusRaw({ status: 'offline', lastSeen: null })
         setMessageStatuses(new Map())
@@ -1434,6 +1531,7 @@ export function ChatView({
       if (cached) {
         setMessages(cached.messages)
         setHasOlderMessages(cached.hasOlderMessages)
+        setHasNewerMessages(cached.hasNewerMessages)
         setParticipant(cached.participant)
         setParticipantStatusRaw({
           status: cached.participantStatus,
@@ -1447,6 +1545,7 @@ export function ChatView({
         // No cache — start fresh
         setMessages([])
         setHasOlderMessages(true)
+        setHasNewerMessages(false)
         setParticipant(null)
         setParticipantStatusRaw({ status: 'offline', lastSeen: null })
         setMessageStatuses(new Map())
@@ -1711,7 +1810,11 @@ export function ChatView({
           addToast({
             type: 'system',
             title: t('chat.sendFailed'),
-            body: err instanceof Error ? err.message : t('common.unknownError'),
+            body: isMessageRateLimited(err)
+              ? t('chat.rateLimited')
+              : err instanceof Error
+                ? err.message
+                : t('common.unknownError'),
           })
         } finally {
           setSending(false)
@@ -1900,11 +2003,14 @@ export function ChatView({
         console.error('Failed to send message:', err)
         setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id))
         if (contentOverride === undefined) setInputValue(content)
+        const errorMessage =
+          typeof err === 'object' && err !== null && 'message' in err ? String(err.message) : ''
         addToast({
           type: 'system',
           title: t('chat.sendFailed'),
-          body:
-            typeof err === 'object' && err !== null && 'code' in err && err.code === '42501'
+          body: errorMessage.includes('MESSAGE_RATE_LIMITED')
+            ? t('chat.rateLimited')
+            : typeof err === 'object' && err !== null && 'code' in err && err.code === '42501'
               ? t('chat.unavailable')
               : t('common.unknownError'),
         })
@@ -2592,6 +2698,19 @@ export function ChatView({
               </div>
             )
           })}
+          {hasNewerMessages && (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadNewerMessages()}
+                disabled={loadingNewerMessages}
+              >
+                {loadingNewerMessages ? t('chat.loadingNewer') : t('chat.loadNewer')}
+              </Button>
+            </div>
+          )}
           <div ref={messagesEndRef} />
           {aiWorking && (
             <p role="status" className="px-4 py-2 text-sm text-[var(--text-muted)]">

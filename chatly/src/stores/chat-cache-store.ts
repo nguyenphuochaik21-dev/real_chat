@@ -8,6 +8,7 @@ type Message = Tables<'messages'>
 interface ConversationCache {
   messages: Message[]
   hasOlderMessages: boolean
+  hasNewerMessages: boolean
   participant: PublicProfile | null
   participantStatus: 'online' | 'offline' | 'away' | 'busy'
   messageStatuses: Map<string, string>
@@ -44,6 +45,7 @@ export const useChatCacheStore = create<ChatCacheStore>((set, get) => ({
       const existing = newCache.get(conversationId) || {
         messages: [],
         hasOlderMessages: true,
+        hasNewerMessages: false,
         participant: null,
         participantStatus: 'offline' as const,
         messageStatuses: new Map(),
@@ -55,6 +57,13 @@ export const useChatCacheStore = create<ChatCacheStore>((set, get) => ({
         nextCache.messages = nextCache.messages.slice(-MAX_CACHED_MESSAGES)
         nextCache.hasOlderMessages = true
       }
+      const cachedMessageIds = new Set(nextCache.messages.map((message) => message.id))
+      nextCache.messageStatuses = new Map(
+        [...nextCache.messageStatuses].filter(([messageId]) => cachedMessageIds.has(messageId))
+      )
+      nextCache.messageReactions = new Map(
+        [...nextCache.messageReactions].filter(([messageId]) => cachedMessageIds.has(messageId))
+      )
       newCache.set(conversationId, nextCache)
 
       if (newCache.size > MAX_CACHED_CONVERSATIONS) {

@@ -17,12 +17,14 @@ export class AssistantError extends Error {
 export async function requireAssistantUser(admin = false) {
   const { supabase, user } = await getServerAuth()
   if (!user) throw new AssistantError('UNAUTHENTICATED', 401)
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, is_suspended')
-    .eq('id', user.id)
-    .single()
-  if (!profile || profile.is_suspended || (admin && profile.role !== 'admin')) {
+  const { data, error } = await supabase.rpc('get_my_profile')
+  const profile = data && typeof data === 'object' && !Array.isArray(data) ? data : null
+  if (
+    error ||
+    !profile ||
+    profile.is_suspended === true ||
+    (admin && profile.role !== 'admin')
+  ) {
     throw new AssistantError('FORBIDDEN', 403)
   }
   return { supabase, user, role: profile.role === 'admin' ? ('ADMIN' as const) : ('USER' as const) }
